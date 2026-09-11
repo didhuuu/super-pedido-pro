@@ -90,7 +90,6 @@ jobs:
             exit 1
           fi
 
-          # Bibliotecas locais
           perl -0pi -e \
             's#https://cdnjs\.cloudflare\.com/ajax/libs/xlsx/0\.18\.5/xlsx\.full\.min\.js#xlsx.full.min.js#g' \
             "$HTML"
@@ -99,13 +98,10 @@ jobs:
             's#https://cdnjs\.cloudflare\.com/ajax/libs/jspdf/2\.5\.1/jspdf\.umd\.min\.js#jspdf.umd.min.js#g' \
             "$HTML"
 
-          # Limpar completamente o pedido depois do envio/finalização
           perl -0pi -e \
             's{function clearPedido\(\)\{.*?\n\}\n\nasync function openPDF}{function clearPedido(){\n  vals={};\n  extras=[];\n  validadeCurta=[];\n  finalizedRows=[];\n  generalObservation="";\n  save();\n  render();\n  updateBadge();\n  renderValidadeCurta();\n  closeConference();\n  const obs=document.getElementById("generalObs");\n  if(obs)obs.value="";\n}\n\nasync function openPDF}s' \
             "$HTML"
 
-          # Se a planilha nova substituir o catálogo,
-          # garantir que uma categoria antiga não continue selecionada.
           perl -0pi -e \
             's{tabs\(\);render\(\);updateBadge\(\);renderValidadeCurta\(\);}{if(!current || !APP_DATA[current])current=cats[0]||"";tabs();render();updateBadge();renderValidadeCurta();}' \
             "$HTML"
@@ -186,12 +182,6 @@ jobs:
                       }
                   });
 
-                  /*
-                   * Necessário para:
-                   * - prompt do Admin
-                   * - alert
-                   * - seleção de arquivo da importação
-                   */
                   webView.setWebChromeClient(new WebChromeClient() {
 
                       @Override
@@ -316,9 +306,27 @@ jobs:
                               safeName += ".pdf";
                           }
 
-                          File file =
+                          /*
+                           * IMPORTANTE:
+                           * O FileProvider está configurado para
+                           * liberar somente cache/shared/.
+                           *
+                           * O código anterior salvava diretamente
+                           * em cache/, causando falha no URI.
+                           */
+                          File sharedDir =
                                   new File(
                                           MainActivity.this.getCacheDir(),
+                                          "shared"
+                                  );
+
+                          if (!sharedDir.exists()) {
+                              sharedDir.mkdirs();
+                          }
+
+                          File file =
+                                  new File(
+                                          sharedDir,
                                           safeName
                                   );
 
@@ -361,16 +369,51 @@ jobs:
                                   )
                           );
 
-                          startActivity(
-                                  Intent.createChooser(
-                                          intent,
-                                          "Enviar pedido"
-                                  )
-                          );
+                          /*
+                           * Primeiro tenta abrir diretamente
+                           * no WhatsApp.
+                           */
+                          try {
+
+                              Intent whatsappIntent =
+                                      new Intent(intent);
+
+                              whatsappIntent.setPackage(
+                                      "com.whatsapp"
+                              );
+
+                              startActivity(
+                                      whatsappIntent
+                              );
+
+                          } catch (Exception whatsappError) {
+
+                              /*
+                               * Se o WhatsApp não estiver disponível,
+                               * abre o compartilhamento normal.
+                               */
+                              startActivity(
+                                      Intent.createChooser(
+                                              intent,
+                                              "Enviar pedido em PDF"
+                                      )
+                              );
+                          }
 
                       } catch (Exception e) {
 
                           e.printStackTrace();
+
+                          try {
+
+                              android.widget.Toast.makeText(
+                                      MainActivity.this,
+                                      "Erro ao compartilhar o PDF.",
+                                      android.widget.Toast.LENGTH_LONG
+                              ).show();
+
+                          } catch (Exception ignored) {
+                          }
                       }
                   }
 
@@ -449,12 +492,32 @@ jobs:
                                   text
                           );
 
-                          startActivity(
-                                  Intent.createChooser(
-                                          intent,
-                                          "Enviar pedido"
-                                  )
-                          );
+                          /*
+                           * Texto continua funcionando normalmente
+                           * pelo compartilhamento do Android.
+                           */
+                          try {
+
+                              Intent whatsappIntent =
+                                      new Intent(intent);
+
+                              whatsappIntent.setPackage(
+                                      "com.whatsapp"
+                              );
+
+                              startActivity(
+                                      whatsappIntent
+                              );
+
+                          } catch (Exception whatsappError) {
+
+                              startActivity(
+                                      Intent.createChooser(
+                                              intent,
+                                              "Enviar pedido"
+                                      )
+                              );
+                          }
 
                       } catch (Exception e) {
 
@@ -501,8 +564,9 @@ jobs:
           grep -q "onShowFileChooser" "$MAIN_ACTIVITY"
           grep -q "ClipData.newRawUri" "$MAIN_ACTIVITY"
           grep -q "saveBase64" "$MAIN_ACTIVITY"
+          grep -q 'new File(MainActivity.this.getCacheDir(), "shared")' "$MAIN_ACTIVITY"
+          grep -q 'setPackage("com.whatsapp")' "$MAIN_ACTIVITY"
 
-          # Garantir que a referência que causou o erro NÃO existe.
           if grep -q "androidx.appcompat.app.AppCompatActivity" "$MAIN_ACTIVITY"; then
             echo "ERRO: AppCompatActivity ainda está presente."
             exit 1
@@ -561,6 +625,12 @@ jobs:
           grep -q "ClipData.newRawUri" "$MAIN_ACTIVITY"
           grep -q "importedCatalogActive" \
             "$ANDROID_DIR/app/src/main/assets/app/index.html"
+
+          grep -q 'new File(MainActivity.this.getCacheDir(), "shared")' \
+            "$MAIN_ACTIVITY"
+
+          grep -q 'setPackage("com.whatsapp")' \
+            "$MAIN_ACTIVITY"
 
           if grep -q \
             "androidx.appcompat.app.AppCompatActivity" \
