@@ -33,10 +33,10 @@ jobs:
 
           rm -rf projeto
 
-          if [ ! -f "Super-Pedido-Pro.zip" ]; then
+          test -f "Super-Pedido-Pro.zip" || {
             echo "ERRO: Super-Pedido-Pro.zip não encontrado."
             exit 1
-          fi
+          }
 
           mkdir -p projeto
           unzip -o "Super-Pedido-Pro.zip" -d projeto
@@ -58,7 +58,7 @@ jobs:
 
           echo "ANDROID_DIR=$ANDROID_DIR" >> "$GITHUB_ENV"
 
-          echo "Projeto encontrado em:"
+          echo "Projeto Android:"
           echo "$ANDROID_DIR"
 
       - name: Configurar AndroidX
@@ -85,11 +85,12 @@ jobs:
 
           HTML="$ANDROID_DIR/app/src/main/assets/app/index.html"
 
-          if [ ! -f "$HTML" ]; then
+          test -f "$HTML" || {
             echo "ERRO: index.html não encontrado."
             exit 1
-          fi
+          }
 
+          # Usar bibliotecas locais
           perl -0pi -e \
             's#https://cdnjs\.cloudflare\.com/ajax/libs/xlsx/0\.18\.5/xlsx\.full\.min\.js#xlsx.full.min.js#g' \
             "$HTML"
@@ -98,13 +99,56 @@ jobs:
             's#https://cdnjs\.cloudflare\.com/ajax/libs/jspdf/2\.5\.1/jspdf\.umd\.min\.js#jspdf.umd.min.js#g' \
             "$HTML"
 
-          perl -0pi -e \
-            's{function clearPedido\{.*?\n\}\n\nasync function openPDF}{function clearPedido(){\n  vals={};\n  extras=[];\n  validadeCurta=[];\n  finalizedRows=[];\n  generalObservation="";\n  save();\n  render();\n  updateBadge();\n  renderValidadeCurta();\n  closeConference();\n  const obs=document.getElementById("generalObs");\n  if(obs)obs.value="";\n}\n\nasync function openPDF}s' \
-            "$HTML"
+          # Limpeza completa do pedido
+          python3 - "$HTML" <<'PY'
+          import sys
+          from pathlib import Path
 
-          perl -0pi -e \
-            's{tabs;render;updateBadge;renderValidadeCurta;}{if(!current || !APP_DATA[current])current=cats[0]||"";tabs();render();updateBadge();renderValidadeCurta();}' \
-            "$HTML"
+          path = Path(sys.argv[1])
+          text = path.read_text(encoding="utf-8")
+
+          start = text.find("function clearPedido()")
+          end = text.find("async function openPDF", start)
+
+          if start != -1 and end != -1:
+              replacement = '''function clearPedido(){
+            vals={};
+            extras=[];
+            validadeCurta=[];
+            finalizedRows=[];
+            generalObservation="";
+            save();
+            render();
+            updateBadge();
+            renderValidadeCurta();
+            closeConference();
+            const obs=document.getElementById("generalObs");
+            if(obs)obs.value="";
+          }
+
+          '''
+
+              text = text[:start] + replacement + text[end:]
+
+          path.write_text(text, encoding="utf-8")
+          PY
+
+          # Garantir categoria válida após importação
+          python3 - "$HTML" <<'PY'
+          import sys
+          from pathlib import Path
+
+          path = Path(sys.argv[1])
+          text = path.read_text(encoding="utf-8")
+
+          old = "tabs();render();updateBadge();renderValidadeCurta();"
+
+          new = 'if(!current || !APP_DATA[current])current=cats[0]||"";tabs();render();updateBadge();renderValidadeCurta();'
+
+          text = text.replace(old, new)
+
+          path.write_text(text, encoding="utf-8")
+          PY
 
           echo "Verificando HTML..."
 
@@ -113,7 +157,7 @@ jobs:
           grep -q "jspdf.umd.min.js" "$HTML"
           grep -q "function clearPedido" "$HTML"
 
-          echo "HTML corrigido com sucesso."
+          echo "HTML corrigido."
 
       - name: Corrigir MainActivity
         shell: bash
@@ -145,6 +189,7 @@ jobs:
           import android.webkit.WebResourceRequest;
           import android.webkit.WebView;
           import android.webkit.WebViewClient;
+          import android.widget.Toast;
 
           import androidx.core.content.FileProvider;
 
@@ -178,7 +223,6 @@ jobs:
                       public boolean shouldOverrideUrlLoading(
                               WebView view,
                               WebResourceRequest request) {
-
                           return false;
                       }
                   });
@@ -187,7 +231,7 @@ jobs:
 
                       @Override
                       public boolean onShowFileChooser(
-                              WebView webView,
+                              WebView view,
                               ValueCallback<Uri[]> callback,
                               FileChooserParams fileChooserParams) {
 
@@ -202,4 +246,543 @@ jobs:
                               Intent intent =
                                       fileChooserParams.createIntent();
 
-                              startActivity
+                              startActivityForResult(
+                                      intent,
+                                      FILE_CHOOSER_REQUEST
+                              );
+
+                              return true;
+
+                          } catch (Exception e) {
+
+                              MainActivity.this.filePathCallback = null;
+
+                              Toast.makeText(
+                                      MainActivity.this,
+                                      "Não foi possível abrir os arquivos.",
+                                      Toast.LENGTH_LONG
+                              ).show();
+
+                              return false;
+                          }
+                      }
+                  });
+
+                  webView.addJavascriptInterface(
+                          new AndroidFileBridge(),
+                          "AndroidFileBridge"
+                  );
+
+                  setContentView(webView);
+
+                  webView.loadUrl(
+                          "file:///android_asset/app/index.html"
+                  );
+              }
+
+              @Override
+              protected void onActivityResult(
+                      int requestCode,
+                      int resultCode,
+                      Intent data) {
+
+                  if (requestCode == FILE_CHOOSER_REQUEST) {
+
+                      Uri[] results = null;
+
+                      if (resultCode == RESULT_OK && data != null) {
+
+                          if (data.getClipData() != null) {
+
+                              int count =
+                                      data.getClipData().getItemCount();
+
+                              results = new Uri[count];
+
+                              for (int i = 0; i < count; i++) {
+
+                                  results[i] =
+                                          data.getClipData()
+                                              .getItemAt(i)
+                                              .getUri();
+                              }
+
+                          } else if (data.getData() != null) {
+
+                              results = new Uri[]{
+                                      data.getData()
+                              };
+                          }
+                      }
+
+                      if (filePathCallback != null) {
+
+                          filePathCallback.onReceiveValue(results);
+
+                          filePathCallback = null;
+                      }
+
+                      return;
+                  }
+
+                  super.onActivityResult(
+                          requestCode,
+                          resultCode,
+                          data
+                  );
+              }
+
+              public class AndroidFileBridge {
+
+                  @JavascriptInterface
+                  public void sharePdf(
+                          String filename,
+                          String base64) {
+
+                      try {
+
+                          byte[] bytes =
+                                  Base64.decode(
+                                          base64,
+                                          Base64.DEFAULT
+                                  );
+
+                          String safeName =
+                                  sanitizeFilename(filename);
+
+                          if (!safeName
+                                  .toLowerCase()
+                                  .endsWith(".pdf")) {
+
+                              safeName += ".pdf";
+                          }
+
+                          /*
+                           * O FileProvider utiliza:
+                           *
+                           * cache/shared/
+                           *
+                           * O PDF será criado exatamente nessa pasta.
+                           */
+                          File sharedDir =
+                                  new File(
+                                          MainActivity.this.getCacheDir(),
+                                          "shared"
+                                  );
+
+                          if (!sharedDir.exists()) {
+
+                              if (!sharedDir.mkdirs()
+                                      && !sharedDir.exists()) {
+
+                                  throw new Exception(
+                                          "Não foi possível criar cache/shared."
+                                  );
+                              }
+                          }
+
+                          File file =
+                                  new File(
+                                          sharedDir,
+                                          safeName
+                                  );
+
+                          FileOutputStream fos =
+                                  new FileOutputStream(file);
+
+                          fos.write(bytes);
+                          fos.flush();
+                          fos.close();
+
+                          Uri uri =
+                                  FileProvider.getUriForFile(
+                                          MainActivity.this,
+                                          MainActivity.this
+                                                  .getPackageName()
+                                                  + ".fileprovider",
+                                          file
+                                  );
+
+                          /*
+                           * Compartilhamento PDF.
+                           */
+                          Intent shareIntent =
+                                  new Intent(
+                                          Intent.ACTION_SEND
+                                  );
+
+                          shareIntent.setType(
+                                  "application/pdf"
+                          );
+
+                          shareIntent.putExtra(
+                                  Intent.EXTRA_STREAM,
+                                  uri
+                          );
+
+                          shareIntent.addFlags(
+                                  Intent.FLAG_GRANT_READ_URI_PERMISSION
+                          );
+
+                          shareIntent.setClipData(
+                                  ClipData.newRawUri(
+                                          "PDF",
+                                          uri
+                                  )
+                          );
+
+                          /*
+                           * Tenta abrir diretamente no WhatsApp.
+                           */
+                          try {
+
+                              Intent whatsappIntent =
+                                      new Intent(
+                                              Intent.ACTION_SEND
+                                      );
+
+                              whatsappIntent.setType(
+                                      "application/pdf"
+                              );
+
+                              whatsappIntent.putExtra(
+                                      Intent.EXTRA_STREAM,
+                                      uri
+                              );
+
+                              whatsappIntent.addFlags(
+                                      Intent.FLAG_GRANT_READ_URI_PERMISSION
+                              );
+
+                              whatsappIntent.setClipData(
+                                      ClipData.newRawUri(
+                                              "PDF",
+                                              uri
+                                      )
+                              );
+
+                              whatsappIntent.setPackage(
+                                      "com.whatsapp"
+                              );
+
+                              startActivity(
+                                      whatsappIntent
+                              );
+
+                          } catch (Exception e) {
+
+                              /*
+                               * Fallback: compartilhamento Android.
+                               */
+                              startActivity(
+                                      Intent.createChooser(
+                                              shareIntent,
+                                              "Enviar pedido em PDF"
+                                      )
+                              );
+                          }
+
+                      } catch (Exception e) {
+
+                          e.printStackTrace();
+
+                          Toast.makeText(
+                                  MainActivity.this,
+                                  "Erro ao compartilhar o PDF.",
+                                  Toast.LENGTH_LONG
+                          ).show();
+                      }
+                  }
+
+                  @JavascriptInterface
+                  public void saveBase64(
+                          String filename,
+                          String base64) {
+
+                      saveBase64(
+                              filename,
+                              "application/octet-stream",
+                              base64
+                      );
+                  }
+
+                  @JavascriptInterface
+                  public void saveBase64(
+                          String filename,
+                          String mimeType,
+                          String base64) {
+
+                      try {
+
+                          byte[] bytes =
+                                  Base64.decode(
+                                          base64,
+                                          Base64.DEFAULT
+                                  );
+
+                          String safeName =
+                                  sanitizeFilename(filename);
+
+                          File dir =
+                                  MainActivity.this
+                                          .getExternalFilesDir(null);
+
+                          if (dir == null) {
+
+                              dir =
+                                      MainActivity.this
+                                              .getFilesDir();
+                          }
+
+                          File file =
+                                  new File(
+                                          dir,
+                                          safeName
+                                  );
+
+                          FileOutputStream fos =
+                                  new FileOutputStream(file);
+
+                          fos.write(bytes);
+                          fos.flush();
+                          fos.close();
+
+                      } catch (Exception e) {
+
+                          e.printStackTrace();
+                      }
+                  }
+
+                  @JavascriptInterface
+                  public void shareText(String text) {
+
+                      try {
+
+                          Intent shareIntent =
+                                  new Intent(
+                                          Intent.ACTION_SEND
+                                  );
+
+                          shareIntent.setType(
+                                  "text/plain"
+                          );
+
+                          shareIntent.putExtra(
+                                  Intent.EXTRA_TEXT,
+                                  text
+                          );
+
+                          try {
+
+                              Intent whatsappIntent =
+                                      new Intent(
+                                              Intent.ACTION_SEND
+                                      );
+
+                              whatsappIntent.setType(
+                                      "text/plain"
+                              );
+
+                              whatsappIntent.putExtra(
+                                      Intent.EXTRA_TEXT,
+                                      text
+                              );
+
+                              whatsappIntent.setPackage(
+                                      "com.whatsapp"
+                              );
+
+                              startActivity(
+                                      whatsappIntent
+                              );
+
+                          } catch (Exception e) {
+
+                              startActivity(
+                                      Intent.createChooser(
+                                              shareIntent,
+                                              "Enviar pedido"
+                                      )
+                              );
+                          }
+
+                      } catch (Exception e) {
+
+                          e.printStackTrace();
+                      }
+                  }
+
+                  private String sanitizeFilename(
+                          String filename) {
+
+                      if (filename == null ||
+                              filename.trim().isEmpty()) {
+
+                          filename = "arquivo";
+                      }
+
+                      return filename.replaceAll(
+                              "[\\\\/:*?\"<>|]",
+                              "_"
+                      );
+                  }
+              }
+
+              @Override
+              public void onBackPressed() {
+
+                  if (webView != null &&
+                          webView.canGoBack()) {
+
+                      webView.goBack();
+
+                  } else {
+
+                      super.onBackPressed();
+                  }
+              }
+          }
+          JAVA
+
+          echo "MainActivity corrigida."
+
+          grep -q "extends Activity" "$MAIN_ACTIVITY"
+          grep -q "WebChromeClient" "$MAIN_ACTIVITY"
+          grep -q "onShowFileChooser" "$MAIN_ACTIVITY"
+          grep -q "ClipData.newRawUri" "$MAIN_ACTIVITY"
+          grep -q "saveBase64" "$MAIN_ACTIVITY"
+          grep -q "getCacheDir()" "$MAIN_ACTIVITY"
+          grep -q '"shared"' "$MAIN_ACTIVITY"
+          grep -q "setPackage" "$MAIN_ACTIVITY"
+
+          if grep -q "androidx.appcompat.app.AppCompatActivity" "$MAIN_ACTIVITY"; then
+            echo "ERRO: AppCompatActivity encontrada."
+            exit 1
+          fi
+
+          echo "MainActivity validada."
+
+      - name: Preparar bibliotecas locais
+        shell: bash
+        run: |
+          set -e
+
+          HTML_DIR="$ANDROID_DIR/app/src/main/assets/app"
+
+          mkdir -p "$HTML_DIR"
+
+          curl -L --fail --silent --show-error \
+            "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" \
+            -o "$HTML_DIR/xlsx.full.min.js"
+
+          curl -L --fail --silent --show-error \
+            "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" \
+            -o "$HTML_DIR/jspdf.umd.min.js"
+
+          test -s "$HTML_DIR/xlsx.full.min.js"
+          test -s "$HTML_DIR/jspdf.umd.min.js"
+
+          echo "Bibliotecas locais prontas."
+
+      - name: Verificar projeto
+        shell: bash
+        run: |
+          set -e
+
+          echo "=== VERIFICAÇÃO FINAL ==="
+
+          test -f "$ANDROID_DIR/settings.gradle"
+
+          test -f \
+            "$ANDROID_DIR/app/src/main/AndroidManifest.xml"
+
+          test -f \
+            "$ANDROID_DIR/app/src/main/assets/app/index.html"
+
+          MAIN_ACTIVITY=$(find \
+            "$ANDROID_DIR/app/src/main/java" \
+            -name MainActivity.java \
+            -type f \
+            -print -quit)
+
+          test -f "$MAIN_ACTIVITY"
+
+          grep -q "extends Activity" "$MAIN_ACTIVITY"
+          grep -q "WebChromeClient" "$MAIN_ACTIVITY"
+          grep -q "onShowFileChooser" "$MAIN_ACTIVITY"
+          grep -q "ClipData.newRawUri" "$MAIN_ACTIVITY"
+          grep -q "importedCatalogActive" \
+            "$ANDROID_DIR/app/src/main/assets/app/index.html"
+
+          grep -q "getCacheDir()" "$MAIN_ACTIVITY"
+          grep -q '"shared"' "$MAIN_ACTIVITY"
+          grep -q "setPackage" "$MAIN_ACTIVITY"
+
+          if grep -q \
+            "androidx.appcompat.app.AppCompatActivity" \
+            "$MAIN_ACTIVITY"; then
+
+            echo "ERRO: AppCompatActivity encontrada."
+            exit 1
+          fi
+
+          echo "Projeto validado."
+          echo "Pronto para gerar APK."
+
+      - name: Compilar APK
+        shell: bash
+        run: |
+          set -e
+
+          cd "$ANDROID_DIR"
+
+          if [ -f "./gradlew" ]; then
+
+            chmod +x ./gradlew
+
+            ./gradlew \
+              --no-daemon \
+              clean \
+              assembleDebug
+
+          else
+
+            gradle \
+              --no-daemon \
+              clean \
+              assembleDebug
+
+          fi
+
+      - name: Verificar APK
+        shell: bash
+        run: |
+          set -e
+
+          APK=$(find \
+            "$ANDROID_DIR/app/build/outputs/apk/debug" \
+            -type f \
+            -name "*.apk" \
+            -print -quit)
+
+          if [ -z "$APK" ]; then
+            echo "ERRO: APK não foi gerado."
+            exit 1
+          fi
+
+          echo "APK encontrado:"
+          ls -lh "$APK"
+
+          mkdir -p "$GITHUB_WORKSPACE/apk-final"
+
+          cp "$APK" \
+            "$GITHUB_WORKSPACE/apk-final/Super-Pedido-Pro.apk"
+
+          echo "APK preparado para download."
+
+      - name: Disponibilizar APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Super-Pedido-Pro-APK
+          path: apk-final/Super-Pedido-Pro.apk
+          retention-days: 7
