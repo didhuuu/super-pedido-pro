@@ -74,10 +74,477 @@ jobs:
           grep -q "android.enableJetifier=true" gradle.properties || \
             echo "android.enableJetifier=true" >> gradle.properties
 
-      - name: Corrigir aplicativo
+      - name: Corrigir HTML do aplicativo
         shell: bash
         run: |
           set -e
 
-          python3 <<'PY'
-         
+          HTML="$ANDROID_DIR/app/src/main/assets/app/index.html"
+
+          if [ ! -f "$HTML" ]; then
+            echo "ERRO: index.html não encontrado."
+            exit 1
+          fi
+
+          # Usar bibliotecas locais em vez de depender da internet
+          perl -0pi -e 's#https://cdnjs\.cloudflare\.com/ajax/libs/xlsx/0\.18\.5/xlsx\.full\.min\.js#xlsx.full.min.js#g' "$HTML"
+
+          perl -0pi -e 's#https://cdnjs\.cloudflare\.com/ajax/libs/jspdf/2\.5\.1/jspdf\.umd\.min\.js#jspdf.umd.min.js#g' "$HTML"
+
+          # Limpar completamente o pedido após envio/finalização
+          perl -0pi -e 's{function clearPedido\(\)\{.*?\n\}\n\nasync function openPDF}{function clearPedido(){\n  vals={};\n  extras=[];\n  validadeCurta=[];\n  finalizedRows=[];\n  generalObservation="";\n  save();\n  render();\n  updateBadge();\n  renderValidadeCurta();\n  closeConference();\n  const obs=document.getElementById("generalObs");\n  if(obs)obs.value="";\n}\n\nasync function openPDF}s' "$HTML"
+
+          # Garantir categoria válida quando o catálogo importado substituir o antigo
+          perl -0pi -e 's{tabs\(\);render\(\);updateBadge\(\);renderValidadeCurta\(\);}{if(!current || !APP_DATA[current])current=cats[0]||"";tabs();render();updateBadge();renderValidadeCurta();}' "$HTML"
+
+          echo "Verificando correções do HTML..."
+
+          grep -q "importedCatalogActive" "$HTML"
+          grep -q "xlsx.full.min.js" "$HTML"
+          grep -q "jspdf.umd.min.js" "$HTML"
+          grep -q "function clearPedido" "$HTML"
+
+          echo "HTML corrigido com sucesso."
+
+      - name: Corrigir MainActivity
+        shell: bash
+        run: |
+          set -e
+
+          MAIN_ACTIVITY=$(find "$ANDROID_DIR/app/src/main/java" \
+            -name MainActivity.java \
+            -type f \
+            -print -quit)
+
+          if [ -z "$MAIN_ACTIVITY" ]; then
+            echo "ERRO: MainActivity.java não encontrado."
+            exit 1
+          fi
+
+          cat > "$MAIN_ACTIVITY" <<'JAVA'
+          package com.pedido.v2;
+
+          import android.content.ClipData;
+          import android.content.Intent;
+          import android.net.Uri;
+          import android.os.Bundle;
+          import android.util.Base64;
+          import android.webkit.JavascriptInterface;
+          import android.webkit.ValueCallback;
+          import android.webkit.WebChromeClient;
+          import android.webkit.WebResourceRequest;
+          import android.webkit.WebView;
+          import android.webkit.WebViewClient;
+
+          import androidx.annotation.Nullable;
+          import androidx.appcompat.app.AppCompatActivity;
+          import androidx.core.content.FileProvider;
+
+          import java.io.File;
+          import java.io.FileOutputStream;
+          import java.nio.charset.StandardCharsets;
+
+          public class MainActivity extends AppCompatActivity {
+
+              private WebView webView;
+              private ValueCallback<Uri[]> filePathCallback;
+              private static final int FILE_CHOOSER_REQUEST = 1001;
+
+              @Override
+              protected void onCreate(Bundle savedInstanceState) {
+                  super.onCreate(savedInstanceState);
+
+                  webView = new WebView(this);
+
+                  webView.getSettings().setJavaScriptEnabled(true);
+                  webView.getSettings().setDomStorageEnabled(true);
+                  webView.getSettings().setAllowFileAccess(true);
+                  webView.getSettings().setAllowContentAccess(true);
+                  webView.getSettings().setBuiltInZoomControls(false);
+                  webView.getSettings().setDisplayZoomControls(false);
+
+                  webView.setWebViewClient(new WebViewClient() {
+                      @Override
+                      public boolean shouldOverrideUrlLoading(
+                              WebView view,
+                              WebResourceRequest request) {
+                          return false;
+                      }
+                  });
+
+                  webView.setWebChromeClient(new WebChromeClient() {
+
+                      @Override
+                      public boolean onShowFileChooser(
+                              WebView webView,
+                              ValueCallback<Uri[]> filePathCallback,
+                              FileChooserParams fileChooserParams) {
+
+                          if (MainActivity.this.filePathCallback != null) {
+                              MainActivity.this.filePathCallback.onReceiveValue(null);
+                          }
+
+                          MainActivity.this.filePathCallback = filePathCallback;
+
+                          try {
+                              Intent intent = fileChooserParams.createIntent();
+                              startActivityForResult(intent, FILE_CHOOSER_REQUEST);
+                              return true;
+                          } catch (Exception e) {
+                              MainActivity.this.filePathCallback = null;
+                              return false;
+                          }
+                      }
+                  });
+
+                  webView.addJavascriptInterface(
+                          new AndroidFileBridge(),
+                          "AndroidFileBridge"
+                  );
+
+                  setContentView(webView);
+
+                  webView.loadUrl(
+                          "file:///android_asset/app/index.html"
+                  );
+              }
+
+              @Override
+              protected void onActivityResult(
+                      int requestCode,
+                      int resultCode,
+                      @Nullable Intent data) {
+
+                  if (requestCode == FILE_CHOOSER_REQUEST) {
+
+                      Uri[] results = null;
+
+                      if (resultCode == RESULT_OK && data != null) {
+
+                          if (data.getClipData() != null) {
+
+                              int count = data.getClipData().getItemCount();
+
+                              results = new Uri[count];
+
+                              for (int i = 0; i < count; i++) {
+                                  results[i] =
+                                          data.getClipData()
+                                                  .getItemAt(i)
+                                                  .getUri();
+                              }
+
+                          } else if (data.getData() != null) {
+                              results = new Uri[]{
+                                      data.getData()
+                              };
+                          }
+                      }
+
+                      if (filePathCallback != null) {
+                          filePathCallback.onReceiveValue(results);
+                          filePathCallback = null;
+                      }
+
+                      return;
+                  }
+
+                  super.onActivityResult(
+                          requestCode,
+                          resultCode,
+                          data
+                  );
+              }
+
+              public class AndroidFileBridge {
+
+                  @JavascriptInterface
+                  public void sharePdf(
+                          String filename,
+                          String base64
+                  ) {
+
+                      try {
+
+                          byte[] bytes =
+                                  Base64.decode(
+                                          base64,
+                                          Base64.DEFAULT
+                                  );
+
+                          String safeName =
+                                  sanitizeFilename(filename);
+
+                          if (!safeName.toLowerCase()
+                                  .endsWith(".pdf")) {
+                              safeName += ".pdf";
+                          }
+
+                          File file =
+                                  new File(
+                                          getCacheDir(),
+                                          safeName
+                                  );
+
+                          FileOutputStream fos =
+                                  new FileOutputStream(file);
+
+                          fos.write(bytes);
+                          fos.flush();
+                          fos.close();
+
+                          Uri uri =
+                                  FileProvider.getUriForFile(
+                                          MainActivity.this,
+                                          getPackageName()
+                                                  + ".fileprovider",
+                                          file
+                                  );
+
+                          Intent intent =
+                                  new Intent(
+                                          Intent.ACTION_SEND
+                                  );
+
+                          intent.setType("application/pdf");
+                          intent.putExtra(
+                                  Intent.EXTRA_STREAM,
+                                  uri
+                          );
+
+                          intent.addFlags(
+                                  Intent.FLAG_GRANT_READ_URI_PERMISSION
+                          );
+
+                          intent.setClipData(
+                                  ClipData.newRawUri(
+                                          "PDF",
+                                          uri
+                                  )
+                          );
+
+                          startActivity(
+                                  Intent.createChooser(
+                                          intent,
+                                          "Enviar pedido"
+                                  )
+                          );
+
+                      } catch (Exception e) {
+                          e.printStackTrace();
+                      }
+                  }
+
+                  @JavascriptInterface
+                  public void saveBase64(
+                          String filename,
+                          String base64
+                  ) {
+
+                      saveBase64(
+                              filename,
+                              "application/octet-stream",
+                              base64
+                      );
+                  }
+
+                  @JavascriptInterface
+                  public void saveBase64(
+                          String filename,
+                          String mimeType,
+                          String base64
+                  ) {
+
+                      try {
+
+                          byte[] bytes =
+                                  Base64.decode(
+                                          base64,
+                                          Base64.DEFAULT
+                                  );
+
+                          String safeName =
+                                  sanitizeFilename(filename);
+
+                          File file =
+                                  new File(
+                                          getExternalFilesDir(null),
+                                          safeName
+                                  );
+
+                          FileOutputStream fos =
+                                  new FileOutputStream(file);
+
+                          fos.write(bytes);
+                          fos.flush();
+                          fos.close();
+
+                      } catch (Exception e) {
+                          e.printStackTrace();
+                      }
+                  }
+
+                  @JavascriptInterface
+                  public void shareText(
+                          String text
+                  ) {
+
+                      try {
+
+                          Intent intent =
+                                  new Intent(
+                                          Intent.ACTION_SEND
+                                  );
+
+                          intent.setType("text/plain");
+                          intent.putExtra(
+                                  Intent.EXTRA_TEXT,
+                                  text
+                          );
+
+                          startActivity(
+                                  Intent.createChooser(
+                                          intent,
+                                          "Enviar pedido"
+                                  )
+                          );
+
+                      } catch (Exception e) {
+                          e.printStackTrace();
+                      }
+                  }
+
+                  private String sanitizeFilename(
+                          String filename
+                  ) {
+
+                      if (filename == null ||
+                              filename.trim().isEmpty()) {
+                          filename = "arquivo";
+                      }
+
+                      return filename
+                              .replaceAll(
+                                      "[\\\\/:*?\"<>|]",
+                                      "_"
+                              );
+                  }
+              }
+
+              @Override
+              public void onBackPressed() {
+
+                  if (webView != null &&
+                          webView.canGoBack()) {
+
+                      webView.goBack();
+
+                  } else {
+
+                      super.onBackPressed();
+                  }
+              }
+          }
+          JAVA
+
+          echo "MainActivity corrigida."
+
+          grep -q "WebChromeClient" "$MAIN_ACTIVITY"
+          grep -q "onShowFileChooser" "$MAIN_ACTIVITY"
+          grep -q "ClipData.newRawUri" "$MAIN_ACTIVITY"
+          grep -q "saveBase64" "$MAIN_ACTIVITY"
+
+          echo "Correções da MainActivity confirmadas."
+
+      - name: Preparar bibliotecas locais
+        shell: bash
+        run: |
+          set -e
+
+          HTML_DIR="$ANDROID_DIR/app/src/main/assets/app"
+
+          mkdir -p "$HTML_DIR"
+
+          curl -L --fail --silent --show-error \
+            "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" \
+            -o "$HTML_DIR/xlsx.full.min.js"
+
+          curl -L --fail --silent --show-error \
+            "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" \
+            -o "$HTML_DIR/jspdf.umd.min.js"
+
+          test -s "$HTML_DIR/xlsx.full.min.js"
+          test -s "$HTML_DIR/jspdf.umd.min.js"
+
+          echo "Bibliotecas locais preparadas."
+
+      - name: Verificar projeto
+        shell: bash
+        run: |
+          set -e
+
+          echo "=== VERIFICAÇÃO ==="
+
+          test -f "$ANDROID_DIR/settings.gradle"
+          test -f "$ANDROID_DIR/app/src/main/AndroidManifest.xml"
+          test -f "$ANDROID_DIR/app/src/main/assets/app/index.html"
+
+          MAIN_ACTIVITY=$(find "$ANDROID_DIR/app/src/main/java" \
+            -name MainActivity.java \
+            -type f \
+            -print -quit)
+
+          test -f "$MAIN_ACTIVITY"
+
+          grep -q "WebChromeClient" "$MAIN_ACTIVITY"
+          grep -q "onShowFileChooser" "$MAIN_ACTIVITY"
+          grep -q "ClipData.newRawUri" "$MAIN_ACTIVITY"
+
+          grep -q "importedCatalogActive" \
+            "$ANDROID_DIR/app/src/main/assets/app/index.html"
+
+          echo "Projeto pronto para compilação."
+
+      - name: Compilar APK
+        shell: bash
+        run: |
+          set -e
+
+          cd "$ANDROID_DIR"
+
+          if [ -f "./gradlew" ]; then
+            chmod +x ./gradlew
+            ./gradlew --no-daemon clean assembleDebug
+          else
+            gradle --no-daemon clean assembleDebug
+          fi
+
+      - name: Verificar APK
+        shell: bash
+        run: |
+          set -e
+
+          APK=$(find "$ANDROID_DIR/app/build/outputs/apk/debug" \
+            -type f \
+            -name "*.apk" \
+            -print -quit)
+
+          if [ -z "$APK" ]; then
+            echo "ERRO: APK não foi gerado."
+            exit 1
+          fi
+
+          echo "APK encontrado:"
+          ls -lh "$APK"
+
+          mkdir -p "$GITHUB_WORKSPACE/apk-final"
+
+          cp "$APK" \
+            "$GITHUB_WORKSPACE/apk-final/Super-Pedido-Pro.apk"
+
+      - name: Disponibilizar APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Super-Pedido-Pro-APK
+          path: apk-final/Super-Pedido-Pro.apk
+          retention-days: 7
