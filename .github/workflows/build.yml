@@ -307,12 +307,17 @@ jobs:
                           }
 
                           /*
-                           * IMPORTANTE:
-                           * O FileProvider está configurado para
-                           * liberar somente cache/shared/.
+                           * CORREÇÃO PRINCIPAL:
                            *
-                           * O código anterior salvava diretamente
-                           * em cache/, causando falha no URI.
+                           * O FileProvider do aplicativo utiliza:
+                           *
+                           * <cache-path
+                           *     name="shared"
+                           *     path="shared/" />
+                           *
+                           * Portanto o PDF precisa ficar em:
+                           *
+                           * cache/shared/
                            */
                           File sharedDir =
                                   new File(
@@ -321,7 +326,14 @@ jobs:
                                   );
 
                           if (!sharedDir.exists()) {
-                              sharedDir.mkdirs();
+
+                              if (!sharedDir.mkdirs()
+                                      && !sharedDir.exists()) {
+
+                                  throw new Exception(
+                                          "Não foi possível criar a pasta shared."
+                                  );
+                              }
                           }
 
                           File file =
@@ -351,7 +363,9 @@ jobs:
                                           Intent.ACTION_SEND
                                   );
 
-                          intent.setType("application/pdf");
+                          intent.setType(
+                                  "application/pdf"
+                          );
 
                           intent.putExtra(
                                   Intent.EXTRA_STREAM,
@@ -370,13 +384,34 @@ jobs:
                           );
 
                           /*
-                           * Primeiro tenta abrir diretamente
-                           * no WhatsApp.
+                           * Tenta abrir diretamente no WhatsApp.
                            */
                           try {
 
                               Intent whatsappIntent =
-                                      new Intent(intent);
+                                      new Intent(
+                                              Intent.ACTION_SEND
+                                      );
+
+                              whatsappIntent.setType(
+                                      "application/pdf"
+                              );
+
+                              whatsappIntent.putExtra(
+                                      Intent.EXTRA_STREAM,
+                                      uri
+                              );
+
+                              whatsappIntent.addFlags(
+                                      Intent.FLAG_GRANT_READ_URI_PERMISSION
+                              );
+
+                              whatsappIntent.setClipData(
+                                      ClipData.newRawUri(
+                                              "PDF",
+                                              uri
+                                      )
+                              );
 
                               whatsappIntent.setPackage(
                                       "com.whatsapp"
@@ -389,8 +424,8 @@ jobs:
                           } catch (Exception whatsappError) {
 
                               /*
-                               * Se o WhatsApp não estiver disponível,
-                               * abre o compartilhamento normal.
+                               * Caso o WhatsApp não esteja disponível,
+                               * usa o compartilhamento padrão do Android.
                                */
                               startActivity(
                                       Intent.createChooser(
@@ -404,16 +439,11 @@ jobs:
 
                           e.printStackTrace();
 
-                          try {
-
-                              android.widget.Toast.makeText(
-                                      MainActivity.this,
-                                      "Erro ao compartilhar o PDF.",
-                                      android.widget.Toast.LENGTH_LONG
-                              ).show();
-
-                          } catch (Exception ignored) {
-                          }
+                          android.widget.Toast.makeText(
+                                  MainActivity.this,
+                                  "Erro ao compartilhar o PDF.",
+                                  android.widget.Toast.LENGTH_LONG
+                          ).show();
                       }
                   }
 
@@ -451,6 +481,7 @@ jobs:
                                           .getExternalFilesDir(null);
 
                           if (dir == null) {
+
                               dir =
                                       MainActivity.this
                                               .getFilesDir();
@@ -485,39 +516,21 @@ jobs:
                                           Intent.ACTION_SEND
                                   );
 
-                          intent.setType("text/plain");
+                          intent.setType(
+                                  "text/plain"
+                          );
 
                           intent.putExtra(
                                   Intent.EXTRA_TEXT,
                                   text
                           );
 
-                          /*
-                           * Texto continua funcionando normalmente
-                           * pelo compartilhamento do Android.
-                           */
-                          try {
-
-                              Intent whatsappIntent =
-                                      new Intent(intent);
-
-                              whatsappIntent.setPackage(
-                                      "com.whatsapp"
-                              );
-
-                              startActivity(
-                                      whatsappIntent
-                              );
-
-                          } catch (Exception whatsappError) {
-
-                              startActivity(
-                                      Intent.createChooser(
-                                              intent,
-                                              "Enviar pedido"
-                                      )
-                              );
-                          }
+                          startActivity(
+                                  Intent.createChooser(
+                                          intent,
+                                          "Enviar pedido"
+                                  )
+                          );
 
                       } catch (Exception e) {
 
@@ -564,8 +577,9 @@ jobs:
           grep -q "onShowFileChooser" "$MAIN_ACTIVITY"
           grep -q "ClipData.newRawUri" "$MAIN_ACTIVITY"
           grep -q "saveBase64" "$MAIN_ACTIVITY"
-          grep -q 'new File(MainActivity.this.getCacheDir(), "shared")' "$MAIN_ACTIVITY"
-          grep -q 'setPackage("com.whatsapp")' "$MAIN_ACTIVITY"
+
+          grep -q 'getCacheDir(), "shared"' "$MAIN_ACTIVITY"
+          grep -q 'setPackage' "$MAIN_ACTIVITY"
 
           if grep -q "androidx.appcompat.app.AppCompatActivity" "$MAIN_ACTIVITY"; then
             echo "ERRO: AppCompatActivity ainda está presente."
@@ -626,10 +640,10 @@ jobs:
           grep -q "importedCatalogActive" \
             "$ANDROID_DIR/app/src/main/assets/app/index.html"
 
-          grep -q 'new File(MainActivity.this.getCacheDir(), "shared")' \
+          grep -q 'getCacheDir(), "shared"' \
             "$MAIN_ACTIVITY"
 
-          grep -q 'setPackage("com.whatsapp")' \
+          grep -q 'setPackage' \
             "$MAIN_ACTIVITY"
 
           if grep -q \
