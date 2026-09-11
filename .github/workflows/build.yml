@@ -29,87 +29,100 @@ jobs:
         shell: bash
         run: |
           set -e
-
           rm -rf projeto
-
-          if [ -f "Super-Pedido-Pro.zip" ]; then
-            mkdir -p projeto
-            unzip -o "Super-Pedido-Pro.zip" -d projeto
-          else
-            echo "ERRO: Super-Pedido-Pro.zip não encontrado."
-            exit 1
-          fi
+          test -f "Super-Pedido-Pro.zip"
+          mkdir -p projeto
+          unzip -o "Super-Pedido-Pro.zip" -d projeto
 
       - name: Localizar projeto Android
         shell: bash
         run: |
           set -e
-
           ANDROID_DIR=$(find "$GITHUB_WORKSPACE/projeto" -name settings.gradle -type f -print -quit | xargs -r dirname)
-
-          if [ -z "$ANDROID_DIR" ]; then
-            echo "ERRO: settings.gradle não encontrado."
-            exit 1
-          fi
-
+          test -n "$ANDROID_DIR"
           echo "ANDROID_DIR=$ANDROID_DIR" >> "$GITHUB_ENV"
           echo "Projeto encontrado em: $ANDROID_DIR"
 
       - name: Configurar AndroidX
         shell: bash
         run: |
+          set -e
           cd "$ANDROID_DIR"
+          touch gradle.properties
+          grep -q "android.useAndroidX=true" gradle.properties || echo "android.useAndroidX=true" >> gradle.properties
+          grep -q "android.enableJetifier=true" gradle.properties || echo "android.enableJetifier=true" >> gradle.properties
 
-          if [ ! -f gradle.properties ]; then
-            touch gradle.properties
-          fi
-
-          grep -q "android.useAndroidX=true" gradle.properties || \
-            echo "android.useAndroidX=true" >> gradle.properties
-
-          grep -q "android.enableJetifier=true" gradle.properties || \
-            echo "android.enableJetifier=true" >> gradle.properties
-
-      - name: Verificar projeto
+      - name: Corrigir aplicativo - Admin, importação, PDF e limpeza
         shell: bash
         run: |
           set -e
 
-          test -f "$ANDROID_DIR/settings.gradle"
-          test -f "$ANDROID_DIR/build.gradle"
-          test -f "$ANDROID_DIR/app/build.gradle"
-          test -f "$ANDROID_DIR/app/src/main/AndroidManifest.xml"
-          test -f "$ANDROID_DIR/app/src/main/assets/app/index.html"
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          import os
 
-          echo "Projeto Android encontrado corretamente."
+          root = Path(os.environ["ANDROID_DIR"])
+          html = root / "app/src/main/assets/app/index.html"
+          main = next((root / "app/src/main/java").rglob("MainActivity.java"), None)
 
-      - name: Compilar APK
-        shell: bash
-        run: |
-          set -e
+          if not html.exists():
+              raise SystemExit("ERRO: index.html não encontrado")
 
-          cd "$ANDROID_DIR"
+          if main is None:
+              raise SystemExit("ERRO: MainActivity.java não encontrado")
 
-          gradle --no-daemon clean assembleDebug
+          # ---------- HTML ----------
+          text = html.read_text(encoding="utf-8")
 
-      - name: Verificar APK
-        shell: bash
-        run: |
-          set -e
+          # Zerar todas as quantidades depois do envio
+          new_clear = '''function clearPedido(){
+            Object.keys(vals).forEach(k=>delete vals[k]);
+            extras=[];
+            validadeCurta=[];
+            finalizedRows=[];
+            generalObservation='';
+            const obs=document.getElementById('generalObs');
+            if(obs) obs.value='';
+            save();
+            render();
+            updateBadge();
+            closeConference();
+          }'''
 
-          APK="$ANDROID_DIR/app/build/outputs/apk/debug/app-debug.apk"
+          text, n = re.subn(
+              r"function clearPedido\{.*?\n\}",
+              new_clear,
+              text,
+              count=1,
+              flags=re.S,
+          )
 
-          if [ ! -f "$APK" ]; then
-            echo "ERRO: APK não foi gerado."
-            exit 1
-          fi
+          if n != 1:
+              raise SystemExit("ERRO: não foi possível corrigir clearPedido")
 
-          ls -lh "$APK"
-          echo "APK gerado com sucesso."
+          # Selecionar automaticamente a primeira categoria válida
+          old_start = "load();loadFeatures();APP_DATA=buildAppData();cats=Object.keys(APP_DATA);if(!cats.length && !importedCatalogActive){APP_DATA=DATA;cats=Object.keys(DATA)}tabs();render();updateBadge();renderValidadeCurta();"
 
-      - name: Disponibilizar APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: Super-Pedido-Pro-APK
-          path: ${{ env.ANDROID_DIR }}/app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: error
+          new_start = "load();loadFeatures();APP_DATA=buildAppData();cats=Object.keys(APP_DATA);if(!cats.length && !importedCatalogActive){APP_DATA=DATA;cats=Object.keys(DATA)}if(!current || !APP_DATA[current])current=cats[0]||'';tabs();render();updateBadge();renderValidadeCurta();"
+
+          if old_start in text:
+              text = text.replace(old_start, new_start, 1)
+          elif "if(!current || !APP_DATA[current])current=cats[0]||'';" not in text:
+              raise SystemExit("ERRO: não foi possível corrigir inicialização do catálogo")
+
+          # Bibliotecas locais
+          text = text.replace(
+              'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js',
+              'xlsx.full.min.js'
+          )
+
+          text = text.replace(
+              'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
+              'jspdf.umd.min.js'
+          )
+
+          # Confirmar correção da importação
+          required = [
+              'importedCatalogActive=true',
+              'customProducts=rows.filter(x=>x.code||x.name).map(x=>({...x}))
