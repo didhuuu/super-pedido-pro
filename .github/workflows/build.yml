@@ -57,7 +57,9 @@ jobs:
           fi
 
           echo "ANDROID_DIR=$ANDROID_DIR" >> "$GITHUB_ENV"
-          echo "Projeto encontrado em: $ANDROID_DIR"
+
+          echo "Projeto encontrado em:"
+          echo "$ANDROID_DIR"
 
       - name: Configurar AndroidX
         shell: bash
@@ -74,6 +76,8 @@ jobs:
           grep -q "android.enableJetifier=true" gradle.properties || \
             echo "android.enableJetifier=true" >> gradle.properties
 
+          echo "AndroidX configurado."
+
       - name: Corrigir HTML do aplicativo
         shell: bash
         run: |
@@ -86,18 +90,27 @@ jobs:
             exit 1
           fi
 
-          # Usar bibliotecas locais em vez de depender da internet
-          perl -0pi -e 's#https://cdnjs\.cloudflare\.com/ajax/libs/xlsx/0\.18\.5/xlsx\.full\.min\.js#xlsx.full.min.js#g' "$HTML"
+          # Bibliotecas locais
+          perl -0pi -e \
+            's#https://cdnjs\.cloudflare\.com/ajax/libs/xlsx/0\.18\.5/xlsx\.full\.min\.js#xlsx.full.min.js#g' \
+            "$HTML"
 
-          perl -0pi -e 's#https://cdnjs\.cloudflare\.com/ajax/libs/jspdf/2\.5\.1/jspdf\.umd\.min\.js#jspdf.umd.min.js#g' "$HTML"
+          perl -0pi -e \
+            's#https://cdnjs\.cloudflare\.com/ajax/libs/jspdf/2\.5\.1/jspdf\.umd\.min\.js#jspdf.umd.min.js#g' \
+            "$HTML"
 
-          # Limpar completamente o pedido após envio/finalização
-          perl -0pi -e 's{function clearPedido\(\)\{.*?\n\}\n\nasync function openPDF}{function clearPedido(){\n  vals={};\n  extras=[];\n  validadeCurta=[];\n  finalizedRows=[];\n  generalObservation="";\n  save();\n  render();\n  updateBadge();\n  renderValidadeCurta();\n  closeConference();\n  const obs=document.getElementById("generalObs");\n  if(obs)obs.value="";\n}\n\nasync function openPDF}s' "$HTML"
+          # Limpar completamente o pedido depois do envio/finalização
+          perl -0pi -e \
+            's{function clearPedido\(\)\{.*?\n\}\n\nasync function openPDF}{function clearPedido(){\n  vals={};\n  extras=[];\n  validadeCurta=[];\n  finalizedRows=[];\n  generalObservation="";\n  save();\n  render();\n  updateBadge();\n  renderValidadeCurta();\n  closeConference();\n  const obs=document.getElementById("generalObs");\n  if(obs)obs.value="";\n}\n\nasync function openPDF}s' \
+            "$HTML"
 
-          # Garantir categoria válida quando o catálogo importado substituir o antigo
-          perl -0pi -e 's{tabs\(\);render\(\);updateBadge\(\);renderValidadeCurta\(\);}{if(!current || !APP_DATA[current])current=cats[0]||"";tabs();render();updateBadge();renderValidadeCurta();}' "$HTML"
+          # Se a planilha nova substituir o catálogo,
+          # garantir que uma categoria antiga não continue selecionada.
+          perl -0pi -e \
+            's{tabs\(\);render\(\);updateBadge\(\);renderValidadeCurta\(\);}{if(!current || !APP_DATA[current])current=cats[0]||"";tabs();render();updateBadge();renderValidadeCurta();}' \
+            "$HTML"
 
-          echo "Verificando correções do HTML..."
+          echo "Verificando HTML..."
 
           grep -q "importedCatalogActive" "$HTML"
           grep -q "xlsx.full.min.js" "$HTML"
@@ -124,6 +137,7 @@ jobs:
           cat > "$MAIN_ACTIVITY" <<'JAVA'
           package com.pedido.v2;
 
+          import android.app.Activity;
           import android.content.ClipData;
           import android.content.Intent;
           import android.net.Uri;
@@ -136,18 +150,17 @@ jobs:
           import android.webkit.WebView;
           import android.webkit.WebViewClient;
 
-          import androidx.annotation.Nullable;
-          import androidx.appcompat.app.AppCompatActivity;
           import androidx.core.content.FileProvider;
 
           import java.io.File;
           import java.io.FileOutputStream;
-          import java.nio.charset.StandardCharsets;
 
-          public class MainActivity extends AppCompatActivity {
+          public class MainActivity extends Activity {
 
               private WebView webView;
+
               private ValueCallback<Uri[]> filePathCallback;
+
               private static final int FILE_CHOOSER_REQUEST = 1001;
 
               @Override
@@ -164,6 +177,7 @@ jobs:
                   webView.getSettings().setDisplayZoomControls(false);
 
                   webView.setWebViewClient(new WebViewClient() {
+
                       @Override
                       public boolean shouldOverrideUrlLoading(
                               WebView view,
@@ -172,26 +186,42 @@ jobs:
                       }
                   });
 
+                  /*
+                   * Necessário para:
+                   * - prompt do Admin
+                   * - alert
+                   * - seleção de arquivo da importação
+                   */
                   webView.setWebChromeClient(new WebChromeClient() {
 
                       @Override
                       public boolean onShowFileChooser(
                               WebView webView,
-                              ValueCallback<Uri[]> filePathCallback,
+                              ValueCallback<Uri[]> callback,
                               FileChooserParams fileChooserParams) {
 
                           if (MainActivity.this.filePathCallback != null) {
                               MainActivity.this.filePathCallback.onReceiveValue(null);
                           }
 
-                          MainActivity.this.filePathCallback = filePathCallback;
+                          MainActivity.this.filePathCallback = callback;
 
                           try {
-                              Intent intent = fileChooserParams.createIntent();
-                              startActivityForResult(intent, FILE_CHOOSER_REQUEST);
+
+                              Intent intent =
+                                      fileChooserParams.createIntent();
+
+                              startActivityForResult(
+                                      intent,
+                                      FILE_CHOOSER_REQUEST
+                              );
+
                               return true;
+
                           } catch (Exception e) {
+
                               MainActivity.this.filePathCallback = null;
+
                               return false;
                           }
                       }
@@ -213,7 +243,7 @@ jobs:
               protected void onActivityResult(
                       int requestCode,
                       int resultCode,
-                      @Nullable Intent data) {
+                      Intent data) {
 
                   if (requestCode == FILE_CHOOSER_REQUEST) {
 
@@ -223,18 +253,21 @@ jobs:
 
                           if (data.getClipData() != null) {
 
-                              int count = data.getClipData().getItemCount();
+                              int count =
+                                      data.getClipData().getItemCount();
 
                               results = new Uri[count];
 
                               for (int i = 0; i < count; i++) {
+
                                   results[i] =
                                           data.getClipData()
-                                                  .getItemAt(i)
-                                                  .getUri();
+                                              .getItemAt(i)
+                                              .getUri();
                               }
 
                           } else if (data.getData() != null) {
+
                               results = new Uri[]{
                                       data.getData()
                               };
@@ -242,7 +275,9 @@ jobs:
                       }
 
                       if (filePathCallback != null) {
+
                           filePathCallback.onReceiveValue(results);
+
                           filePathCallback = null;
                       }
 
@@ -261,8 +296,7 @@ jobs:
                   @JavascriptInterface
                   public void sharePdf(
                           String filename,
-                          String base64
-                  ) {
+                          String base64) {
 
                       try {
 
@@ -275,14 +309,16 @@ jobs:
                           String safeName =
                                   sanitizeFilename(filename);
 
-                          if (!safeName.toLowerCase()
+                          if (!safeName
+                                  .toLowerCase()
                                   .endsWith(".pdf")) {
+
                               safeName += ".pdf";
                           }
 
                           File file =
                                   new File(
-                                          getCacheDir(),
+                                          MainActivity.this.getCacheDir(),
                                           safeName
                                   );
 
@@ -296,7 +332,8 @@ jobs:
                           Uri uri =
                                   FileProvider.getUriForFile(
                                           MainActivity.this,
-                                          getPackageName()
+                                          MainActivity.this
+                                                  .getPackageName()
                                                   + ".fileprovider",
                                           file
                                   );
@@ -307,6 +344,7 @@ jobs:
                                   );
 
                           intent.setType("application/pdf");
+
                           intent.putExtra(
                                   Intent.EXTRA_STREAM,
                                   uri
@@ -331,6 +369,7 @@ jobs:
                           );
 
                       } catch (Exception e) {
+
                           e.printStackTrace();
                       }
                   }
@@ -338,8 +377,7 @@ jobs:
                   @JavascriptInterface
                   public void saveBase64(
                           String filename,
-                          String base64
-                  ) {
+                          String base64) {
 
                       saveBase64(
                               filename,
@@ -352,8 +390,7 @@ jobs:
                   public void saveBase64(
                           String filename,
                           String mimeType,
-                          String base64
-                  ) {
+                          String base64) {
 
                       try {
 
@@ -366,9 +403,19 @@ jobs:
                           String safeName =
                                   sanitizeFilename(filename);
 
+                          File dir =
+                                  MainActivity.this
+                                          .getExternalFilesDir(null);
+
+                          if (dir == null) {
+                              dir =
+                                      MainActivity.this
+                                              .getFilesDir();
+                          }
+
                           File file =
                                   new File(
-                                          getExternalFilesDir(null),
+                                          dir,
                                           safeName
                                   );
 
@@ -380,14 +427,13 @@ jobs:
                           fos.close();
 
                       } catch (Exception e) {
+
                           e.printStackTrace();
                       }
                   }
 
                   @JavascriptInterface
-                  public void shareText(
-                          String text
-                  ) {
+                  public void shareText(String text) {
 
                       try {
 
@@ -397,6 +443,7 @@ jobs:
                                   );
 
                           intent.setType("text/plain");
+
                           intent.putExtra(
                                   Intent.EXTRA_TEXT,
                                   text
@@ -410,24 +457,24 @@ jobs:
                           );
 
                       } catch (Exception e) {
+
                           e.printStackTrace();
                       }
                   }
 
                   private String sanitizeFilename(
-                          String filename
-                  ) {
+                          String filename) {
 
                       if (filename == null ||
                               filename.trim().isEmpty()) {
+
                           filename = "arquivo";
                       }
 
-                      return filename
-                              .replaceAll(
-                                      "[\\\\/:*?\"<>|]",
-                                      "_"
-                              );
+                      return filename.replaceAll(
+                              "[\\\\/:*?\"<>|]",
+                              "_"
+                      );
                   }
               }
 
@@ -449,12 +496,19 @@ jobs:
 
           echo "MainActivity corrigida."
 
+          grep -q "extends Activity" "$MAIN_ACTIVITY"
           grep -q "WebChromeClient" "$MAIN_ACTIVITY"
           grep -q "onShowFileChooser" "$MAIN_ACTIVITY"
           grep -q "ClipData.newRawUri" "$MAIN_ACTIVITY"
           grep -q "saveBase64" "$MAIN_ACTIVITY"
 
-          echo "Correções da MainActivity confirmadas."
+          # Garantir que a referência que causou o erro NÃO existe.
+          if grep -q "androidx.appcompat.app.AppCompatActivity" "$MAIN_ACTIVITY"; then
+            echo "ERRO: AppCompatActivity ainda está presente."
+            exit 1
+          fi
+
+          echo "MainActivity validada."
 
       - name: Preparar bibliotecas locais
         shell: bash
@@ -476,34 +530,48 @@ jobs:
           test -s "$HTML_DIR/xlsx.full.min.js"
           test -s "$HTML_DIR/jspdf.umd.min.js"
 
-          echo "Bibliotecas locais preparadas."
+          echo "Bibliotecas locais prontas."
 
       - name: Verificar projeto
         shell: bash
         run: |
           set -e
 
-          echo "=== VERIFICAÇÃO ==="
+          echo "=== VERIFICAÇÃO FINAL ==="
 
           test -f "$ANDROID_DIR/settings.gradle"
-          test -f "$ANDROID_DIR/app/src/main/AndroidManifest.xml"
-          test -f "$ANDROID_DIR/app/src/main/assets/app/index.html"
 
-          MAIN_ACTIVITY=$(find "$ANDROID_DIR/app/src/main/java" \
+          test -f \
+            "$ANDROID_DIR/app/src/main/AndroidManifest.xml"
+
+          test -f \
+            "$ANDROID_DIR/app/src/main/assets/app/index.html"
+
+          MAIN_ACTIVITY=$(find \
+            "$ANDROID_DIR/app/src/main/java" \
             -name MainActivity.java \
             -type f \
             -print -quit)
 
           test -f "$MAIN_ACTIVITY"
 
+          grep -q "extends Activity" "$MAIN_ACTIVITY"
           grep -q "WebChromeClient" "$MAIN_ACTIVITY"
           grep -q "onShowFileChooser" "$MAIN_ACTIVITY"
           grep -q "ClipData.newRawUri" "$MAIN_ACTIVITY"
-
           grep -q "importedCatalogActive" \
             "$ANDROID_DIR/app/src/main/assets/app/index.html"
 
-          echo "Projeto pronto para compilação."
+          if grep -q \
+            "androidx.appcompat.app.AppCompatActivity" \
+            "$MAIN_ACTIVITY"; then
+
+            echo "ERRO: AppCompatActivity encontrada."
+            exit 1
+          fi
+
+          echo "Projeto validado."
+          echo "Pronto para gerar APK."
 
       - name: Compilar APK
         shell: bash
@@ -513,10 +581,21 @@ jobs:
           cd "$ANDROID_DIR"
 
           if [ -f "./gradlew" ]; then
+
             chmod +x ./gradlew
-            ./gradlew --no-daemon clean assembleDebug
+
+            ./gradlew \
+              --no-daemon \
+              clean \
+              assembleDebug
+
           else
-            gradle --no-daemon clean assembleDebug
+
+            gradle \
+              --no-daemon \
+              clean \
+              assembleDebug
+
           fi
 
       - name: Verificar APK
@@ -524,7 +603,8 @@ jobs:
         run: |
           set -e
 
-          APK=$(find "$ANDROID_DIR/app/build/outputs/apk/debug" \
+          APK=$(find \
+            "$ANDROID_DIR/app/build/outputs/apk/debug" \
             -type f \
             -name "*.apk" \
             -print -quit)
@@ -541,6 +621,8 @@ jobs:
 
           cp "$APK" \
             "$GITHUB_WORKSPACE/apk-final/Super-Pedido-Pro.apk"
+
+          echo "APK preparado para download."
 
       - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
