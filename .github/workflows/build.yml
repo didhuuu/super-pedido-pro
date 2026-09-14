@@ -11,7 +11,6 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-
       - name: Baixar projeto
         uses: actions/checkout@v4
 
@@ -53,8 +52,7 @@ jobs:
 
           echo "ANDROID_DIR=$ANDROID_DIR" >> "$GITHUB_ENV"
 
-          echo "Projeto encontrado:"
-          echo "$ANDROID_DIR"
+          echo "Projeto encontrado: $ANDROID_DIR"
 
       - name: Configurar AndroidX
         shell: bash
@@ -71,115 +69,164 @@ jobs:
           grep -q "android.enableJetifier=true" gradle.properties || \
             echo "android.enableJetifier=true" >> gradle.properties
 
-      - name: Aplicar correcoes da versao 9
+      - name: Corrigir aplicativo - PDF retrato e limpeza
         shell: bash
         run: |
           set -e
 
           python3 - <<'PY'
           from pathlib import Path
+          import os
           import re
-          import textwrap
-          import urllib.request
-          import os
 
-          source_file = Path('/tmp/build-v9-source.yml')
+          root = Path(os.environ["ANDROID_DIR"])
 
-          urllib.request.urlretrieve(
-              'https://raw.githubusercontent.com/didhuuu/super-pedido-pro/44b3c889e2ac3f4da399e47df9eb992b8d28e8e4/.github/workflows/build.yml',
-              source_file
-          )
+          html = root / "app/src/main/assets/app/index.html"
 
-          source = source_file.read_text(encoding='utf-8')
-
-          marker = "python3 - <<'PY'"
-          start = source.find(marker)
-
-          if start < 0:
+          if not html.exists():
               raise SystemExit(
-                  'ERRO: script da versao 9 nao encontrado'
+                  "ERRO: index.html não encontrado"
               )
 
-          start = source.find('\n', start) + 1
-          end = source.find('\n          PY', start)
+          text = html.read_text(
+              encoding="utf-8"
+          )
 
-          if end < 0:
+          # ============================================================
+          # BIBLIOTECAS LOCAIS
+          # ============================================================
+
+          text = text.replace(
+              "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js",
+              "xlsx.full.min.js"
+          )
+
+          text = text.replace(
+              "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js",
+              "jspdf.umd.min.js"
+          )
+
+          # ============================================================
+          # LIMPEZA REAL DO PEDIDO
+          # ============================================================
+
+          new_clear = r'''function clearPedido(){
+
+            try{
+              if(
+                typeof finalizedRows!=='undefined' &&
+                finalizedRows.length &&
+                typeof saveHistory==='function'
+              ){
+                saveHistory(finalizedRows);
+              }
+            }catch(e){
+              console.warn(
+                'Erro ao salvar histórico:',
+                e
+              );
+            }
+
+            /*
+             * ZERA COMPLETAMENTE O ESTADO
+             */
+            vals={};
+
+            extras=[];
+
+            validadeCurta=[];
+
+            finalizedRows=[];
+
+            generalObservation='';
+
+            /*
+             * REMOVE OS DADOS SALVOS
+             */
+            localStorage.removeItem(
+              'pedido_compras_vals'
+            );
+
+            localStorage.removeItem(
+              'pedido_compras_extras'
+            );
+
+            localStorage.removeItem(
+              'pedido_compras_validade_curta'
+            );
+
+            localStorage.removeItem(
+              'sp_general_obs'
+            );
+
+            /*
+             * LIMPA OBSERVAÇÃO
+             */
+            const obs=
+              document.getElementById(
+                'generalObs'
+              );
+
+            if(obs){
+              obs.value='';
+            }
+
+            /*
+             * REDESENHA A TELA
+             */
+            render();
+
+            if(
+              typeof renderValidadeCurta==='function'
+            ){
+              renderValidadeCurta();
+            }
+
+            updateBadge();
+
+            closeConference();
+
+            /*
+             * GARANTIA EXTRA:
+             * qualquer campo de quantidade
+             * visível fica em zero.
+             */
+            document
+              .querySelectorAll('input.qty')
+              .forEach(el=>{
+                el.value='0';
+              });
+          }'''
+
+          text, count = re.subn(
+              r"function clearPedido\(\)\{.*?\n\}",
+              new_clear,
+              text,
+              count=1,
+              flags=re.S
+          )
+
+          if count != 1:
               raise SystemExit(
-                  'ERRO: fim do script da versao 9 nao encontrado'
+                  "ERRO: clearPedido não encontrado"
               )
 
-          patch = textwrap.dedent(source[start:end])
+          # ============================================================
+          # NOVA FUNÇÃO OPENPDF
+          #
+          # A4 RETRATO
+          # 210 x 297 mm
+          #
+          # O PDF é criado primeiro.
+          # Depois o pedido é salvo no histórico e LIMPO.
+          # Somente depois o Android recebe o PDF.
+          # ============================================================
 
-          exec(
-              compile(
-                  patch,
-                  str(source_file),
-                  'exec'
-              ),
-              {}
-          )
+          pdf_function = r'''async function openPDF(
+            sendViaWhatsApp=false
+          ){
 
-          root = Path(os.environ['ANDROID_DIR'])
-
-          for java in root.rglob('MainActivity.java'):
-
-              text = java.read_text(
-                  encoding='utf-8'
-              )
-
-              fixed = re.sub(
-                  r'sanitizeFilename\s*\(\s*filename\s*\)',
-                  'filename',
-                  text
-              )
-
-              if fixed != text:
-
-                  java.write_text(
-                      fixed,
-                      encoding='utf-8'
-                  )
-
-                  print(
-                      'sanitizeFilename corrigido em:',
-                      java
-                  )
-
-          PY
-
-      - name: Corrigir relatorio PDF - RETRATO
-        shell: bash
-        run: |
-          set -e
-
-          python3 - <<'PY'
-          from pathlib import Path
-          import os
-
-          root = Path(
-              os.environ['ANDROID_DIR']
-          )
-
-          html_files = list(
-              root.rglob('index.html')
-          )
-
-          if not html_files:
-
-              html_files = list(
-                  root.rglob('*.html')
-              )
-
-          if not html_files:
-
-              raise SystemExit(
-                  'ERRO: nenhum arquivo HTML encontrado.'
-              )
-
-          pdf_function = r'''
-          async function openPDF(sendViaWhatsApp=false){
-
-            const rows=
+            const rows =
               finalizedRows.length
                 ? finalizedRows
                 : getRows();
@@ -195,8 +242,8 @@ jobs:
 
             try{
 
-              const {jsPDF}=
-                window.jspdf||{};
+              const {jsPDF} =
+                window.jspdf || {};
 
               if(!jsPDF){
 
@@ -206,45 +253,69 @@ jobs:
               }
 
               /*
+               * ======================================================
                * A4 RETRATO
-               *
-               * largura: 210 mm
-               * altura: 297 mm
+               * ======================================================
                */
-
-              const doc=new jsPDF({
-                orientation:'portrait',
-                unit:'mm',
-                format:'a4'
-              });
+              const doc =
+                new jsPDF({
+                  orientation:'portrait',
+                  unit:'mm',
+                  format:'a4'
+                });
 
               const pageWidth=210;
+
               const pageHeight=297;
 
-              const margin=10;
+              const margem=10;
 
-              const contentWidth=
-                pageWidth-(margin*2);
+              const larguraTabela=190;
 
               /*
-               * Colunas do relatório.
-               *
-               * Código: 28
-               * Produto: 107
-               * Estoque: 28
-               * Pedido: 27
-               *
-               * Total = 190 mm
+               * COLUNAS
                */
+              const colCodigo=27;
 
-              const colCodigo=28;
-              const colProduto=107;
-              const colEstoque=28;
-              const colPedido=27;
+              const colProduto=108;
+
+              const colEstoque=27;
+
+              const colPedido=28;
+
+              const xCodigo=margem;
+
+              const xProduto=
+                xCodigo+colCodigo;
+
+              const xEstoque=
+                xProduto+colProduto;
+
+              const xPedido=
+                xEstoque+colEstoque;
+
+              const alturaCabecalho=7;
+
+              const alturaLinha=6;
 
               let y=14;
 
-              function header(){
+              const data=
+                new Date().toLocaleDateString(
+                  'pt-BR',
+                  {
+                    day:'2-digit',
+                    month:'2-digit',
+                    year:'numeric'
+                  }
+                );
+
+              /*
+               * ======================================================
+               * TÍTULO
+               * ======================================================
+               */
+              function titulo(){
 
                 doc.setFont(
                   'helvetica',
@@ -271,22 +342,30 @@ jobs:
 
                 doc.setFontSize(9);
 
-                const data=
-                  new Date()
-                    .toLocaleDateString(
-                      'pt-BR'
-                    );
-
                 doc.text(
                   'Data: '+data,
-                  margin,
+                  margem,
                   y
                 );
 
-                y+=7;
+                y+=8;
               }
 
-              function tableHeader(){
+              /*
+               * ======================================================
+               * CABEÇALHO DA TABELA
+               * ======================================================
+               */
+              function cabecalhoTabela(){
+
+                if(
+                  y+
+                  alturaCabecalho>
+                  pageHeight-10
+                ){
+
+                  novaPagina();
+                }
 
                 doc.setFont(
                   'helvetica',
@@ -295,158 +374,145 @@ jobs:
 
                 doc.setFontSize(7.5);
 
-                /*
-                 * Moldura do cabeçalho
-                 */
-
                 doc.rect(
-                  margin,
+                  margem,
                   y,
-                  contentWidth,
-                  7
-                );
-
-                /*
-                 * Divisórias
-                 */
-
-                doc.line(
-                  margin+colCodigo,
-                  y,
-                  margin+colCodigo,
-                  y+7
+                  larguraTabela,
+                  alturaCabecalho
                 );
 
                 doc.line(
-                  margin+
-                    colCodigo+
-                    colProduto,
+                  xProduto,
                   y,
-                  margin+
-                    colCodigo+
-                    colProduto,
-                  y+7
+                  xProduto,
+                  y+alturaCabecalho
                 );
 
                 doc.line(
-                  margin+
-                    colCodigo+
-                    colProduto+
-                    colEstoque,
+                  xEstoque,
                   y,
-                  margin+
-                    colCodigo+
-                    colProduto+
-                    colEstoque,
-                  y+7
+                  xEstoque,
+                  y+alturaCabecalho
                 );
 
-                /*
-                 * Títulos
-                 */
+                doc.line(
+                  xPedido,
+                  y,
+                  xPedido,
+                  y+alturaCabecalho
+                );
 
                 doc.text(
                   'CÓDIGO',
-                  margin+2,
-                  y+4.8
+                  xCodigo+2,
+                  y+4.7
                 );
 
                 doc.text(
                   'NOME DO PRODUTO',
-                  margin+
-                    colCodigo+
-                    2,
-                  y+4.8
+                  xProduto+2,
+                  y+4.7
                 );
 
                 doc.text(
                   'ESTOQUE',
-                  margin+
-                    colCodigo+
-                    colProduto+
-                    2,
-                  y+4.8
+                  xEstoque+2,
+                  y+4.7
                 );
 
                 doc.text(
                   'PEDIDO',
-                  margin+
-                    colCodigo+
-                    colProduto+
-                    colEstoque+
-                    2,
-                  y+4.8
+                  xPedido+2,
+                  y+4.7
                 );
 
-                y+=7;
+                y+=alturaCabecalho;
               }
 
-              function fitText(
-                text,
-                maxWidth
-              ){
+              /*
+               * ======================================================
+               * NOME DO PRODUTO
+               * ======================================================
+               */
+              function nomeProduto(nome){
 
-                text=String(
-                  text||''
-                );
+                const original=
+                  String(nome||'');
 
-                if(
-                  doc.getTextWidth(
-                    text
-                  )<=maxWidth
-                ){
+                let valor=original;
 
-                  return text;
-                }
-
-                let result=text;
+                doc.setFontSize(7.2);
 
                 while(
-                  result.length>0 &&
+                  valor.length>3 &&
                   doc.getTextWidth(
-                    result+'...'
-                  )>maxWidth
+                    valor+'...'
+                  )>
+                  colProduto-4
                 ){
 
-                  result=
-                    result.slice(
-                      0,
-                      -1
-                    );
+                  valor=
+                    valor.slice(0,-1);
                 }
 
-                return result+'...';
+                if(
+                  valor!==original
+                ){
+
+                  return valor+'...';
+                }
+
+                return valor;
               }
 
-              function newPage(){
+              /*
+               * ======================================================
+               * NOVA PÁGINA
+               * ======================================================
+               */
+              function novaPagina(){
 
-                doc.addPage();
+                doc.addPage(
+                  'a4',
+                  'portrait'
+                );
 
                 y=14;
 
-                header();
+                titulo();
               }
 
-              header();
+              /*
+               * ======================================================
+               * INÍCIO
+               * ======================================================
+               */
+              titulo();
 
-              const groups=
+              const grupos=
                 groupRows(rows);
 
+              /*
+               * ======================================================
+               * CATEGORIAS
+               * ======================================================
+               */
               for(
-                const [cat,items]
-                of Object.entries(groups)
+                const [categoria,items]
+                of Object.entries(grupos)
               ){
 
-                /*
-                 * Espaço mínimo para categoria
-                 * + cabeçalho da tabela
-                 */
+                if(
+                  y+20>
+                  pageHeight-10
+                ){
 
-                if(y>268){
-
-                  newPage();
+                  novaPagina();
                 }
 
+                /*
+                 * NOME DA CATEGORIA
+                 */
                 doc.setFont(
                   'helvetica',
                   'bold'
@@ -455,37 +521,33 @@ jobs:
                 doc.setFontSize(10);
 
                 doc.text(
-                  String(cat)
-                    .toUpperCase(),
-                  margin,
+                  String(
+                    categoria||''
+                  ).toUpperCase(),
+                  margem,
                   y
                 );
 
                 y+=5;
 
-                tableHeader();
+                /*
+                 * CABEÇALHO
+                 */
+                cabecalhoTabela();
 
-                doc.setFont(
-                  'helvetica',
-                  'normal'
-                );
-
-                doc.setFontSize(7.2);
-
+                /*
+                 * PRODUTOS
+                 */
                 for(
-                  const x of items
+                  const item of items
                 ){
 
-                  /*
-                   * 6 mm por linha.
-                   *
-                   * Reserva espaço para
-                   * o rodapé.
-                   */
+                  if(
+                    y+alturaLinha>
+                    pageHeight-10
+                  ){
 
-                  if(y+6>285){
-
-                    newPage();
+                    novaPagina();
 
                     doc.setFont(
                       'helvetica',
@@ -495,163 +557,119 @@ jobs:
                     doc.setFontSize(10);
 
                     doc.text(
-                      String(cat)
-                        .toUpperCase(),
-                      margin,
+                      String(
+                        categoria||''
+                      ).toUpperCase(),
+                      margem,
                       y
                     );
 
                     y+=5;
 
-                    tableHeader();
-
-                    doc.setFont(
-                      'helvetica',
-                      'normal'
-                    );
-
-                    doc.setFontSize(7.2);
+                    cabecalhoTabela();
                   }
 
-                  const h=6;
+                  doc.setFont(
+                    'helvetica',
+                    'normal'
+                  );
+
+                  doc.setFontSize(7.2);
 
                   /*
-                   * Linha externa
+                   * LINHA
                    */
-
                   doc.rect(
-                    margin,
+                    margem,
                     y,
-                    contentWidth,
-                    h
-                  );
-
-                  /*
-                   * Divisórias
-                   */
-
-                  doc.line(
-                    margin+colCodigo,
-                    y,
-                    margin+colCodigo,
-                    y+h
+                    larguraTabela,
+                    alturaLinha
                   );
 
                   doc.line(
-                    margin+
-                      colCodigo+
-                      colProduto,
+                    xProduto,
                     y,
-                    margin+
-                      colCodigo+
-                      colProduto,
-                    y+h
+                    xProduto,
+                    y+alturaLinha
                   );
 
                   doc.line(
-                    margin+
-                      colCodigo+
-                      colProduto+
-                      colEstoque,
+                    xEstoque,
                     y,
-                    margin+
-                      colCodigo+
-                      colProduto+
-                      colEstoque,
-                    y+h
+                    xEstoque,
+                    y+alturaLinha
                   );
 
-                  const codigo=
+                  doc.line(
+                    xPedido,
+                    y,
+                    xPedido,
+                    y+alturaLinha
+                  );
+
+                  /*
+                   * CÓDIGO
+                   */
+                  doc.text(
                     String(
-                      x.code||''
-                    );
+                      item.code||'-'
+                    ),
+                    xCodigo+2,
+                    y+4
+                  );
 
-                  const nome=
-                    fitText(
-                      x.name||'',
-                      colProduto-4
-                    );
+                  /*
+                   * PRODUTO
+                   */
+                  doc.text(
+                    nomeProduto(
+                      item.name
+                    ),
+                    xProduto+2,
+                    y+4
+                  );
 
-                  const estoque=
+                  /*
+                   * ESTOQUE
+                   */
+                  doc.text(
                     String(
-                      x.stock==null
-                        ? ''
-                        : x.stock
-                    );
+                      item.stock??0
+                    ),
+                    xEstoque+2,
+                    y+4
+                  );
 
-                  const pedido=
+                  /*
+                   * PEDIDO
+                   */
+                  doc.text(
                     String(
-                      x.order==null
-                        ? ''
-                        : x.order
-                    );
-
-                  /*
-                   * Código
-                   */
-
-                  doc.text(
-                    codigo,
-                    margin+2,
+                      item.order??0
+                    ),
+                    xPedido+2,
                     y+4
                   );
 
-                  /*
-                   * Produto
-                   */
-
-                  doc.text(
-                    nome,
-                    margin+
-                      colCodigo+
-                      2,
-                    y+4
-                  );
-
-                  /*
-                   * Estoque
-                   */
-
-                  doc.text(
-                    estoque,
-                    margin+
-                      colCodigo+
-                      colProduto+
-                      2,
-                    y+4
-                  );
-
-                  /*
-                   * Pedido
-                   */
-
-                  doc.text(
-                    pedido,
-                    margin+
-                      colCodigo+
-                      colProduto+
-                      colEstoque+
-                      2,
-                    y+4
-                  );
-
-                  y+=h;
+                  y+=alturaLinha;
                 }
 
                 y+=5;
               }
 
               /*
-               * Observação geral
+               * ======================================================
+               * OBSERVAÇÃO
+               * ======================================================
                */
-
               if(generalObservation){
 
-                if(y+20>285){
+                if(
+                  y+20>
+                  pageHeight-10
+                ){
 
-                  doc.addPage();
-
-                  y=14;
+                  novaPagina();
                 }
 
                 doc.setFont(
@@ -663,7 +681,7 @@ jobs:
 
                 doc.text(
                   'OBSERVAÇÃO GERAL:',
-                  margin,
+                  margem,
                   y
                 );
 
@@ -674,36 +692,38 @@ jobs:
                   'normal'
                 );
 
-                const obsLines=
+                const linhas=
                   doc.splitTextToSize(
                     String(
                       generalObservation
                     ),
-                    contentWidth
+                    larguraTabela
                   );
 
                 doc.text(
-                  obsLines,
-                  margin,
+                  linhas,
+                  margem,
                   y
                 );
               }
 
               /*
-               * Rodapé
+               * ======================================================
+               * RODAPÉ
+               * ======================================================
                */
-
-              const totalPages=
-                doc.internal
-                  .getNumberOfPages();
+              const totalPaginas=
+                doc.internal.getNumberOfPages();
 
               for(
-                let page=1;
-                page<=totalPages;
-                page++
+                let pagina=1;
+                pagina<=totalPaginas;
+                pagina++
               ){
 
-                doc.setPage(page);
+                doc.setPage(
+                  pagina
+                );
 
                 doc.setFont(
                   'helvetica',
@@ -714,16 +734,16 @@ jobs:
 
                 doc.text(
                   'Super Pedido Pro',
-                  margin,
+                  margem,
                   pageHeight-5
                 );
 
                 doc.text(
                   'Página '+
-                    page+
-                    ' de '+
-                    totalPages,
-                  pageWidth-margin,
+                  pagina+
+                  ' de '+
+                  totalPaginas,
+                  pageWidth-margem,
                   pageHeight-5,
                   {
                     align:'right'
@@ -732,95 +752,132 @@ jobs:
               }
 
               /*
-               * Nome do arquivo
+               * ======================================================
+               * CONVERTE O PDF PARA BASE64
+               * ======================================================
                */
+              const base64=
+                doc
+                  .output(
+                    'datauristring'
+                  )
+                  .split(',')[1];
 
               const nomeArquivo=
-                'pedido-'+
-                new Date()
-                  .toISOString()
-                  .slice(0,10)+
+                'relatorio-pedido-'+
+                data.replace(
+                  /\//g,
+                  '-'
+                )+
                 '.pdf';
 
               /*
-               * ANDROID
+               * ======================================================
+               * IMPORTANTE
                *
-               * IMPORTANTE:
-               *
-               * Primeiro salva o histórico,
-               * depois limpa o pedido,
-               * e só então envia o PDF.
-               *
-               * Dessa forma o estado da tela
-               * não interfere no arquivo enviado.
+               * 1. O PDF já está pronto.
+               * 2. Salva histórico.
+               * 3. LIMPA pedido.
+               * 4. Só então abre o compartilhamento.
+               * ======================================================
                */
 
               if(
-                sendViaWhatsApp &&
-                window.AndroidFileBridge &&
-                window.AndroidFileBridge.sharePdf
+                typeof saveHistory===
+                'function'
               ){
 
-                const base64=
-                  doc
-                    .output(
-                      'datauristring'
-                    )
-                    .split(',')[1];
-
                 saveHistory(rows);
-
-                clearPedido();
-
-                window.AndroidFileBridge
-                  .sharePdf(
-                    nomeArquivo,
-                    base64
-                  );
-
-                return;
               }
 
               /*
-               * Compartilhamento Android
+               * LIMPA ANTES DO SHARE
                */
-
-              if(
-                window.AndroidFileBridge &&
-                window.AndroidFileBridge.sharePdf
-              ){
-
-                const base64=
-                  doc
-                    .output(
-                      'datauristring'
-                    )
-                    .split(',')[1];
-
-                saveHistory(rows);
-
-                clearPedido();
-
-                window.AndroidFileBridge
-                  .sharePdf(
-                    nomeArquivo,
-                    base64
-                  );
-
-                return;
-              }
-
-              /*
-               * Navegador / fallback
-               */
-
-              doc.save(
-                nomeArquivo
-              );
-
-              saveHistory(rows);
-
               clearPedido();
+
+              /*
+               * ======================================================
+               * ANDROID
+               * ======================================================
+               */
+              if(
+                window.AndroidFileBridge &&
+                typeof
+                window.AndroidFileBridge.sharePdf===
+                'function'
+              ){
+
+                window.AndroidFileBridge.sharePdf(
+                  nomeArquivo,
+                  base64
+                );
+
+                return;
+              }
+
+              /*
+               * ======================================================
+               * NAVEGADOR
+               * ======================================================
+               */
+              const byteChars=
+                atob(base64);
+
+              const bytes=
+                new Uint8Array(
+                  byteChars.length
+                );
+
+              for(
+                let i=0;
+                i<byteChars.length;
+                i++
+              ){
+
+                bytes[i]=
+                  byteChars.charCodeAt(i);
+              }
+
+              const blob=
+                new Blob(
+                  [bytes],
+                  {
+                    type:
+                      'application/pdf'
+                  }
+                );
+
+              const url=
+                URL.createObjectURL(
+                  blob
+                );
+
+              const a=
+                document.createElement(
+                  'a'
+                );
+
+              a.href=url;
+
+              a.download=
+                nomeArquivo;
+
+              document
+                .body
+                .appendChild(a);
+
+              a.click();
+
+              a.remove();
+
+              setTimeout(
+                ()=>{
+                  URL.revokeObjectURL(
+                    url
+                  );
+                },
+                1000
+              );
 
             }catch(e){
 
@@ -828,67 +885,105 @@ jobs:
 
               alert(
                 'Não foi possível gerar o PDF: '+
-                (e.message||e)
+                (
+                  e.message||e
+                )
               );
             }
-          }
-          '''
+          }'''
 
-          replaced=False
+          # ============================================================
+          # SUBSTITUIR OPENPDF INTEIRA
+          # ============================================================
 
-          for html in html_files:
-
-              text=html.read_text(
-                  encoding='utf-8',
-                  errors='ignore'
+          inicio=
+              text.find(
+                  "async function openPDF"
               )
 
-              start=text.find(
-                  'async function openPDF(sendViaWhatsApp=false)'
-              )
-
-              if start<0:
-                  continue
-
-              end=text.find(
-                  'function sendWhatsApp',
-                  start
-              )
-
-              if end<0:
-                  continue
-
-              fixed=(
-                  text[:start]
-                  +
-                  pdf_function
-                  +
-                  '\n'
-                  +
-                  text[end:]
-              )
-
-              html.write_text(
-                  fixed,
-                  encoding='utf-8'
-              )
-
-              print(
-                  'Relatório PDF RETRATO corrigido em:',
-                  html
-              )
-
-              replaced=True
-
-          if not replaced:
-
+          if inicio < 0:
               raise SystemExit(
-                  'ERRO: função openPDF não encontrada.'
+                  "ERRO: openPDF não encontrado"
               )
+
+          fim=
+              text.find(
+                  "function clearPedido",
+                  inicio
+              )
+
+          if fim < 0:
+              raise SystemExit(
+                  "ERRO: clearPedido não encontrado"
+              )
+
+          text=(
+              text[:inicio]
+              +
+              pdf_function
+              +
+              "\n"
+              +
+              text[fim:]
+          )
+
+          # ============================================================
+          # GARANTIR QUE A ORIENTAÇÃO ANTIGA NÃO SOBROU
+          # ============================================================
+
+          if "orientation:'landscape'" in text:
+              raise SystemExit(
+                  "ERRO: ainda existe orientation landscape no HTML"
+              )
+
+          if "orientation: 'landscape'" in text:
+              raise SystemExit(
+                  "ERRO: ainda existe orientation landscape no HTML"
+              )
+
+          # ============================================================
+          # GARANTIR RETRATO
+          # ============================================================
+
+          if "orientation:'portrait'" not in text:
+              raise SystemExit(
+                  "ERRO: orientação retrato não encontrada"
+              )
+
+          if "pageWidth=210" not in text:
+              raise SystemExit(
+                  "ERRO: largura A4 retrato não encontrada"
+              )
+
+          if "pageHeight=297" not in text:
+              raise SystemExit(
+                  "ERRO: altura A4 retrato não encontrada"
+              )
+
+          # ============================================================
+          # SALVAR HTML
+          # ============================================================
+
+          html.write_text(
+              text,
+              encoding="utf-8"
+          )
+
+          print(
+              "HTML corrigido com sucesso."
+          )
+
+          print(
+              "PDF: A4 RETRATO"
+          )
+
+          print(
+              "Limpeza: ATIVA"
+          )
 
           PY
 
-      - name: Preparar bibliotecas PDF e Excel
+      - name: Preparar bibliotecas locais
         shell: bash
         run: |
           set -e
@@ -909,69 +1004,67 @@ jobs:
 
           test -s "$ASSETS/jspdf.umd.min.js"
 
-      - name: Verificar codigo
+      - name: Verificar correcoes
         shell: bash
         run: |
           set -e
 
-          cd "$ANDROID_DIR"
+          HTML="$ANDROID_DIR/app/src/main/assets/app/index.html"
 
-          test -f settings.gradle
+          test -f "$HTML"
 
-          test -f build.gradle
+          echo "Verificando PDF..."
 
-          test -f app/build.gradle
+          grep -q "orientation:'portrait'" "$HTML"
 
-          test -s \
-            app/src/main/assets/app/xlsx.full.min.js
+          grep -q "format:'a4'" "$HTML"
 
-          test -s \
-            app/src/main/assets/app/jspdf.umd.min.js
+          grep -q "pageWidth=210" "$HTML"
 
-          if grep -R -n -E \
-            'sanitizeFilename[[:space:]]*\([[:space:]]*filename' \
-            app/src/main/java; then
+          grep -q "pageHeight=297" "$HTML"
 
-            echo \
-              "ERRO: sanitizeFilename ainda existe."
+          grep -q "RELATÓRIO DE PEDIDO" "$HTML"
 
+          grep -q "window.AndroidFileBridge.sharePdf" "$HTML"
+
+          echo "Verificando limpeza..."
+
+          grep -q "vals={};" "$HTML"
+
+          grep -q "extras=[];" "$HTML"
+
+          grep -q "validadeCurta=[];" "$HTML"
+
+          grep -q "finalizedRows=[];" "$HTML"
+
+          grep -q \
+            "localStorage.removeItem('pedido_compras_vals')" \
+            "$HTML"
+
+          grep -q \
+            "localStorage.removeItem('pedido_compras_extras')" \
+            "$HTML"
+
+          grep -q \
+            "localStorage.removeItem('pedido_compras_validade_curta')" \
+            "$HTML"
+
+          if grep -q "orientation:'landscape'" "$HTML"; then
+            echo "ERRO: PDF ainda está em landscape."
             exit 1
           fi
 
-          HTML=$(find \
-            app/src/main \
-            -name index.html \
-            -type f \
-            -print -quit)
+          if grep -q "orientation: 'landscape'" "$HTML"; then
+            echo "ERRO: PDF ainda está em landscape."
+            exit 1
+          fi
 
-          test -n "$HTML"
-
-          grep -q \
-            "async function openPDF(sendViaWhatsApp=false)" \
-            "$HTML"
-
-          grep -q \
-            "RELATÓRIO DE PEDIDO" \
-            "$HTML"
-
-          grep -q \
-            "orientation:'portrait'" \
-            "$HTML"
-
-          grep -q \
-            "window.AndroidFileBridge.sharePdf" \
-            "$HTML"
-
-          grep -q \
-            "saveHistory(rows)" \
-            "$HTML"
-
-          grep -q \
-            "clearPedido()" \
-            "$HTML"
-
-          echo \
-            "VERIFICACAO DO PDF RETRATO OK."
+          echo ""
+          echo "======================================"
+          echo "VERIFICACAO CONCLUIDA"
+          echo "PDF: A4 RETRATO"
+          echo "LIMPEZA: COMPLETA"
+          echo "======================================"
 
       - name: Compilar APK
         shell: bash
@@ -991,28 +1084,21 @@ jobs:
         run: |
           set -e
 
-          APK=$(find \
-            "$ANDROID_DIR/app/build/outputs/apk" \
-            -type f \
-            -name '*.apk' \
-            -print -quit)
+          APK="$ANDROID_DIR/app/build/outputs/apk/debug/app-debug.apk"
 
-          test -n "$APK"
+          test -f "$APK"
 
-          echo "APK=$APK" >> "$GITHUB_ENV"
-
+          echo ""
           echo "======================================"
-
           echo "APK GERADO COM SUCESSO"
-
           echo "======================================"
 
           ls -lh "$APK"
 
-      - name: Enviar APK como artefato
+      - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
           name: Super-Pedido-Pro-APK
-          path: ${{ env.APK }}
+          path: ${{ env.ANDROID_DIR }}/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30
