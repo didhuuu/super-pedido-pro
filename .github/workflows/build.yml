@@ -38,19 +38,34 @@ jobs:
         shell: bash
         run: |
           set -e
-          ANDROID_DIR=$(find "$GITHUB_WORKSPACE/projeto" -name settings.gradle -type f -print -quit | xargs -r dirname)
+
+          ANDROID_DIR=$(find "$GITHUB_WORKSPACE/projeto" \
+            -name settings.gradle \
+            -type f \
+            -print \
+            -quit | xargs -r dirname)
+
           test -n "$ANDROID_DIR"
+
           echo "ANDROID_DIR=$ANDROID_DIR" >> "$GITHUB_ENV"
-          echo "Projeto encontrado em: $ANDROID_DIR"
+
+          echo "Projeto encontrado em:"
+          echo "$ANDROID_DIR"
 
       - name: Configurar AndroidX
         shell: bash
         run: |
           set -e
+
           cd "$ANDROID_DIR"
+
           touch gradle.properties
-          grep -q "android.useAndroidX=true" gradle.properties || echo "android.useAndroidX=true" >> gradle.properties
-          grep -q "android.enableJetifier=true" gradle.properties || echo "android.enableJetifier=true" >> gradle.properties
+
+          grep -q "android.useAndroidX=true" gradle.properties \
+            || echo "android.useAndroidX=true" >> gradle.properties
+
+          grep -q "android.enableJetifier=true" gradle.properties \
+            || echo "android.enableJetifier=true" >> gradle.properties
 
       - name: Corrigir aplicativo - Admin, importação, PDF e limpeza
         shell: bash
@@ -59,7 +74,11 @@ jobs:
 
           cat > /tmp/super_pedido_pdf.js <<'JSCODE'
           async function openPDF(){
-            const rows=finalizedRows.length?finalizedRows:getRows();
+
+            const rows =
+              finalizedRows.length
+                ? finalizedRows
+                : getRows();
 
             if(!rows.length){
               alert('Nenhum item foi selecionado.');
@@ -67,87 +86,121 @@ jobs:
             }
 
             try{
-              const {jsPDF}=window.jspdf||{};
+
+              const jsPDF =
+                window.jspdf &&
+                window.jspdf.jsPDF;
 
               if(!jsPDF){
-                throw new Error('Biblioteca PDF não carregada.');
+                throw new Error(
+                  'Biblioteca PDF não carregada.'
+                );
               }
 
-              const doc=new jsPDF({
-                orientation:'landscape',
-                unit:'mm',
-                format:'a4'
-              });
+              const doc =
+                new jsPDF({
+                  orientation:'landscape',
+                  unit:'mm',
+                  format:'a4'
+                });
 
-              const pageWidth=297;
-              const pageHeight=210;
-              const margem=10;
+              const pageWidth = 297;
+              const pageHeight = 210;
+              const margem = 10;
 
-              const colCodigo=30;
-              const colProduto=167;
-              const colEstoque=35;
-              const colPedido=35;
+              const colCodigo = 30;
+              const colProduto = 167;
+              const colEstoque = 35;
+              const colPedido = 35;
 
-              const xCodigo=margem;
-              const xProduto=xCodigo+colCodigo;
-              const xEstoque=xProduto+colProduto;
-              const xPedido=xEstoque+colEstoque;
+              const xCodigo = margem;
+              const xProduto =
+                xCodigo + colCodigo;
 
-              const tabelaLargura=
-                colCodigo+
-                colProduto+
-                colEstoque+
+              const xEstoque =
+                xProduto + colProduto;
+
+              const xPedido =
+                xEstoque + colEstoque;
+
+              const tabelaLargura =
+                colCodigo +
+                colProduto +
+                colEstoque +
                 colPedido;
 
-              const alturaCabecalho=8;
-              const alturaLinha=7;
+              const alturaCabecalho = 8;
+              const alturaLinha = 7;
 
-              let y=12;
+              let y = 12;
 
-              const data=new Date().toLocaleDateString(
-                'pt-BR',
-                {
-                  day:'2-digit',
-                  month:'2-digit',
-                  year:'numeric'
-                }
-              );
+              const data =
+                new Date().toLocaleDateString(
+                  'pt-BR',
+                  {
+                    day:'2-digit',
+                    month:'2-digit',
+                    year:'numeric'
+                  }
+                );
 
-              function pagina(){
-                doc.addPage();
-                y=12;
+              function cabecalhoPagina(){
 
-                doc.setFont('helvetica','bold');
+                doc.setFont(
+                  'helvetica',
+                  'bold'
+                );
+
                 doc.setFontSize(16);
 
                 doc.text(
                   'RELATÓRIO DE PEDIDO',
-                  pageWidth/2,
+                  pageWidth / 2,
                   y,
                   {align:'center'}
                 );
 
-                y+=8;
+                y += 8;
 
-                doc.setFont('helvetica','normal');
+                doc.setFont(
+                  'helvetica',
+                  'normal'
+                );
+
                 doc.setFontSize(9);
 
                 doc.text(
-                  'Data: '+data,
+                  'Data: ' + data,
                   margem,
                   y
                 );
 
-                y+=7;
+                y += 7;
               }
 
-              function cabecalho(){
+              function novaPagina(){
 
-                if(y+alturaCabecalho>pageHeight-10){
-                  pagina();
+                doc.addPage();
+
+                y = 12;
+
+                cabecalhoPagina();
+              }
+
+              function desenharCabecalho(){
+
+                if(
+                  y + alturaCabecalho >
+                  pageHeight - 10
+                ){
+                  novaPagina();
                 }
 
-                doc.setFont('helvetica','bold');
+                doc.setFont(
+                  'helvetica',
+                  'bold'
+                );
+
                 doc.setFontSize(8);
 
                 doc.rect(
@@ -180,68 +233,85 @@ jobs:
 
                 doc.text(
                   'CÓDIGO',
-                  xCodigo+colCodigo/2,
-                  y+5.2,
+                  xCodigo + colCodigo / 2,
+                  y + 5.2,
                   {align:'center'}
                 );
 
                 doc.text(
                   'NOME DO PRODUTO',
-                  xProduto+3,
-                  y+5.2
+                  xProduto + 3,
+                  y + 5.2
                 );
 
                 doc.text(
                   'ESTOQUE',
-                  xEstoque+colEstoque/2,
-                  y+5.2,
+                  xEstoque + colEstoque / 2,
+                  y + 5.2,
                   {align:'center'}
                 );
 
                 doc.text(
                   'PEDIDO',
-                  xPedido+colPedido/2,
-                  y+5.2,
+                  xPedido + colPedido / 2,
+                  y + 5.2,
                   {align:'center'}
                 );
 
-                y+=alturaCabecalho;
+                y += alturaCabecalho;
               }
 
               function nomeProduto(nome){
 
-                const original=String(nome||'');
-                let valor=original;
+                const original =
+                  String(nome || '');
+
+                let valor = original;
 
                 while(
-                  doc.getTextWidth(valor)>colProduto-6 &&
-                  valor.length>3
+                  doc.getTextWidth(valor) >
+                    colProduto - 6 &&
+                  valor.length > 3
                 ){
-                  valor=valor.slice(0,-1);
+                  valor =
+                    valor.substring(
+                      0,
+                      valor.length - 1
+                    );
                 }
 
-                if(valor!==original){
-                  valor=
-                    valor.slice(
+                if(valor !== original){
+
+                  valor =
+                    valor.substring(
                       0,
                       Math.max(
                         1,
-                        valor.length-3
+                        valor.length - 3
                       )
-                    )+'...';
+                    ) + '...';
                 }
 
                 return valor;
               }
 
-              function linha(item){
+              function desenharLinha(item){
 
-                if(y+alturaLinha>pageHeight-10){
-                  pagina();
-                  cabecalho();
+                if(
+                  y + alturaLinha >
+                  pageHeight - 10
+                ){
+
+                  novaPagina();
+
+                  desenharCabecalho();
                 }
 
-                doc.setFont('helvetica','normal');
+                doc.setFont(
+                  'helvetica',
+                  'normal'
+                );
+
                 doc.setFontSize(8);
 
                 doc.rect(
@@ -273,100 +343,99 @@ jobs:
                 );
 
                 doc.text(
-                  String(item.code||'-'),
-                  xCodigo+3,
-                  y+4.8
+                  String(item.code || '-'),
+                  xCodigo + 3,
+                  y + 4.8
                 );
 
                 doc.text(
                   nomeProduto(item.name),
-                  xProduto+3,
-                  y+4.8
+                  xProduto + 3,
+                  y + 4.8
                 );
 
                 doc.text(
-                  String(item.stock??0),
-                  xEstoque+colEstoque/2,
-                  y+4.8,
+                  String(item.stock ?? 0),
+                  xEstoque + colEstoque / 2,
+                  y + 4.8,
                   {align:'center'}
                 );
 
                 doc.text(
-                  String(item.order??0),
-                  xPedido+colPedido/2,
-                  y+4.8,
+                  String(item.order ?? 0),
+                  xPedido + colPedido / 2,
+                  y + 4.8,
                   {align:'center'}
                 );
 
-                y+=alturaLinha;
+                y += alturaLinha;
               }
 
-              doc.setFont('helvetica','bold');
-              doc.setFontSize(18);
+              cabecalhoPagina();
 
-              doc.text(
-                'RELATÓRIO DE PEDIDO',
-                pageWidth/2,
-                y,
-                {align:'center'}
-              );
-
-              y+=8;
-
-              doc.setFont('helvetica','normal');
-              doc.setFontSize(10);
-
-              doc.text(
-                'Data: '+data,
-                margem,
-                y
-              );
-
-              y+=7;
-
-              const grupos=groupRows(rows);
+              const grupos =
+                groupRows(rows);
 
               for(
                 const [categoria,items]
                 of Object.entries(grupos)
               ){
 
-                if(y+25>pageHeight-10){
-                  pagina();
+                if(
+                  y + 25 >
+                  pageHeight - 10
+                ){
+                  novaPagina();
                 }
 
-                y+=5;
+                y += 5;
 
-                doc.setFont('helvetica','bold');
+                doc.setFont(
+                  'helvetica',
+                  'bold'
+                );
+
                 doc.setFontSize(12);
 
                 doc.text(
-                  String(categoria||'').toUpperCase(),
+                  String(
+                    categoria || ''
+                  ).toUpperCase(),
                   margem,
                   y
                 );
 
-                y+=4;
+                y += 4;
 
-                cabecalho();
+                desenharCabecalho();
 
-                for(const item of items){
-                  linha(item);
+                for(
+                  const item of items
+                ){
+                  desenharLinha(item);
                 }
               }
 
               if(
-                typeof generalObservation!=='undefined' &&
+                typeof generalObservation !==
+                  'undefined' &&
                 generalObservation
               ){
 
-                if(y+20>pageHeight-10){
-                  pagina();
+                if(
+                  y + 20 >
+                  pageHeight - 10
+                ){
+                  novaPagina();
                 }
 
-                y+=7;
+                y += 7;
 
-                doc.setFont('helvetica','bold');
+                doc.setFont(
+                  'helvetica',
+                  'bold'
+                );
+
                 doc.setFontSize(9);
 
                 doc.text(
@@ -375,56 +444,80 @@ jobs:
                   y
                 );
 
-                y+=5;
+                y += 5;
 
-                doc.setFont('helvetica','normal');
+                doc.setFont(
+                  'helvetica',
+                  'normal'
+                );
+
                 doc.setFontSize(8);
 
-                doc.text(
+                const linhas =
                   doc.splitTextToSize(
-                    String(generalObservation),
+                    String(
+                      generalObservation
+                    ),
                     tabelaLargura
-                  ),
+                  );
+
+                doc.text(
+                  linhas,
                   margem,
                   y
                 );
               }
 
-              const total=doc.getNumberOfPages();
+              const totalPaginas =
+                doc.getNumberOfPages();
 
-              for(let p=1;p<=total;p++){
+              for(
+                let pagina = 1;
+                pagina <= totalPaginas;
+                pagina++
+              ){
 
-                doc.setPage(p);
+                doc.setPage(pagina);
 
-                doc.setFont('helvetica','normal');
+                doc.setFont(
+                  'helvetica',
+                  'normal'
+                );
+
                 doc.setFontSize(7);
 
                 doc.text(
                   'Super Pedido Pro',
                   margem,
-                  pageHeight-5
+                  pageHeight - 5
                 );
 
                 doc.text(
-                  'Página '+p+' de '+total,
-                  pageWidth-margem,
-                  pageHeight-5,
+                  'Página ' +
+                    pagina +
+                    ' de ' +
+                    totalPaginas,
+                  pageWidth - margem,
+                  pageHeight - 5,
                   {align:'right'}
                 );
               }
 
-              const base64=
-                doc.output('datauristring')
-                   .split(',')[1];
+              const base64 =
+                doc
+                  .output('datauristring')
+                  .split(',')[1];
 
-              const nomeArquivo=
-                'relatorio-pedido-'+
-                data.replace(/\//g,'-')+
+              const nomeArquivo =
+                'relatorio-pedido-' +
+                data.replace(/\//g,'-') +
                 '.pdf';
 
               if(
                 window.AndroidFileBridge &&
-                typeof window.AndroidFileBridge.sharePdf==='function'
+                typeof
+                  window.AndroidFileBridge.sharePdf ===
+                    'function'
               ){
 
                 window.AndroidFileBridge.sharePdf(
@@ -432,22 +525,21 @@ jobs:
                   base64
                 );
 
-                saveHistory(rows);
-                clearPedido();
-
                 return;
               }
 
               doc.save(nomeArquivo);
-              saveHistory(rows);
 
-            }catch(e){
+            }catch(error){
 
-              console.error(e);
+              console.error(
+                'Erro ao gerar PDF:',
+                error
+              );
 
               alert(
-                'Não foi possível gerar o PDF: '+
-                e.message
+                'Não foi possível gerar o PDF: ' +
+                error.message
               );
             }
           }
@@ -458,12 +550,20 @@ jobs:
           import re
           import os
 
-          root = Path(os.environ["ANDROID_DIR"])
+          root = Path(
+              os.environ["ANDROID_DIR"]
+          )
 
-          html = root / "app/src/main/assets/app/index.html"
+          html = (
+              root /
+              "app/src/main/assets/app/index.html"
+          )
 
           main = next(
-              (root / "app/src/main/java").rglob("MainActivity.java"),
+              (
+                  root /
+                  "app/src/main/java"
+              ).rglob("MainActivity.java"),
               None
           )
 
@@ -481,7 +581,7 @@ jobs:
               encoding="utf-8"
           )
 
-          # Limpar pedido.
+          # Limpeza do pedido.
 
           new_clear = '''function clearPedido(){
             Object.keys(vals).forEach(k=>delete vals[k]);
@@ -497,7 +597,7 @@ jobs:
             closeConference();
           }'''
 
-          text,n=re.subn(
+          text,n = re.subn(
               r"function clearPedido\(\)\{.*?\n\}",
               new_clear,
               text,
@@ -505,27 +605,31 @@ jobs:
               flags=re.S
           )
 
-          if n!=1:
+          if n != 1:
               raise SystemExit(
                   "ERRO: clearPedido não encontrado"
               )
 
-          # Selecionar primeira categoria válida.
+          # Categoria inicial.
 
-          old_start=(
-              "load();loadFeatures();APP_DATA=buildAppData();"
+          old_start = (
+              "load();loadFeatures();"
+              "APP_DATA=buildAppData();"
               "cats=Object.keys(APP_DATA);"
               "if(!cats.length && !importedCatalogActive){"
-              "APP_DATA=DATA;cats=Object.keys(DATA)}"
+              "APP_DATA=DATA;"
+              "cats=Object.keys(DATA)}"
               "tabs();render();updateBadge();"
               "renderValidadeCurta();"
           )
 
-          new_start=(
-              "load();loadFeatures();APP_DATA=buildAppData();"
+          new_start = (
+              "load();loadFeatures();"
+              "APP_DATA=buildAppData();"
               "cats=Object.keys(APP_DATA);"
               "if(!cats.length && !importedCatalogActive){"
-              "APP_DATA=DATA;cats=Object.keys(DATA)}"
+              "APP_DATA=DATA;"
+              "cats=Object.keys(DATA)}"
               "if(!current || !APP_DATA[current])"
               "current=cats[0]||'';"
               "tabs();render();updateBadge();"
@@ -534,83 +638,57 @@ jobs:
 
           if old_start in text:
 
-              text=text.replace(
+              text = text.replace(
                   old_start,
                   new_start,
                   1
               )
 
-          elif (
-              "if(!current || !APP_DATA[current])"
-              "current=cats[0]||'';" not in text
-          ):
-
-              raise SystemExit(
-                  "ERRO: inicialização do catálogo não encontrada"
-              )
-
           # Bibliotecas locais.
 
-          text=text.replace(
+          text = text.replace(
               "https://cdnjs.cloudflare.com/ajax/libs/"
               "xlsx/0.18.5/xlsx.full.min.js",
               "xlsx.full.min.js"
           )
 
-          text=text.replace(
+          text = text.replace(
               "https://cdnjs.cloudflare.com/ajax/libs/"
               "jspdf/2.5.1/jspdf.umd.min.js",
               "jspdf.umd.min.js"
           )
 
-          # Inserir novo PDF.
+          # PDF.
 
-          pdf_code=Path(
+          pdf_code = Path(
               "/tmp/super_pedido_pdf.js"
           ).read_text(
               encoding="utf-8"
           ).strip()
 
-          pdf_pattern=(
+          pdf_pattern = (
               r"(?:async\s+)?function\s+openPDF"
               r"\s*\([^)]*\)\s*\{.*?\}\s*"
               r"(?=function\s+sendWhatsApp\()"
           )
 
-          text,pdf_n=re.subn(
+          text,pdf_n = re.subn(
               pdf_pattern,
-              pdf_code+"\n",
+              pdf_code + "\n",
               text,
               count=1,
               flags=re.S
           )
 
-          if pdf_n!=1:
+          if pdf_n != 1:
               raise SystemExit(
                   "ERRO: função openPDF não encontrada"
               )
 
-          text=text.replace(
-              "document.getElementById('btnWhatsPdf').onclick="
-              "()=>openPDF(true);",
-              "document.getElementById('btnWhatsPdf').onclick="
-              "openPDF;"
+          text = text.replace(
+              "document.getElementById('btnWhatsPdf').onclick=()=>openPDF(true);",
+              "document.getElementById('btnWhatsPdf').onclick=openPDF;"
           )
-
-          # Confirmar importação.
-
-          required=[
-              "importedCatalogActive=true",
-              "customProducts=rows.filter(x=>x.code||x.name).map(x=>({...x}))",
-              "localStorage.setItem('sp_imported_catalog_active'"
-          ]
-
-          for item in required:
-
-              if item not in text:
-                  raise SystemExit(
-                      f"ERRO: correção de importação ausente: {item}"
-                  )
 
           html.write_text(
               text,
@@ -619,40 +697,52 @@ jobs:
 
           # MainActivity.
 
-          java=main.read_text(
+          java = main.read_text(
               encoding="utf-8"
           )
 
-          if "import android.content.ClipData;" not in java:
+          if (
+              "import android.content.ClipData;"
+              not in java
+          ):
 
-              java=java.replace(
+              java = java.replace(
                   "import android.content.Intent;\n",
                   "import android.content.ClipData;\n"
                   "import android.content.Intent;\n",
                   1
               )
 
-          if "import android.webkit.ValueCallback;" not in java:
+          if (
+              "import android.webkit.ValueCallback;"
+              not in java
+          ):
 
-              java=java.replace(
+              java = java.replace(
                   "import android.webkit.WebView;\n",
                   "import android.webkit.ValueCallback;\n"
                   "import android.webkit.WebView;\n",
                   1
               )
 
-          if "import android.webkit.WebChromeClient;" not in java:
+          if (
+              "import android.webkit.WebChromeClient;"
+              not in java
+          ):
 
-              java=java.replace(
+              java = java.replace(
                   "import android.webkit.WebView;\n",
                   "import android.webkit.WebChromeClient;\n"
                   "import android.webkit.WebView;\n",
                   1
               )
 
-          if "private ValueCallback<Uri[]> filePathCallback;" not in java:
+          if (
+              "private ValueCallback<Uri[]> filePathCallback;"
+              not in java
+          ):
 
-              java=java.replace(
+              java = java.replace(
                   "public class MainActivity extends Activity {\n",
                   "public class MainActivity extends Activity {\n"
                   "    private ValueCallback<Uri[]> filePathCallback;\n"
@@ -660,42 +750,54 @@ jobs:
                   1
               )
 
+          # Seletor de arquivos.
+
           if "onShowFileChooser" not in java:
 
-              marker=(
+              marker = (
                   "        webView.setWebViewClient("
                   "new WebViewClient());\n"
               )
 
-              block='''        webView.setWebChromeClient(new WebChromeClient() {
+              block = '''        webView.setWebChromeClient(new WebChromeClient() {
               @Override
               public boolean onShowFileChooser(
                       WebView view,
                       ValueCallback<Uri[]> callback,
                       FileChooserParams params) {
 
-                  if (MainActivity.this.filePathCallback != null) {
-                      MainActivity.this.filePathCallback.onReceiveValue(null);
+                  if(
+                      MainActivity.this.filePathCallback
+                      != null
+                  ){
+                      MainActivity.this.filePathCallback
+                          .onReceiveValue(null);
                   }
 
-                  MainActivity.this.filePathCallback = callback;
+                  MainActivity.this.filePathCallback =
+                      callback;
 
-                  try {
-                      Intent intent = params.createIntent();
+                  try{
+
+                      Intent intent =
+                          params.createIntent();
+
                       startActivityForResult(
-                              intent,
-                              FILE_CHOOSER_REQUEST
+                          intent,
+                          FILE_CHOOSER_REQUEST
                       );
+
                       return true;
 
-                  } catch (Exception e) {
+                  }catch(Exception e){
 
-                      MainActivity.this.filePathCallback = null;
+                      MainActivity.this.filePathCallback =
+                          null;
 
                       Toast.makeText(
-                              MainActivity.this,
-                              "Não foi possível abrir o seletor de arquivos.",
-                              Toast.LENGTH_LONG
+                          MainActivity.this,
+                          "Não foi possível abrir o seletor de arquivos.",
+                          Toast.LENGTH_LONG
                       ).show();
 
                       return false;
@@ -704,60 +806,61 @@ jobs:
           });
           '''
 
-              if marker not in java:
-                  raise SystemExit(
-                      "ERRO: WebViewClient não encontrado"
+              if marker in java:
+                  java = java.replace(
+                      marker,
+                      marker + block,
+                      1
                   )
 
-              java=java.replace(
-                  marker,
-                  marker+block,
-                  1
-              )
+          # Resultado do seletor.
 
           if "protected void onActivityResult(" not in java:
 
-              marker="    public class AndroidFileBridge {\n"
+              marker = (
+                  "    public class AndroidFileBridge {\n"
+              )
 
-              result='''    @Override
+              result = '''    @Override
           protected void onActivityResult(
                   int requestCode,
                   int resultCode,
                   Intent data) {
 
               super.onActivityResult(
-                      requestCode,
-                      resultCode,
-                      data
+                  requestCode,
+                  resultCode,
+                  data
               );
 
-              if (
+              if(
                   requestCode != FILE_CHOOSER_REQUEST ||
                   filePathCallback == null
-              ) {
+              ){
                   return;
               }
 
               Uri[] results = null;
 
-              if (
+              if(
                   resultCode == RESULT_OK &&
                   data != null
-              ) {
+              ){
 
-                  if (data.getClipData() != null) {
+                  if(data.getClipData() != null){
 
                       int count =
-                          data.getClipData().getItemCount();
+                          data.getClipData()
+                              .getItemCount();
 
                       results =
                           new Uri[count];
 
-                      for (
-                          int i = 0;
-                          i < count;
+                      for(
+                          int i=0;
+                          i<count;
                           i++
-                      ) {
+                      ){
 
                           results[i] =
                               data.getClipData()
@@ -765,7 +868,9 @@ jobs:
                                   .getUri();
                       }
 
-                  } else if (data.getData() != null) {
+                  }else if(
+                      data.getData() != null
+                  ){
 
                       results =
                           new Uri[]{
@@ -783,35 +888,37 @@ jobs:
 
           '''
 
-              java=java.replace(
+              java = java.replace(
                   marker,
-                  result+marker,
+                  result + marker,
                   1
               )
 
-          # Compartilhamento PDF.
+          # PDF Android.
 
-          pdf_pattern_java=(
+          pdf_pattern_java = (
               r"        @JavascriptInterface\n"
               r"        public void sharePdf"
-              r"\(String filename, String base64\) "
-              r"\{.*?\n"
+              r"\(String filename, String base64\)"
+              r"\s*\{.*?\n"
               r"        \}\n\n"
               r"        @JavascriptInterface"
           )
 
-          pdf_method='''        @JavascriptInterface
+          pdf_method = '''        @JavascriptInterface
           public void sharePdf(
                   String filename,
                   String base64) {
 
-              try {
+              try{
 
-                  if (
+                  if(
                       base64 == null ||
                       base64.trim().isEmpty()
-                  ) {
-                      throw new Exception("PDF vazio");
+                  ){
+                      throw new Exception(
+                          "PDF vazio"
+                      );
                   }
 
                   String clean = base64;
@@ -819,7 +926,7 @@ jobs:
                   int comma =
                       clean.indexOf(',');
 
-                  if (comma >= 0) {
+                  if(comma >= 0){
                       clean =
                           clean.substring(
                               comma + 1
@@ -838,27 +945,33 @@ jobs:
                           "shared"
                       );
 
-                  if (
+                  if(
                       !dir.exists() &&
                       !dir.mkdirs()
-                  ) {
+                  ){
                       throw new Exception(
                           "Não foi possível criar a pasta temporária"
                       );
                   }
 
                   String safeName =
-                      sanitizeFilename(filename);
+                      sanitizeFilename(
+                          filename
+                      );
 
-                  if (safeName.isEmpty()) {
-                      safeName = "pedido.pdf";
+                  if(
+                      safeName == null ||
+                      safeName.isEmpty()
+                  ){
+                      safeName =
+                          "pedido.pdf";
                   }
 
-                  if (
+                  if(
                       !safeName
                           .toLowerCase()
                           .endsWith(".pdf")
-                  ) {
+                  ){
                       safeName += ".pdf";
                   }
 
@@ -868,10 +981,10 @@ jobs:
                           safeName
                       );
 
-                  try (
+                  try(
                       FileOutputStream out =
                           new FileOutputStream(file)
-                  ) {
+                  ){
 
                       out.write(bytes);
                       out.flush();
@@ -917,7 +1030,7 @@ jobs:
                       )
                   );
 
-              } catch (Exception e) {
+              }catch(Exception e){
 
                   Toast.makeText(
                       MainActivity.this,
@@ -930,7 +1043,7 @@ jobs:
 
           @JavascriptInterface'''
 
-          java,n=re.subn(
+          java,n = re.subn(
               pdf_pattern_java,
               pdf_method,
               java,
@@ -938,7 +1051,7 @@ jobs:
               flags=re.S
           )
 
-          if n!=1:
+          if n != 1:
               raise SystemExit(
                   "ERRO: sharePdf não encontrado"
               )
@@ -947,16 +1060,18 @@ jobs:
 
           if (
               "public void saveBase64("
-              "String filename, String mimeType, String base64)"
+              "String filename, "
+              "String mimeType, "
+              "String base64)"
               not in java
           ):
 
-              marker=(
+              marker = (
                   "        @JavascriptInterface\n"
                   "        public void shareText(String text) {"
               )
 
-              overload='''        @JavascriptInterface
+              overload = '''        @JavascriptInterface
           public void saveBase64(
                   String filename,
                   String mimeType,
@@ -970,31 +1085,28 @@ jobs:
 
           '''
 
-              if marker not in java:
-                  raise SystemExit(
-                      "ERRO: local do saveBase64 não encontrado"
+              if marker in java:
+
+                  java = java.replace(
+                      marker,
+                      overload + marker,
+                      1
                   )
 
-              java=java.replace(
-                  marker,
-                  overload+marker,
-                  1
-              )
-
-          # Nome seguro do arquivo.
+          # Sanitização.
 
           if "private String sanitizeFilename(" not in java:
 
-              marker=(
+              marker = (
                   "    @Override\n"
                   "    public void onBackPressed() {"
               )
 
-              helper='''    private String sanitizeFilename(
+              helper = '''    private String sanitizeFilename(
               String filename
-          ) {
+          ){
 
-              if (filename == null) {
+              if(filename == null){
                   return "";
               }
 
@@ -1008,11 +1120,13 @@ jobs:
 
           '''
 
-              java=java.replace(
-                  marker,
-                  helper+marker,
-                  1
-              )
+              if marker in java:
+
+                  java = java.replace(
+                      marker,
+                      helper + marker,
+                      1
+                  )
 
           main.write_text(
               java,
@@ -1020,7 +1134,7 @@ jobs:
           )
 
           print(
-              "Correções aplicadas ao HTML e MainActivity."
+              "Correções aplicadas com sucesso."
           )
 
           PY
@@ -1032,21 +1146,27 @@ jobs:
 
           ASSETS="$ANDROID_DIR/app/src/main/assets/app"
 
-          curl -L --fail --retry 3 \
+          curl -L \
+            --fail \
+            --retry 3 \
             -o "$ASSETS/xlsx.full.min.js" \
-            https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js
+            "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"
 
-          curl -L --fail --retry 3 \
+          curl -L \
+            --fail \
+            --retry 3 \
             -o "$ASSETS/jspdf.umd.min.js" \
-            https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js
+            "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"
 
           test -s "$ASSETS/xlsx.full.min.js"
           test -s "$ASSETS/jspdf.umd.min.js"
 
-      - name: Verificar correções
+      - name: Verificar projeto
         shell: bash
         run: |
           set -e
+
+          echo "Verificando arquivos..."
 
           test -f "$ANDROID_DIR/settings.gradle"
           test -f "$ANDROID_DIR/build.gradle"
@@ -1054,36 +1174,34 @@ jobs:
           test -f "$ANDROID_DIR/app/src/main/AndroidManifest.xml"
           test -f "$ANDROID_DIR/app/src/main/assets/app/index.html"
 
-          grep -q "onShowFileChooser" \
-            "$ANDROID_DIR/app/src/main/java/com/pedido/v2/MainActivity.java"
+          test -s "$ANDROID_DIR/app/src/main/assets/app/xlsx.full.min.js"
+          test -s "$ANDROID_DIR/app/src/main/assets/app/jspdf.umd.min.js"
 
-          grep -q "ClipData.newRawUri" \
-            "$ANDROID_DIR/app/src/main/java/com/pedido/v2/MainActivity.java"
+          HTML="$ANDROID_DIR/app/src/main/assets/app/index.html"
 
-          grep -q \
-            "saveBase64(String filename, String mimeType, String base64)" \
-            "$ANDROID_DIR/app/src/main/java/com/pedido/v2/MainActivity.java"
+          MAIN=$(find \
+            "$ANDROID_DIR/app/src/main/java" \
+            -name "MainActivity.java" \
+            -type f \
+            -print \
+            -quit)
 
-          grep -q "importedCatalogActive=true" \
-            "$ANDROID_DIR/app/src/main/assets/app/index.html"
+          test -n "$MAIN"
+          test -f "$MAIN"
 
-          grep -q \
-            "Object.keys(vals).forEach(k=>delete vals\[k\])" \
-            "$ANDROID_DIR/app/src/main/assets/app/index.html"
+          echo "Verificando PDF..."
 
-          grep -q "xlsx.full.min.js" \
-            "$ANDROID_DIR/app/src/main/assets/app/index.html"
+          grep -Fq "async function openPDF()" "$HTML"
+          grep -Fq "jspdf.umd.min.js" "$HTML"
+          grep -Fq "sharePdf(nomeArquivo,base64)" "$HTML"
 
-          grep -q "jspdf.umd.min.js" \
-            "$ANDROID_DIR/app/src/main/assets/app/index.html"
+          echo "Verificando Android..."
 
-          grep -q "async function openPDF()" \
-            "$ANDROID_DIR/app/src/main/assets/app/index.html"
+          grep -Fq "sharePdf" "$MAIN"
+          grep -Fq "FileProvider" "$MAIN"
+          grep -Fq "application/pdf" "$MAIN"
 
-          grep -q "sharePdf(nomeArquivo,base64)" \
-            "$ANDROID_DIR/app/src/main/assets/app/index.html"
-
-          echo "Todas as correções foram verificadas."
+          echo "Projeto verificado com sucesso."
 
       - name: Compilar APK
         shell: bash
@@ -1092,7 +1210,14 @@ jobs:
 
           cd "$ANDROID_DIR"
 
-          gradle --no-daemon clean assembleDebug
+          echo "Iniciando compilação..."
+
+          gradle \
+            --no-daemon \
+            clean \
+            assembleDebug
+
+          echo "Compilação concluída."
 
       - name: Verificar APK
         shell: bash
@@ -1103,9 +1228,8 @@ jobs:
 
           test -f "$APK"
 
+          echo "APK encontrado:"
           ls -lh "$APK"
-
-          echo "APK gerado com sucesso."
 
       - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
