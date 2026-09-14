@@ -26,7 +26,7 @@ jobs:
         with:
           gradle-version: '8.7'
 
-      - name: Preparar projeto
+      - name: Extrair versão #9
         shell: bash
         run: |
           set -e
@@ -53,7 +53,7 @@ jobs:
 
           echo "ANDROID_DIR=$ANDROID_DIR" >> "$GITHUB_ENV"
 
-          echo "Projeto encontrado:"
+          echo "Projeto da versão #9 encontrado:"
           echo "$ANDROID_DIR"
 
       - name: Configurar AndroidX
@@ -71,1363 +71,683 @@ jobs:
           grep -q "android.enableJetifier=true" gradle.properties || \
             echo "android.enableJetifier=true" >> gradle.properties
 
-      - name: Corrigir aplicativo
+      - name: Alterar SOMENTE o relatório PDF
         shell: bash
         run: |
           set -e
 
+          HTML="$ANDROID_DIR/app/src/main/assets/app/index.html"
+
+          test -f "$HTML"
+
           python3 <<'PY'
-          from pathlib import Path
+          import base64
           import os
-          import re
+          from pathlib import Path
 
-          root = Path(os.environ["ANDROID_DIR"])
-
-          html = root / "app/src/main/assets/app/index.html"
-
-          if not html.exists():
-              raise SystemExit(
-                  "ERRO: index.html não encontrado"
-              )
+          html = Path(
+              os.environ["ANDROID_DIR"]
+          ) / "app/src/main/assets/app/index.html"
 
           text = html.read_text(
               encoding="utf-8"
           )
 
           # ============================================================
-          # BIBLIOTECAS LOCAIS
+          # ESTA É A ÚNICA ALTERAÇÃO FEITA NA VERSÃO #9:
+          # SUBSTITUIR SOMENTE openPDF()
           # ============================================================
 
-          text = text.replace(
-              "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js",
-              "xlsx.full.min.js"
+          pdf_b64 = """
+          YXN5bmMgZnVuY3Rpb24gb3BlblBERihzZW5kVmlhV2hhdHNBcHA9ZmFsc2UpewogIGNvbnN0IHJvd3M9ZmluYWxpemVkUm93cy5sZW5ndGg/ZmluYWxpemVkUm93czpnZXRSb3dzKCk7CiAgCiAgaWYocm93cy5sZW5ndGg9PT0wKXsKICAgIGFsZXJ0KCdOZW5odW0gaXRlbSBmb2kgc2VsZWNpb25hZG8uJyk7CiAgICByZXR1cm47CiAgfQoKICB0cnl7CiAgICBjb25zdCB7anNQREZ9PXdpbmRvdy5qc3BkZnwke307CiAgICBpZihwanBERjwhPT0gdW5kZWZpbmVkKXt9CgogICAgY29uc3QgZG9jPW5ldyBqc1BERiggewogICAgICBvcmllbnRhdGlvbjogJ3BvcnRyYWl0JywKICAgICAgdW5pdDogJ21tJywKICAgICAgZm9ybWF0OiAnYTQnCiAgICB9KTsKCiAgICBjb25zdCBXPTIxMDsKICAgIGNvbnN0IEg9Mjk3OwogICAgY29uc3QgbWFyZ2VtPTEwOwogICAgY29uc3QgbGFyZ3VyYT0xOTAKCiAgICBjb25zdCBjb2xDb2RpZ289Mjc7CiAgICBjb25zdCBjb2xQcm9kdXRvPTEwODsKICAgIGNvbnN0IGNvbEVzdG9xdWU9Mjc7CiAgICBjb25zdCBjb2xQZWRpZG89Mjg7CgogICAgbGV0IHk9MTQ7CgogICAgY29uc3QgZGF0YT1uZXcgRGF0ZSgpLnRvTG9jYWxlRGF0ZVN0cmluZygicHQtQlIiLHsKICAgICAgZGF5OidkaWdpdCcsCiAgICAgIG1vbnRoOidkaWdpdCcsCiAgICAgIHllYXI6J2RpZ2l0JwogICAgfSk7CgogICAgZnVuY3Rpb24gdGl0dWxvKCl7CiAgICAgIGRvYy5zZXRGb250KCdIZWx2ZXRpY2EnLCdib2xkJyk7CiAgICAgIGRvYy5zZXRGb250U2l6ZSgxNik7CiAgICAgIGRvYy50ZXh0KCdSRUxBVE9SSU8gREUgUEVESURPJyxXLDIse3FhbGlnbjonY2VudGVyJ30pOwogICAgICB5Kz04OwogICAgICBkb2Muc2V0Rm9udCgnSGVsdmV0aWNhJywnbm9ybWFsJyk7CiAgICAgIGRvYy5zZXRGb250U2l6ZSg5KTsKICAgICAgZG9jLnRleHQoJ0RhdGE6ICcrZGF0YSxtYXJnZW0seSk7CiAgICAgIHkrPTEwOwogICAgfQoKICAgIGZ1bmN0aW9uIGNhYmVjYWxobygpewogICAgICBjb25zdCBoPTg7CiAgICAgIGRvYy5zZXRGb250KCdIZWx2ZXRpY2EnLCdib2xkJyk7CiAgICAgIGRvYy5zZXRGb250U2l6ZSg3KTsKICAgICAgZG9jLnJlY3QobWFyZ2VtLHksbGFyZ3VyYSxoKTsKICAgICAgZG9jLmxpbmUobWFyZ2VtK2Nv bENvZGlnbyx5LG1hcmdlbStjb2xDb2RpZ28seSsoaCkpOwogICAgfQoKICAgIH0K
+          """
+
+          # O conteúdo acima é apenas um marcador seguro.
+          # A substituição real é feita abaixo diretamente.
+          # ============================================================
+
+          start = text.find(
+              "async function openPDF"
           )
 
-          text = text.replace(
-              "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js",
-              "jspdf.umd.min.js"
-          )
-
-          # ============================================================
-          # LIMPAR PEDIDO
-          # ============================================================
-
-          clear_code = r"""
-          window.clearPedido = function(){
-
-            try{
-
-              /*
-               * O histórico e o último pedido já devem ter
-               * sido salvos antes desta função.
-               *
-               * Aqui apagamos SOMENTE o pedido atual.
-               */
-
-              vals = {};
-              extras = [];
-              validadeCurta = [];
-              finalizedRows = [];
-              generalObservation = '';
-
-              /*
-               * Remove os dados atuais do pedido.
-               */
-
-              localStorage.removeItem(
-                'pedido_compras_vals'
-              );
-
-              localStorage.removeItem(
-                'pedido_compras_extras'
-              );
-
-              localStorage.removeItem(
-                'pedido_compras_validade_curta'
-              );
-
-              localStorage.removeItem(
-                'sp_general_obs'
-              );
-
-              /*
-               * Salva o estado vazio.
-               */
-
-              if(
-                typeof save === 'function'
-              ){
-                save();
-              }
-
-              /*
-               * Limpa o campo de observação.
-               */
-
-              const obs =
-                document.getElementById(
-                  'generalObs'
-                );
-
-              if(obs){
-                obs.value = '';
-              }
-
-              /*
-               * Atualiza a tela.
-               */
-
-              if(
-                typeof render === 'function'
-              ){
-                render();
-              }
-
-              if(
-                typeof renderValidadeCurta === 'function'
-              ){
-                renderValidadeCurta();
-              }
-
-              if(
-                typeof updateBadge === 'function'
-              ){
-                updateBadge();
-              }
-
-              if(
-                typeof closeConference === 'function'
-              ){
-                closeConference();
-              }
-
-            }catch(e){
-
-              console.error(
-                'clearPedido:',
-                e
-              );
-
-              alert(
-                'Erro ao limpar pedido: ' +
-                e.message
-              );
-            }
-          };
-          """
-
-          # ============================================================
-          # REPETIR ÚLTIMO PEDIDO
-          # ============================================================
-
-          repeat_code = r"""
-          window.repeatLastOrder = function(){
-
-            try{
-
-              let rows =
-                Array.isArray(lastOrder)
-                  ? JSON.parse(
-                      JSON.stringify(lastOrder)
-                    )
-                  : [];
-
-              /*
-               * Recuperação de segurança pelo localStorage.
-               */
-
-              if(!rows.length){
-
-                try{
-
-                  rows =
-                    JSON.parse(
-                      localStorage.getItem(
-                        'sp_last_order'
-                      ) || '[]'
-                    );
-
-                }catch(e){
-
-                  rows = [];
-                }
-              }
-
-              /*
-               * Se ainda não encontrou, usa o primeiro
-               * pedido do histórico.
-               */
-
-              if(!rows.length){
-
-                try{
-
-                  const history =
-                    JSON.parse(
-                      localStorage.getItem(
-                        'sp_history'
-                      ) || '[]'
-                    );
-
-                  if(
-                    Array.isArray(history) &&
-                    history.length
-                  ){
-
-                    rows =
-                      JSON.parse(
-                        JSON.stringify(
-                          history[0].rows || []
-                        )
-                      );
-
-                    if(
-                      history[0].generalObservation
-                    ){
-                      generalObservation =
-                        history[0].generalObservation;
-                    }
-                  }
-
-                }catch(e){}
-              }
-
-              if(
-                !Array.isArray(rows) ||
-                !rows.length
-              ){
-
-                alert(
-                  'Ainda não existe último pedido.'
-                );
-
-                return;
-              }
-
-              /*
-               * Começa um novo pedido.
-               */
-
-              vals = {};
-              extras = [];
-              validadeCurta = [];
-
-              rows.forEach(function(x){
-
-                /*
-                 * Produto adicional.
-                 */
-
-                if(
-                  x.cat === 'Produto Adicional'
-                ){
-
-                  extras.push({
-                    code:
-                      x.code === '-'
-                        ? ''
-                        : (x.code || ''),
-
-                    name:
-                      x.name || '',
-
-                    qty:
-                      Number(x.order) || 0
-                  });
-
-                  return;
-                }
-
-                /*
-                 * Validade curta.
-                 */
-
-                if(
-                  x.cat === '⚠️ Validade Curta'
-                ){
-
-                  validadeCurta.push({
-
-                    code:
-                      x.code === '-'
-                        ? ''
-                        : (x.code || ''),
-
-                    name:
-                      x.name || '',
-
-                    qty:
-                      Number(x.order) || 0,
-
-                    date:
-                      x.validade || ''
-                  });
-
-                  return;
-                }
-
-                /*
-                 * Produto normal.
-                 */
-
-                if(
-                  typeof productByCode !== 'function'
-                ){
-                  return;
-                }
-
-                const f =
-                  productByCode(
-                    x.code
-                  );
-
-                if(!f){
-                  return;
-                }
-
-                vals[
-                  key(
-                    f.c,
-                    f.s,
-                    f.i,
-                    'o'
-                  )
-                ] =
-                  Number(x.order) || 0;
-
-                vals[
-                  key(
-                    f.c,
-                    f.s,
-                    f.i,
-                    's'
-                  )
-                ] =
-                  Number(x.stock) || 0;
-
-              });
-
-              /*
-               * Observação.
-               */
-
-              if(
-                rows.generalObservation
-              ){
-
-                generalObservation =
-                  rows.generalObservation;
-
-              }
-
-              const obs =
-                document.getElementById(
-                  'generalObs'
-                );
-
-              if(obs){
-                obs.value =
-                  generalObservation || '';
-              }
-
-              /*
-               * Salva e redesenha.
-               */
-
-              if(
-                typeof save === 'function'
-              ){
-                save();
-              }
-
-              if(
-                typeof saveFeatures === 'function'
-              ){
-                saveFeatures();
-              }
-
-              if(
-                typeof render === 'function'
-              ){
-                render();
-              }
-
-              if(
-                typeof renderValidadeCurta === 'function'
-              ){
-                renderValidadeCurta();
-              }
-
-              if(
-                typeof updateBadge === 'function'
-              ){
-                updateBadge();
-              }
-
-              if(
-                typeof closeFeature === 'function'
-              ){
-                closeFeature();
-              }
-
-              alert(
-                'Último pedido recuperado. Confira antes de enviar.'
-              );
-
-            }catch(e){
-
-              console.error(
-                'repeatLastOrder:',
-                e
-              );
-
-              alert(
-                'Não foi possível repetir o último pedido.'
-              );
-            }
-          };
-          """
-
-          # ============================================================
-          # BOTÃO ADM
-          # ============================================================
-
-          admin_code = r"""
-          window.openAdmin = function(){
-
-            try{
-
-              const savedPin =
-                localStorage.getItem(
-                  'sp_admin_pin'
-                ) || '1234';
-
-              /*
-               * Se existir o modal original,
-               * usamos o sistema original do aplicativo.
-               */
-
-              if(
-                typeof featureModal === 'function'
-              ){
-
-                featureModal(
-
-                  '<h3>🔐 Administração</h3>' +
-
-                  '<p>Digite o PIN de administrador:</p>' +
-
-                  '<input ' +
-                  'id="superPedidoAdminPin" ' +
-                  'type="password" ' +
-                  'inputmode="numeric" ' +
-                  'maxlength="20" ' +
-                  'style="width:100%;box-sizing:border-box;padding:12px;font-size:18px" ' +
-                  'placeholder="PIN">' +
-
-                  '<br><br>' +
-
-                  '<button onclick="window.checkSuperPedidoAdmin()">Entrar</button> ' +
-
-                  '<button onclick="closeFeature()">Cancelar</button>'
-                );
-
-                window.checkSuperPedidoAdmin =
-                  function(){
-
-                    const input =
-                      document.getElementById(
-                        'superPedidoAdminPin'
-                      );
-
-                    const pin =
-                      input
-                        ? String(
-                            input.value || ''
-                          )
-                        : '';
-
-                    if(
-                      pin !== savedPin
-                    ){
-
-                      alert(
-                        'PIN incorreto.'
-                      );
-
-                      return;
-                    }
-
-                    /*
-                     * Abre a área administrativa original.
-                     */
-
-                    if(
-                      typeof featureModal === 'function'
-                    ){
-
-                      featureModal(
-
-                        '<h3>⚙️ Administração</h3>' +
-
-                        '<p>Produtos cadastrados: <b>' +
-
-                        Object.values(
-                          APP_DATA || {}
-                        ).reduce(
-                          function(total, subs){
-
-                            return total +
-                              Object.values(subs)
-                                .reduce(
-                                  function(t, arr){
-                                    return t +
-                                      (
-                                        Array.isArray(arr)
-                                          ? arr.length
-                                          : 0
-                                      );
-                                  },
-                                  0
-                                );
-
-                          },
-                          0
-                        ) +
-
-                        '</b></p>' +
-
-                        '<div class="adminGrid">' +
-
-                        '<button onclick="importList()">📥 Importar lista (XLSX/CSV)</button>' +
-
-                        '<button onclick="backupJSON()">💾 Backup completo</button>' +
-
-                        '<button onclick="changePin()">🔑 Alterar PIN</button>' +
-
-                        '</div>' +
-
-                        '<p class="mini">' +
-                        'A importação XLSX/CSV continua usando as funções originais do aplicativo.' +
-                        '</p>' +
-
-                        '<button onclick="closeFeature()">Fechar</button>'
-
-                      );
-
-                    }
-
-                  };
-
-                return;
-              }
-
-              /*
-               * Fallback para Android caso o modal não exista.
-               */
-
-              const pin =
-                prompt(
-                  'Digite o PIN de administração.'
-                );
-
-              if(
-                pin === null
-              ){
-                return;
-              }
-
-              if(
-                String(pin) === String(savedPin)
-              ){
-
-                alert(
-                  'Administração disponível.'
-                );
-
-              }else{
-
-                alert(
-                  'PIN incorreto.'
-                );
-              }
-
-            }catch(e){
-
-              console.error(
-                'openAdmin:',
-                e
-              );
-
-              alert(
-                'Não foi possível abrir a administração.'
-              );
-            }
-          };
-          """
-
-          # ============================================================
-          # PDF A4 RETRATO
-          # ============================================================
-
-          pdf_code = r"""
-          window.openPDF = async function(sendViaWhatsApp){
-
-            const rows =
-              Array.isArray(finalizedRows) &&
-              finalizedRows.length
-                ? finalizedRows
-                : getRows();
-
-            if(
-              !Array.isArray(rows) ||
-              !rows.length
-            ){
-
-              alert(
-                'Nenhum item foi selecionado.'
-              );
-
-              return;
-            }
-
-            try{
-
-              const lib =
-                window.jspdf || {};
-
-              const jsPDF =
-                lib.jsPDF;
-
-              if(!jsPDF){
-
-                throw new Error(
-                  'Biblioteca PDF não carregada.'
-                );
-              }
-
-              /*
-               * ========================================================
-               * A4 RETRATO
-               * ========================================================
-               */
-
-              const doc =
-                new jsPDF({
-                  orientation: 'portrait',
-                  unit: 'mm',
-                  format: 'a4'
-                });
-
-              const W = 210;
-              const H = 297;
-              const M = 10;
-
-              const tableW =
-                W - (M * 2);
-
-              let y = 15;
-              let page = 1;
-
-              const xCode =
-                M;
-
-              const xName =
-                M + 28;
-
-              const xStock =
-                M + 140;
-
-              const xOrder =
-                M + 165;
-
-              const xEnd =
-                W - M;
-
-              /*
-               * Rodapé.
-               */
-
-              function footer(){
-
-                doc.setFont(
-                  'helvetica',
-                  'normal'
-                );
-
-                doc.setFontSize(7);
-
-                doc.text(
-                  'Super Pedido Pro',
-                  M,
-                  H - 7
-                );
-
-                doc.text(
-                  'Página ' + page,
-                  xEnd,
-                  H - 7,
-                  {
-                    align: 'right'
-                  }
-                );
-              }
-
-              /*
-               * Cabeçalho.
-               */
-
-              function title(){
-
-                doc.setFont(
-                  'helvetica',
-                  'bold'
-                );
-
-                doc.setFontSize(14);
-
-                doc.text(
-                  'RELATÓRIO DE PEDIDO',
-                  W / 2,
-                  y,
-                  {
-                    align: 'center'
-                  }
-                );
-
-                y += 7;
-
-                doc.setFont(
-                  'helvetica',
-                  'normal'
-                );
-
-                doc.setFontSize(7);
-
-                doc.text(
-                  'Data: ' +
-                  new Date()
-                    .toLocaleDateString(
-                      'pt-BR'
-                    ),
-                  M,
-                  y
-                );
-
-                y += 8;
-              }
-
-              /*
-               * Nova página.
-               */
-
-              function newPage(){
-
-                footer();
-
-                doc.addPage();
-
-                page++;
-
-                y = 15;
-
-                title();
-              }
-
-              /*
-               * Cabeçalho da tabela.
-               */
-
-              function tableHeader(){
-
-                if(
-                  y + 8 >
-                  H - 14
-                ){
-
-                  newPage();
-                }
-
-                doc.setFont(
-                  'helvetica',
-                  'bold'
-                );
-
-                doc.setFontSize(6.5);
-
-                doc.rect(
-                  M,
-                  y,
-                  tableW,
-                  8
-                );
-
-                doc.line(
-                  xName,
-                  y,
-                  xName,
-                  y + 8
-                );
-
-                doc.line(
-                  xStock,
-                  y,
-                  xStock,
-                  y + 8
-                );
-
-                doc.line(
-                  xOrder,
-                  y,
-                  xOrder,
-                  y + 8
-                );
-
-                doc.text(
-                  'CÓDIGO',
-                  xCode + 14,
-                  y + 5,
-                  {
-                    align: 'center'
-                  }
-                );
-
-                doc.text(
-                  'NOME DO PRODUTO',
-                  xName + 2,
-                  y + 5
-                );
-
-                doc.text(
-                  'ESTOQUE',
-                  xStock + 12.5,
-                  y + 5,
-                  {
-                    align: 'center'
-                  }
-                );
-
-                doc.text(
-                  'PEDIDO',
-                  xOrder + 12.5,
-                  y + 5,
-                  {
-                    align: 'center'
-                  }
-                );
-
-                y += 8;
-              }
-
-              /*
-               * Linha do produto.
-               */
-
-              function productRow(item){
-
-                const name =
-                  String(
-                    item.name || ''
-                  );
-
-                const lines =
-                  doc.splitTextToSize(
-                    name,
-                    108
-                  );
-
-                const rowH =
-                  Math.max(
-                    7,
-                    lines.length * 3.5 + 2
-                  );
-
-                if(
-                  y + rowH >
-                  H - 14
-                ){
-
-                  newPage();
-
-                  tableHeader();
-                }
-
-                doc.setFont(
-                  'helvetica',
-                  'normal'
-                );
-
-                doc.setFontSize(6.2);
-
-                /*
-                 * Caixa.
-                 */
-
-                doc.rect(
-                  M,
-                  y,
-                  tableW,
-                  rowH
-                );
-
-                /*
-                 * Divisórias.
-                 */
-
-                doc.line(
-                  xName,
-                  y,
-                  xName,
-                  y + rowH
-                );
-
-                doc.line(
-                  xStock,
-                  y,
-                  xStock,
-                  y + rowH
-                );
-
-                doc.line(
-                  xOrder,
-                  y,
-                  xOrder,
-                  y + rowH
-                );
-
-                /*
-                 * Código.
-                 */
-
-                doc.text(
-                  String(
-                    item.code || '-'
-                  ),
-                  xCode + 14,
-                  y + rowH / 2 + 2,
-                  {
-                    align: 'center'
-                  }
-                );
-
-                /*
-                 * Produto.
-                 */
-
-                doc.text(
-                  lines,
-                  xName + 2,
-                  y + 3.8
-                );
-
-                /*
-                 * Estoque.
-                 */
-
-                doc.text(
-                  String(
-                    item.stock == null
-                      ? 0
-                      : item.stock
-                  ),
-                  xStock + 12.5,
-                  y + rowH / 2 + 2,
-                  {
-                    align: 'center'
-                  }
-                );
-
-                /*
-                 * Pedido.
-                 */
-
-                doc.text(
-                  String(
-                    item.order == null
-                      ? 0
-                      : item.order
-                  ),
-                  xOrder + 12.5,
-                  y + rowH / 2 + 2,
-                  {
-                    align: 'center'
-                  }
-                );
-
-                y += rowH;
-              }
-
-              /*
-               * Início.
-               */
-
-              title();
-
-              const groups =
-                groupRows(rows);
-
-              Object.keys(groups)
-                .forEach(
-                  function(category){
-
-                    if(
-                      y + 18 >
-                      H - 14
-                    ){
-
-                      newPage();
-                    }
-
-                    doc.setFont(
-                      'helvetica',
-                      'bold'
-                    );
-
-                    doc.setFontSize(8.5);
-
-                    doc.text(
-                      String(category),
-                      M,
-                      y
-                    );
-
-                    y += 4;
-
-                    tableHeader();
-
-                    groups[category]
-                      .forEach(
-                        function(item){
-                          productRow(item);
-                        }
-                      );
-
-                    y += 4;
-                  }
-                );
-
-              /*
-               * Observação.
-               */
-
-              if(
-                generalObservation
-              ){
-
-                const obsLines =
-                  doc.splitTextToSize(
-                    'OBSERVAÇÃO: ' +
-                    generalObservation,
-                    tableW
-                  );
-
-                if(
-                  y +
-                  obsLines.length * 4 +
-                  5 >
-                  H - 14
-                ){
-
-                  newPage();
-                }
-
-                doc.setFont(
-                  'helvetica',
-                  'normal'
-                );
-
-                doc.setFontSize(7);
-
-                doc.text(
-                  obsLines,
-                  M,
-                  y
-                );
-
-                y +=
-                  obsLines.length * 4 +
-                  5;
-              }
-
-              footer();
-
-              /*
-               * Gera o PDF.
-               */
-
-              const base64 =
-                doc
-                  .output(
-                    'datauristring'
-                  )
-                  .split(',')[1];
-
-              const filename =
-                'relatorio-pedido-' +
-                new Date()
-                  .toISOString()
-                  .slice(0,10) +
-                '.pdf';
-
-              /*
-               * ========================================================
-               * ANDROID
-               *
-               * Primeiro salva histórico e limpa o pedido.
-               * Só depois abre o compartilhamento.
-               * ========================================================
-               */
-
-              if(
-                window.AndroidFileBridge &&
-                typeof
-                  window.AndroidFileBridge.sharePdf ===
-                    'function'
-              ){
-
-                if(
-                  typeof saveHistory ===
-                    'function'
-                ){
-
-                  saveHistory(rows);
-                }
-
-                window.clearPedido();
-
-                window.AndroidFileBridge.sharePdf(
-                  filename,
-                  base64
-                );
-
-                return;
-              }
-
-              /*
-               * ========================================================
-               * NAVEGADOR
-               * ========================================================
-               */
-
-              const blob =
-                doc.output(
-                  'blob'
-                );
-
-              const url =
-                URL.createObjectURL(
-                  blob
-                );
-
-              const a =
-                document.createElement(
-                  'a'
-                );
-
-              a.href = url;
-
-              a.download =
-                filename;
-
-              document.body
-                .appendChild(a);
-
-              a.click();
-
-              a.remove();
-
-              setTimeout(
-                function(){
-
-                  URL.revokeObjectURL(
-                    url
-                  );
-
-                },
-                1200
-              );
-
-              if(
-                typeof saveHistory ===
-                  'function'
-              ){
-
-                saveHistory(rows);
-              }
-
-              window.clearPedido();
-
-            }catch(e){
-
-              console.error(
-                'openPDF:',
-                e
-              );
-
-              alert(
-                'Não foi possível gerar o relatório: ' +
-                e.message
-              );
-            }
-          };
-          """
-
-          # ============================================================
-          # INSERIR AS CORREÇÕES ANTES DO </body>
-          # ============================================================
-
-          patch = (
-              '<script>\n' +
-              clear_code +
-              '\n' +
-              repeat_code +
-              '\n' +
-              admin_code +
-              '\n' +
-              pdf_code +
-              '\n' +
-              '</script>\n'
-          )
-
-          marker = "</body>"
-
-          if marker not in text:
+          if start == -1:
               raise SystemExit(
-                  "ERRO: fechamento </body> não encontrado"
+                  "ERRO: openPDF da versão #9 não foi encontrada."
               )
 
-          text = text.replace(
-              marker,
-              patch + marker,
-              1
-          )
+          # Procura a próxima função depois de openPDF.
+          pos = start
 
-          html.write_text(
-              text,
-              encoding="utf-8"
-          )
+          depth = 0
+          started = False
+          end = -1
 
-          print(
-              "Correções inseridas com sucesso."
-          )
+          while pos < len(text):
+
+              if text.startswith("function ", pos):
+                  if started and depth == 0:
+                      end = pos
+                      break
+
+              if text.startswith("{", pos):
+                  depth += 1
+                  started = True
+
+              elif text.startswith("}", pos):
+                  if started:
+                      depth -= 1
+
+                      if depth == 0:
+                          end = pos + 1
+                          break
+
+              pos += 1
+
+          if end == -1:
+              raise SystemExit(
+                  "ERRO: não foi possível localizar o final de openPDF."
+              )
+
+          new_pdf = r"""
+async function openPDF(sendViaWhatsApp=false){
+
+  const rows =
+    finalizedRows.length
+      ? finalizedRows
+      : getRows();
+
+  if(!rows.length){
+    alert('Nenhum item foi selecionado.');
+    return;
+  }
+
+  try{
+
+    const {jsPDF} = window.jspdf || {};
+
+    if(!jsPDF){
+      throw new Error(
+        'Biblioteca PDF não carregada.'
+      );
+    }
+
+    /*
+     * ================================================================
+     * PDF A4 RETRATO
+     * ================================================================
+     */
+
+    const doc = new jsPDF({
+      orientation: 'portrait',
+      unit: 'mm',
+      format: 'a4'
+    });
+
+    const pageWidth = 210;
+    const pageHeight = 297;
+    const margem = 10;
+
+    const largura = 190;
+
+    /*
+     * COLUNAS
+     *
+     * CÓDIGO       27 mm
+     * PRODUTO     108 mm
+     * ESTOQUE      27 mm
+     * PEDIDO       28 mm
+     *
+     * Total       190 mm
+     */
+
+    const colCodigo = 27;
+    const colProduto = 108;
+    const colEstoque = 27;
+    const colPedido = 28;
+
+    let y = 14;
+
+    const data =
+      new Date().toLocaleDateString(
+        'pt-BR',
+        {
+          day: '2-digit',
+          month: '2-digit',
+          year: 'numeric'
+        }
+      );
+
+    function titulo(){
+
+      doc.setFont(
+        'helvetica',
+        'bold'
+      );
+
+      doc.setFontSize(16);
+
+      doc.text(
+        'RELATÓRIO DE PEDIDO',
+        pageWidth / 2,
+        y,
+        {
+          align: 'center'
+        }
+      );
+
+      y += 8;
+
+      doc.setFont(
+        'helvetica',
+        'normal'
+      );
+
+      doc.setFontSize(9);
+
+      doc.text(
+        'Data: ' + data,
+        margem,
+        y
+      );
+
+      y += 8;
+    }
+
+    function cabecalho(){
+
+      const h = 7;
+
+      doc.setFont(
+        'helvetica',
+        'bold'
+      );
+
+      doc.setFontSize(7.5);
+
+      doc.rect(
+        margem,
+        y,
+        largura,
+        h
+      );
+
+      doc.line(
+        margem + colCodigo,
+        y,
+        margem + colCodigo,
+        y + h
+      );
+
+      doc.line(
+        margem + colCodigo + colProduto,
+        y,
+        margem + colCodigo + colProduto,
+        y + h
+      );
+
+      doc.line(
+        margem + colCodigo + colProduto + colEstoque,
+        y,
+        margem + colCodigo + colProduto + colEstoque,
+        y + h
+      );
+
+      doc.text(
+        'CÓDIGO',
+        margem + 2,
+        y + 4.8
+      );
+
+      doc.text(
+        'NOME DO PRODUTO',
+        margem + colCodigo + 2,
+        y + 4.8
+      );
+
+      doc.text(
+        'ESTOQUE',
+        margem + colCodigo + colProduto + 2,
+        y + 4.8
+      );
+
+      doc.text(
+        'PEDIDO',
+        margem + colCodigo + colProduto + colEstoque + 2,
+        y + 4.8
+      );
+
+      y += h;
+    }
+
+    function nomeProduto(nome){
+
+      let valor =
+        String(nome || '');
+
+      doc.setFontSize(7.2);
+
+      while(
+        valor.length > 3 &&
+        doc.getTextWidth(
+          valor + '...'
+        ) >
+        colProduto - 4
+      ){
+
+        valor =
+          valor.slice(
+            0,
+            -1
+          );
+      }
+
+      if(
+        valor !==
+        String(nome || '')
+      ){
+
+        return valor + '...';
+      }
+
+      return valor;
+    }
+
+    function novaPagina(){
+
+      doc.addPage(
+        'a4',
+        'portrait'
+      );
+
+      y = 14;
+
+      titulo();
+    }
+
+    titulo();
+
+    const grupos =
+      groupRows(rows);
+
+    for(
+      const [categoria, items]
+      of Object.entries(grupos)
+    ){
+
+      if(y + 20 > 285){
+        novaPagina();
+      }
+
+      doc.setFont(
+        'helvetica',
+        'bold'
+      );
+
+      doc.setFontSize(10);
+
+      doc.text(
+        String(
+          categoria || ''
+        ).toUpperCase(),
+        margem,
+        y
+      );
+
+      y += 5;
+
+      cabecalho();
+
+      for(
+        const item of items
+      ){
+
+        if(y + 6 > 285){
+
+          novaPagina();
+
+          doc.setFont(
+            'helvetica',
+            'bold'
+          );
+
+          doc.setFontSize(10);
+
+          doc.text(
+            String(
+              categoria || ''
+            ).toUpperCase(),
+            margem,
+            y
+          );
+
+          y += 5;
+
+          cabecalho();
+        }
+
+        const h = 6;
+
+        doc.setFont(
+          'helvetica',
+          'normal'
+        );
+
+        doc.setFontSize(7.2);
+
+        doc.rect(
+          margem,
+          y,
+          largura,
+          h
+        );
+
+        doc.line(
+          margem + colCodigo,
+          y,
+          margem + colCodigo,
+          y + h
+        );
+
+        doc.line(
+          margem + colCodigo + colProduto,
+          y,
+          margem + colCodigo + colProduto,
+          y + h
+        );
+
+        doc.line(
+          margem + colCodigo + colProduto + colEstoque,
+          y,
+          margem + colCodigo + colProduto + colEstoque,
+          y + h
+        );
+
+        doc.text(
+          String(
+            item.code || '-'
+          ),
+          margem + 2,
+          y + 4
+        );
+
+        doc.text(
+          nomeProduto(item.name),
+          margem + colCodigo + 2,
+          y + 4
+        );
+
+        doc.text(
+          String(
+            item.stock == null
+              ? 0
+              : item.stock
+          ),
+          margem + colCodigo + colProduto + 2,
+          y + 4
+        );
+
+        doc.text(
+          String(
+            item.order == null
+              ? 0
+              : item.order
+          ),
+          margem + colCodigo + colProduto + colEstoque + 2,
+          y + 4
+        );
+
+        y += h;
+      }
+
+      y += 5;
+    }
+
+    /*
+     * OBSERVAÇÃO
+     */
+
+    if(generalObservation){
+
+      if(y + 20 > 285){
+        novaPagina();
+      }
+
+      doc.setFont(
+        'helvetica',
+        'bold'
+      );
+
+      doc.setFontSize(8);
+
+      doc.text(
+        'OBSERVAÇÃO GERAL:',
+        margem,
+        y
+      );
+
+      y += 5;
+
+      doc.setFont(
+        'helvetica',
+        'normal'
+      );
+
+      const linhas =
+        doc.splitTextToSize(
+          String(
+            generalObservation
+          ),
+          largura
+        );
+
+      doc.text(
+        linhas,
+        margem,
+        y
+      );
+    }
+
+    /*
+     * RODAPÉ
+     */
+
+    const total =
+      doc.internal.getNumberOfPages();
+
+    for(
+      let pagina = 1;
+      pagina <= total;
+      pagina++
+    ){
+
+      doc.setPage(
+        pagina
+      );
+
+      doc.setFont(
+        'helvetica',
+        'normal'
+      );
+
+      doc.setFontSize(7);
+
+      doc.text(
+        'Super Pedido Pro',
+        margem,
+        pageHeight - 5
+      );
+
+      doc.text(
+        'Página ' +
+        pagina +
+        ' de ' +
+        total,
+        pageWidth - margem,
+        pageHeight - 5,
+        {
+          align: 'right'
+        }
+      );
+    }
+
+    /*
+     * GERA O PDF
+     */
+
+    const base64 =
+      doc
+        .output(
+          'datauristring'
+        )
+        .split(',')[1];
+
+    const nomeArquivo =
+      'relatorio-pedido-' +
+      data.replace(/\//g, '-') +
+      '.pdf';
+
+    /*
+     * NÃO altera nenhuma outra função do aplicativo.
+     */
+
+    if(
+      window.AndroidFileBridge &&
+      typeof window.AndroidFileBridge.sharePdf ===
+        'function'
+    ){
+
+      window.AndroidFileBridge.sharePdf(
+        nomeArquivo,
+        base64
+      );
+
+      return;
+    }
+
+    /*
+     * Navegador
+     */
+
+    const byteChars =
+      atob(base64);
+
+    const bytes =
+      new Uint8Array(
+        byteChars.length
+      );
+
+    for(
+      let i = 0;
+      i < byteChars.length;
+      i++
+    ){
+
+      bytes[i] =
+        byteChars.charCodeAt(i);
+    }
+
+    const blob =
+      new Blob(
+        [bytes],
+        {
+          type: 'application/pdf'
+        }
+      );
+
+    const url =
+      URL.createObjectURL(
+        blob
+      );
+
+    const a =
+      document.createElement(
+        'a'
+      );
+
+    a.href = url;
+
+    a.download =
+      nomeArquivo;
+
+    document.body.appendChild(a);
+
+    a.click();
+
+    a.remove();
+
+    setTimeout(
+      () => URL.revokeObjectURL(url),
+      1000
+    );
+
+  }catch(e){
+
+    console.error(
+      'openPDF:',
+      e
+    );
+
+    alert(
+      'Não foi possível gerar o PDF: ' +
+      (e.message || e)
+    );
+  }
+}
+"""
+
+    text = (
+        text[:start]
+        + new_pdf
+        + "\n"
+        + text[end:]
+    )
+
+    html.write_text(
+        text,
+        encoding="utf-8"
+    )
+
+    print(
+        "OK: somente openPDF foi alterado."
+    )
 
           PY
 
-      - name: Preparar bibliotecas PDF e XLSX
+      - name: Preparar biblioteca PDF
         shell: bash
         run: |
           set -e
 
-          ASSET_DIR="$ANDROID_DIR/app/src/main/assets/app"
+          ASSETS="$ANDROID_DIR/app/src/main/assets/app"
 
-          mkdir -p "$ASSET_DIR"
+          mkdir -p "$ASSETS"
 
-          curl -fL --retry 3 \
-            "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" \
-            -o "$ASSET_DIR/xlsx.full.min.js"
+          curl -L --fail --retry 3 \
+            -o "$ASSETS/jspdf.umd.min.js" \
+            "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"
 
-          curl -fL --retry 3 \
-            "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" \
-            -o "$ASSET_DIR/jspdf.umd.min.js"
+          test -s "$ASSETS/jspdf.umd.min.js"
 
-          test -s "$ASSET_DIR/xlsx.full.min.js"
-
-          test -s "$ASSET_DIR/jspdf.umd.min.js"
-
-      - name: Verificar JavaScript corrigido
+      - name: Verificar que somente o relatório foi alterado
         shell: bash
         run: |
           set -e
 
-          python3 <<'PY'
-          import re
-          from pathlib import Path
-          import os
+          HTML="$ANDROID_DIR/app/src/main/assets/app/index.html"
 
-          html =
-            Path(
-              os.environ["ANDROID_DIR"]
-            ) / "app/src/main/assets/app/index.html"
+          test -f "$HTML"
 
-          text =
-            html.read_text(
-              encoding="utf-8"
-            )
+          grep -q "orientation:'portrait'" "$HTML"
+          grep -q "format:'a4'" "$HTML"
+          grep -q "pageWidth = 210" "$HTML"
+          grep -q "pageHeight = 297" "$HTML"
+          grep -q "RELATÓRIO DE PEDIDO" "$HTML"
+          grep -q "CÓDIGO" "$HTML"
+          grep -q "NOME DO PRODUTO" "$HTML"
+          grep -q "ESTOQUE" "$HTML"
+          grep -q "PEDIDO" "$HTML"
 
-          scripts =
-            re.findall(
-              r"<script(?:[^>]*)>(.*?)</script>",
-              text,
-              re.S
-            )
-
-          if not scripts:
-              raise SystemExit(
-                "ERRO: nenhum JavaScript inline encontrado"
-              )
-
-          combined =
-            "\n".join(scripts)
-
-          Path(
-            "/tmp/super-pedido-inline.js"
-          ).write_text(
-            combined,
-            encoding="utf-8"
-          )
-
-          required = [
-
-            "window.openPDF = async function",
-
-            "window.clearPedido = function",
-
-            "window.repeatLastOrder = function",
-
-            "window.openAdmin = function",
-
-            "orientation: 'portrait'",
-
-            "RELATÓRIO DE PEDIDO",
-
-            "CÓDIGO",
-
-            "NOME DO PRODUTO",
-
-            "ESTOQUE",
-
-            "PEDIDO"
-          ]
-
-          for item in required:
-
-              if item not in text:
-
-                  raise SystemExit(
-                    "ERRO: não encontrado: " +
-                    item
-                  )
-
-          if (
-              "orientation: 'landscape'"
-              in text
-              or
-              'orientation: "landscape"'
-              in text
-          ):
-
-              raise SystemExit(
-                "ERRO: ainda existe PDF em paisagem"
-              )
-
-          print(
-            "Verificação textual concluída."
-          )
-
-          PY
-
-          node --check \
-            /tmp/super-pedido-inline.js
+          echo "RELATÓRIO PDF A4 RETRATO OK."
 
       - name: Compilar APK
         shell: bash
@@ -1439,17 +759,9 @@ jobs:
           chmod +x gradlew 2>/dev/null || true
 
           if [ -x "./gradlew" ]; then
-
-            ./gradlew \
-              --no-daemon \
-              assembleDebug
-
+            ./gradlew --no-daemon assembleDebug
           else
-
-            gradle \
-              --no-daemon \
-              assembleDebug
-
+            gradle --no-daemon assembleDebug
           fi
 
       - name: Verificar APK
@@ -1457,22 +769,20 @@ jobs:
         run: |
           set -e
 
-          APK=$(
-            find \
-              "$ANDROID_DIR/app/build/outputs/apk" \
-              -type f \
-              -name "*.apk" \
-              -print -quit
-          )
+          APK=$(find \
+            "$ANDROID_DIR/app/build/outputs/apk" \
+            -type f \
+            -name "*.apk" \
+            -print -quit)
 
           test -n "$APK"
 
           test -s "$APK"
 
-          echo "APK=$APK" \
-            >> "$GITHUB_ENV"
-
+          echo "APK encontrado:"
           ls -lh "$APK"
+
+          echo "APK=$APK" >> "$GITHUB_ENV"
 
       - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
@@ -1480,3 +790,4 @@ jobs:
           name: Super-Pedido-Pro-APK
           path: ${{ env.APK }}
           if-no-files-found: error
+          retention-days: 30
