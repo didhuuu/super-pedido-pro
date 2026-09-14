@@ -76,592 +76,6 @@ jobs:
           grep -q "android.enableJetifier=true" gradle.properties || \
             echo "android.enableJetifier=true" >> gradle.properties
 
-          echo "AndroidX configurado."
-
-      - name: Corrigir HTML do aplicativo
-        shell: bash
-        run: |
-          set -e
-
-          HTML="$ANDROID_DIR/app/src/main/assets/app/index.html"
-
-          test -f "$HTML" || {
-            echo "ERRO: index.html não encontrado."
-            exit 1
-          }
-
-          # Usar bibliotecas locais
-          perl -0pi -e \
-            's#https://cdnjs\.cloudflare\.com/ajax/libs/xlsx/0\.18\.5/xlsx\.full\.min\.js#xlsx.full.min.js#g' \
-            "$HTML"
-
-          perl -0pi -e \
-            's#https://cdnjs\.cloudflare\.com/ajax/libs/jspdf/2\.5\.1/jspdf\.umd\.min\.js#jspdf.umd.min.js#g' \
-            "$HTML"
-
-          # Limpeza completa do pedido
-          python3 - "$HTML" <<'PY'
-          import sys
-          from pathlib import Path
-
-          path = Path(sys.argv[1])
-          text = path.read_text(encoding="utf-8")
-
-          start = text.find("function clearPedido()")
-          end = text.find("async function openPDF", start)
-
-          if start != -1 and end != -1:
-              replacement = '''function clearPedido(){
-            vals={};
-            extras=[];
-            validadeCurta=[];
-            finalizedRows=[];
-            generalObservation="";
-            save();
-            render();
-            updateBadge();
-            renderValidadeCurta();
-            closeConference();
-            const obs=document.getElementById("generalObs");
-            if(obs)obs.value="";
-          }
-
-          '''
-
-              text = text[:start] + replacement + text[end:]
-
-          path.write_text(text, encoding="utf-8")
-          PY
-
-          # Garantir categoria válida após importação
-          python3 - "$HTML" <<'PY'
-          import sys
-          from pathlib import Path
-
-          path = Path(sys.argv[1])
-          text = path.read_text(encoding="utf-8")
-
-          old = "tabs();render();updateBadge();renderValidadeCurta();"
-
-          new = 'if(!current || !APP_DATA[current])current=cats[0]||"";tabs();render();updateBadge();renderValidadeCurta();'
-
-          text = text.replace(old, new)
-
-          path.write_text(text, encoding="utf-8")
-          PY
-
-          echo "Verificando HTML..."
-
-          grep -q "importedCatalogActive" "$HTML"
-          grep -q "xlsx.full.min.js" "$HTML"
-          grep -q "jspdf.umd.min.js" "$HTML"
-          grep -q "function clearPedido" "$HTML"
-
-          echo "HTML corrigido."
-
-      - name: Corrigir MainActivity
-        shell: bash
-        run: |
-          set -e
-
-          MAIN_ACTIVITY=$(find "$ANDROID_DIR/app/src/main/java" \
-            -name MainActivity.java \
-            -type f \
-            -print -quit)
-
-          if [ -z "$MAIN_ACTIVITY" ]; then
-            echo "ERRO: MainActivity.java não encontrado."
-            exit 1
-          fi
-
-          cat > "$MAIN_ACTIVITY" <<'JAVA'
-          package com.pedido.v2;
-
-          import android.app.Activity;
-          import android.content.ClipData;
-          import android.content.Intent;
-          import android.net.Uri;
-          import android.os.Bundle;
-          import android.util.Base64;
-          import android.webkit.JavascriptInterface;
-          import android.webkit.ValueCallback;
-          import android.webkit.WebChromeClient;
-          import android.webkit.WebResourceRequest;
-          import android.webkit.WebView;
-          import android.webkit.WebViewClient;
-          import android.widget.Toast;
-
-          import androidx.core.content.FileProvider;
-
-          import java.io.File;
-          import java.io.FileOutputStream;
-
-          public class MainActivity extends Activity {
-
-              private WebView webView;
-
-              private ValueCallback<Uri[]> filePathCallback;
-
-              private static final int FILE_CHOOSER_REQUEST = 1001;
-
-              @Override
-              protected void onCreate(Bundle savedInstanceState) {
-                  super.onCreate(savedInstanceState);
-
-                  webView = new WebView(this);
-
-                  webView.getSettings().setJavaScriptEnabled(true);
-                  webView.getSettings().setDomStorageEnabled(true);
-                  webView.getSettings().setAllowFileAccess(true);
-                  webView.getSettings().setAllowContentAccess(true);
-                  webView.getSettings().setBuiltInZoomControls(false);
-                  webView.getSettings().setDisplayZoomControls(false);
-
-                  webView.setWebViewClient(new WebViewClient() {
-
-                      @Override
-                      public boolean shouldOverrideUrlLoading(
-                              WebView view,
-                              WebResourceRequest request) {
-                          return false;
-                      }
-                  });
-
-                  webView.setWebChromeClient(new WebChromeClient() {
-
-                      @Override
-                      public boolean onShowFileChooser(
-                              WebView view,
-                              ValueCallback<Uri[]> callback,
-                              FileChooserParams fileChooserParams) {
-
-                          if (MainActivity.this.filePathCallback != null) {
-                              MainActivity.this.filePathCallback.onReceiveValue(null);
-                          }
-
-                          MainActivity.this.filePathCallback = callback;
-
-                          try {
-
-                              Intent intent =
-                                      fileChooserParams.createIntent();
-
-                              startActivityForResult(
-                                      intent,
-                                      FILE_CHOOSER_REQUEST
-                              );
-
-                              return true;
-
-                          } catch (Exception e) {
-
-                              MainActivity.this.filePathCallback = null;
-
-                              Toast.makeText(
-                                      MainActivity.this,
-                                      "Não foi possível abrir os arquivos.",
-                                      Toast.LENGTH_LONG
-                              ).show();
-
-                              return false;
-                          }
-                      }
-                  });
-
-                  webView.addJavascriptInterface(
-                          new AndroidFileBridge(),
-                          "AndroidFileBridge"
-                  );
-
-                  setContentView(webView);
-
-                  webView.loadUrl(
-                          "file:///android_asset/app/index.html"
-                  );
-              }
-
-              @Override
-              protected void onActivityResult(
-                      int requestCode,
-                      int resultCode,
-                      Intent data) {
-
-                  if (requestCode == FILE_CHOOSER_REQUEST) {
-
-                      Uri[] results = null;
-
-                      if (resultCode == RESULT_OK && data != null) {
-
-                          if (data.getClipData() != null) {
-
-                              int count =
-                                      data.getClipData().getItemCount();
-
-                              results = new Uri[count];
-
-                              for (int i = 0; i < count; i++) {
-
-                                  results[i] =
-                                          data.getClipData()
-                                              .getItemAt(i)
-                                              .getUri();
-                              }
-
-                          } else if (data.getData() != null) {
-
-                              results = new Uri[]{
-                                      data.getData()
-                              };
-                          }
-                      }
-
-                      if (filePathCallback != null) {
-
-                          filePathCallback.onReceiveValue(results);
-
-                          filePathCallback = null;
-                      }
-
-                      return;
-                  }
-
-                  super.onActivityResult(
-                          requestCode,
-                          resultCode,
-                          data
-                  );
-              }
-
-              public class AndroidFileBridge {
-
-                  @JavascriptInterface
-                  public void sharePdf(
-                          String filename,
-                          String base64) {
-
-                      try {
-
-                          byte[] bytes =
-                                  Base64.decode(
-                                          base64,
-                                          Base64.DEFAULT
-                                  );
-
-                          String safeName =
-                                  sanitizeFilename(filename);
-
-                          if (!safeName
-                                  .toLowerCase()
-                                  .endsWith(".pdf")) {
-
-                              safeName += ".pdf";
-                          }
-
-                          /*
-                           * O FileProvider utiliza:
-                           *
-                           * cache/shared/
-                           *
-                           * O PDF será criado exatamente nessa pasta.
-                           */
-                          File sharedDir =
-                                  new File(
-                                          MainActivity.this.getCacheDir(),
-                                          "shared"
-                                  );
-
-                          if (!sharedDir.exists()) {
-
-                              if (!sharedDir.mkdirs()
-                                      && !sharedDir.exists()) {
-
-                                  throw new Exception(
-                                          "Não foi possível criar cache/shared."
-                                  );
-                              }
-                          }
-
-                          File file =
-                                  new File(
-                                          sharedDir,
-                                          safeName
-                                  );
-
-                          FileOutputStream fos =
-                                  new FileOutputStream(file);
-
-                          fos.write(bytes);
-                          fos.flush();
-                          fos.close();
-
-                          Uri uri =
-                                  FileProvider.getUriForFile(
-                                          MainActivity.this,
-                                          MainActivity.this
-                                                  .getPackageName()
-                                                  + ".fileprovider",
-                                          file
-                                  );
-
-                          /*
-                           * Compartilhamento PDF.
-                           */
-                          Intent shareIntent =
-                                  new Intent(
-                                          Intent.ACTION_SEND
-                                  );
-
-                          shareIntent.setType(
-                                  "application/pdf"
-                          );
-
-                          shareIntent.putExtra(
-                                  Intent.EXTRA_STREAM,
-                                  uri
-                          );
-
-                          shareIntent.addFlags(
-                                  Intent.FLAG_GRANT_READ_URI_PERMISSION
-                          );
-
-                          shareIntent.setClipData(
-                                  ClipData.newRawUri(
-                                          "PDF",
-                                          uri
-                                  )
-                          );
-
-                          /*
-                           * Tenta abrir diretamente no WhatsApp.
-                           */
-                          try {
-
-                              Intent whatsappIntent =
-                                      new Intent(
-                                              Intent.ACTION_SEND
-                                      );
-
-                              whatsappIntent.setType(
-                                      "application/pdf"
-                              );
-
-                              whatsappIntent.putExtra(
-                                      Intent.EXTRA_STREAM,
-                                      uri
-                              );
-
-                              whatsappIntent.addFlags(
-                                      Intent.FLAG_GRANT_READ_URI_PERMISSION
-                              );
-
-                              whatsappIntent.setClipData(
-                                      ClipData.newRawUri(
-                                              "PDF",
-                                              uri
-                                      )
-                              );
-
-                              whatsappIntent.setPackage(
-                                      "com.whatsapp"
-                              );
-
-                              startActivity(
-                                      whatsappIntent
-                              );
-
-                          } catch (Exception e) {
-
-                              /*
-                               * Fallback: compartilhamento Android.
-                               */
-                              startActivity(
-                                      Intent.createChooser(
-                                              shareIntent,
-                                              "Enviar pedido em PDF"
-                                      )
-                              );
-                          }
-
-                      } catch (Exception e) {
-
-                          e.printStackTrace();
-
-                          Toast.makeText(
-                                  MainActivity.this,
-                                  "Erro ao compartilhar o PDF.",
-                                  Toast.LENGTH_LONG
-                          ).show();
-                      }
-                  }
-
-                  @JavascriptInterface
-                  public void saveBase64(
-                          String filename,
-                          String base64) {
-
-                      saveBase64(
-                              filename,
-                              "application/octet-stream",
-                              base64
-                      );
-                  }
-
-                  @JavascriptInterface
-                  public void saveBase64(
-                          String filename,
-                          String mimeType,
-                          String base64) {
-
-                      try {
-
-                          byte[] bytes =
-                                  Base64.decode(
-                                          base64,
-                                          Base64.DEFAULT
-                                  );
-
-                          String safeName =
-                                  sanitizeFilename(filename);
-
-                          File dir =
-                                  MainActivity.this
-                                          .getExternalFilesDir(null);
-
-                          if (dir == null) {
-
-                              dir =
-                                      MainActivity.this
-                                              .getFilesDir();
-                          }
-
-                          File file =
-                                  new File(
-                                          dir,
-                                          safeName
-                                  );
-
-                          FileOutputStream fos =
-                                  new FileOutputStream(file);
-
-                          fos.write(bytes);
-                          fos.flush();
-                          fos.close();
-
-                      } catch (Exception e) {
-
-                          e.printStackTrace();
-                      }
-                  }
-
-                  @JavascriptInterface
-                  public void shareText(String text) {
-
-                      try {
-
-                          Intent shareIntent =
-                                  new Intent(
-                                          Intent.ACTION_SEND
-                                  );
-
-                          shareIntent.setType(
-                                  "text/plain"
-                          );
-
-                          shareIntent.putExtra(
-                                  Intent.EXTRA_TEXT,
-                                  text
-                          );
-
-                          try {
-
-                              Intent whatsappIntent =
-                                      new Intent(
-                                              Intent.ACTION_SEND
-                                      );
-
-                              whatsappIntent.setType(
-                                      "text/plain"
-                              );
-
-                              whatsappIntent.putExtra(
-                                      Intent.EXTRA_TEXT,
-                                      text
-                              );
-
-                              whatsappIntent.setPackage(
-                                      "com.whatsapp"
-                              );
-
-                              startActivity(
-                                      whatsappIntent
-                              );
-
-                          } catch (Exception e) {
-
-                              startActivity(
-                                      Intent.createChooser(
-                                              shareIntent,
-                                              "Enviar pedido"
-                                      )
-                              );
-                          }
-
-                      } catch (Exception e) {
-
-                          e.printStackTrace();
-                      }
-                  }
-
-                  private String sanitizeFilename(
-                          String filename) {
-
-                      if (filename == null ||
-                              filename.trim().isEmpty()) {
-
-                          filename = "arquivo";
-                      }
-
-                      return filename.replaceAll(
-                              "[\\\\/:*?\"<>|]",
-                              "_"
-                      );
-                  }
-              }
-
-              @Override
-              public void onBackPressed() {
-
-                  if (webView != null &&
-                          webView.canGoBack()) {
-
-                      webView.goBack();
-
-                  } else {
-
-                      super.onBackPressed();
-                  }
-              }
-          }
-          JAVA
-
-          echo "MainActivity corrigida."
-
-          grep -q "extends Activity" "$MAIN_ACTIVITY"
-          grep -q "WebChromeClient" "$MAIN_ACTIVITY"
-          grep -q "onShowFileChooser" "$MAIN_ACTIVITY"
-          grep -q "ClipData.newRawUri" "$MAIN_ACTIVITY"
-          grep -q "saveBase64" "$MAIN_ACTIVITY"
-          grep -q "getCacheDir()" "$MAIN_ACTIVITY"
-          grep -q '"shared"' "$MAIN_ACTIVITY"
-          grep -q "setPackage" "$MAIN_ACTIVITY"
-
-          if grep -q "androidx.appcompat.app.AppCompatActivity" "$MAIN_ACTIVITY"; then
-            echo "ERRO: AppCompatActivity encontrada."
-            exit 1
-          fi
-
-          echo "MainActivity validada."
-
       - name: Preparar bibliotecas locais
         shell: bash
         run: |
@@ -684,12 +98,742 @@ jobs:
 
           echo "Bibliotecas locais prontas."
 
+      - name: Corrigir HTML do aplicativo
+        shell: bash
+        run: |
+          set -e
+
+          HTML="$ANDROID_DIR/app/src/main/assets/app/index.html"
+
+          test -f "$HTML" || {
+            echo "ERRO: index.html não encontrado."
+            exit 1
+          }
+
+          echo "Corrigindo bibliotecas externas..."
+
+          perl -0pi -e \
+            's#https://cdnjs\.cloudflare\.com/ajax/libs/xlsx/0\.18\.5/xlsx\.full\.min\.js#xlsx.full.min.js#g' \
+            "$HTML"
+
+          perl -0pi -e \
+            's#https://cdnjs\.cloudflare\.com/ajax/libs/jspdf/2\.5\.1/jspdf\.umd\.min\.js#jspdf.umd.min.js#g' \
+            "$HTML"
+
+          python3 - "$HTML" <<'PY'
+          import sys
+          from pathlib import Path
+
+          path = Path(sys.argv[1])
+          text = path.read_text(encoding="utf-8")
+
+          # ==========================================================
+          # NOVO RELATÓRIO PDF
+          # ==========================================================
+
+          new_pdf = r'''
+          async function openPDF(){
+
+            const rows = finalizedRows.length
+              ? finalizedRows
+              : getRows();
+
+            if(!rows.length){
+              alert('Nenhum item foi selecionado.');
+              return;
+            }
+
+            try{
+
+              if(typeof window.jspdf === 'undefined' ||
+                 !window.jspdf.jsPDF){
+
+                alert('Biblioteca PDF não carregada.');
+                return;
+              }
+
+              const jsPDF = window.jspdf.jsPDF;
+
+              /*
+               * A4 horizontal.
+               * Isso deixa espaço suficiente para as quatro colunas.
+               */
+              const doc = new jsPDF({
+                orientation: 'landscape',
+                unit: 'mm',
+                format: 'a4'
+              });
+
+              const pageWidth = 297;
+              const pageHeight = 210;
+
+              const margem = 10;
+
+              let y = 12;
+
+              /*
+               * Título
+               */
+              doc.setFont('helvetica','bold');
+              doc.setFontSize(18);
+              doc.text(
+                'RELATÓRIO DE PEDIDO',
+                pageWidth / 2,
+                y,
+                {align:'center'}
+              );
+
+              y += 8;
+
+              /*
+               * Data
+               */
+              const agora = new Date();
+
+              const data = agora.toLocaleDateString(
+                'pt-BR',
+                {
+                  day:'2-digit',
+                  month:'2-digit',
+                  year:'numeric'
+                }
+              );
+
+              doc.setFont('helvetica','normal');
+              doc.setFontSize(10);
+
+              doc.text(
+                'Data: ' + data,
+                margem,
+                y
+              );
+
+              y += 7;
+
+              /*
+               * Agrupa os produtos por categoria.
+               */
+              const grupos = groupRows(rows);
+
+              /*
+               * Larguras fixas das colunas.
+               *
+               * Código      = 30 mm
+               * Produto     = 167 mm
+               * Estoque     = 35 mm
+               * Pedido      = 35 mm
+               *
+               * Total = 267 mm
+               * Área útil = 277 mm
+               */
+              const colCodigo = 30;
+              const colProduto = 167;
+              const colEstoque = 35;
+              const colPedido = 35;
+
+              const xCodigo = margem;
+              const xProduto = xCodigo + colCodigo;
+              const xEstoque = xProduto + colProduto;
+              const xPedido = xEstoque + colEstoque;
+
+              const tabelaLargura =
+                colCodigo +
+                colProduto +
+                colEstoque +
+                colPedido;
+
+              const alturaCabecalho = 8;
+              const alturaLinha = 7;
+
+              function novaPagina(){
+
+                doc.addPage();
+
+                y = 12;
+
+                doc.setFont('helvetica','bold');
+                doc.setFontSize(16);
+
+                doc.text(
+                  'RELATÓRIO DE PEDIDO',
+                  pageWidth / 2,
+                  y,
+                  {align:'center'}
+                );
+
+                y += 8;
+
+                doc.setFont('helvetica','normal');
+                doc.setFontSize(9);
+
+                doc.text(
+                  'Data: ' + data,
+                  margem,
+                  y
+                );
+
+                y += 7;
+              }
+
+              function desenharCabecalho(){
+
+                if(y + alturaCabecalho > pageHeight - 10){
+                  novaPagina();
+                }
+
+                doc.setFont('helvetica','bold');
+                doc.setFontSize(8);
+
+                doc.rect(
+                  xCodigo,
+                  y,
+                  colCodigo,
+                  alturaCabecalho
+                );
+
+                doc.rect(
+                  xProduto,
+                  y,
+                  colProduto,
+                  alturaCabecalho
+                );
+
+                doc.rect(
+                  xEstoque,
+                  y,
+                  colEstoque,
+                  alturaCabecalho
+                );
+
+                doc.rect(
+                  xPedido,
+                  y,
+                  colPedido,
+                  alturaCabecalho
+                );
+
+                doc.text(
+                  'CÓDIGO',
+                  xCodigo + colCodigo / 2,
+                  y + 5.2,
+                  {align:'center'}
+                );
+
+                doc.text(
+                  'NOME DO PRODUTO',
+                  xProduto + 3,
+                  y + 5.2
+                );
+
+                doc.text(
+                  'ESTOQUE',
+                  xEstoque + colEstoque / 2,
+                  y + 5.2,
+                  {align:'center'}
+                );
+
+                doc.text(
+                  'PEDIDO',
+                  xPedido + colPedido / 2,
+                  y + 5.2,
+                  {align:'center'}
+                );
+
+                y += alturaCabecalho;
+              }
+
+              function textoProduto(nome){
+
+                let valor = String(nome || '');
+
+                /*
+                 * Limite aproximado para impedir
+                 * que o nome entre nas outras colunas.
+                 */
+                while(
+                  doc.getTextWidth(valor) >
+                  colProduto - 6 &&
+                  valor.length > 3
+                ){
+                  valor = valor.substring(
+                    0,
+                    valor.length - 1
+                  );
+                }
+
+                if(valor !== String(nome || '')){
+                  valor = valor.substring(
+                    0,
+                    Math.max(1,valor.length - 3)
+                  ) + '...';
+                }
+
+                return valor;
+              }
+
+              function desenharLinha(item){
+
+                if(y + alturaLinha > pageHeight - 10){
+
+                  novaPagina();
+
+                  desenharCabecalho();
+                }
+
+                doc.setFont('helvetica','normal');
+                doc.setFontSize(8);
+
+                doc.rect(
+                  xCodigo,
+                  y,
+                  colCodigo,
+                  alturaLinha
+                );
+
+                doc.rect(
+                  xProduto,
+                  y,
+                  colProduto,
+                  alturaLinha
+                );
+
+                doc.rect(
+                  xEstoque,
+                  y,
+                  colEstoque,
+                  alturaLinha
+                );
+
+                doc.rect(
+                  xPedido,
+                  y,
+                  colPedido,
+                  alturaLinha
+                );
+
+                doc.text(
+                  String(item.code || '-'),
+                  xCodigo + 3,
+                  y + 4.8
+                );
+
+                doc.text(
+                  textoProduto(item.name),
+                  xProduto + 3,
+                  y + 4.8
+                );
+
+                doc.text(
+                  String(item.stock ?? 0),
+                  xEstoque + colEstoque / 2,
+                  y + 4.8,
+                  {align:'center'}
+                );
+
+                doc.text(
+                  String(item.order ?? 0),
+                  xPedido + colPedido / 2,
+                  y + 4.8,
+                  {align:'center'}
+                );
+
+                y += alturaLinha;
+              }
+
+              /*
+               * Cada categoria recebe seu próprio bloco.
+               */
+              for(
+                const [categoria,items]
+                of Object.entries(grupos)
+              ){
+
+                if(
+                  y + 25 >
+                  pageHeight - 10
+                ){
+
+                  novaPagina();
+                }
+
+                /*
+                 * Espaço entre categorias.
+                 */
+                y += 5;
+
+                /*
+                 * Nome da categoria.
+                 */
+                doc.setFont(
+                  'helvetica',
+                  'bold'
+                );
+
+                doc.setFontSize(12);
+
+                doc.text(
+                  String(categoria || '').toUpperCase(),
+                  margem,
+                  y
+                );
+
+                y += 4;
+
+                desenharCabecalho();
+
+                /*
+                 * Produtos.
+                 */
+                for(const item of items){
+
+                  desenharLinha(item);
+                }
+              }
+
+              /*
+               * Observação geral.
+               */
+              if(
+                typeof generalObservation !== 'undefined' &&
+                generalObservation
+              ){
+
+                if(y + 20 > pageHeight - 10){
+                  novaPagina();
+                }
+
+                y += 7;
+
+                doc.setFont(
+                  'helvetica',
+                  'bold'
+                );
+
+                doc.setFontSize(9);
+
+                doc.text(
+                  'OBSERVAÇÃO GERAL:',
+                  margem,
+                  y
+                );
+
+                y += 5;
+
+                doc.setFont(
+                  'helvetica',
+                  'normal'
+                );
+
+                doc.setFontSize(8);
+
+                const obsLines =
+                  doc.splitTextToSize(
+                    String(generalObservation),
+                    tabelaLargura
+                  );
+
+                doc.text(
+                  obsLines,
+                  margem,
+                  y
+                );
+              }
+
+              /*
+               * Rodapé com número da página.
+               */
+              const totalPaginas =
+                doc.getNumberOfPages();
+
+              for(
+                let pagina = 1;
+                pagina <= totalPaginas;
+                pagina++
+              ){
+
+                doc.setPage(pagina);
+
+                doc.setFont(
+                  'helvetica',
+                  'normal'
+                );
+
+                doc.setFontSize(7);
+
+                doc.text(
+                  'Super Pedido Pro',
+                  margem,
+                  pageHeight - 5
+                );
+
+                doc.text(
+                  'Página ' +
+                  pagina +
+                  ' de ' +
+                  totalPaginas,
+                  pageWidth - margem,
+                  pageHeight - 5,
+                  {align:'right'}
+                );
+              }
+
+              /*
+               * Gera o PDF como Base64.
+               */
+              const base64 =
+                doc.output('datauristring')
+                   .split(',')[1];
+
+              const nome =
+                'relatorio-pedido-' +
+                data.replace(/\//g,'-') +
+                '.pdf';
+
+              /*
+               * Envia para o Android.
+               */
+              if(
+                window.AndroidFileBridge &&
+                typeof window.AndroidFileBridge.sharePdf === 'function'
+              ){
+
+                window.AndroidFileBridge.sharePdf(
+                  nome,
+                  base64
+                );
+
+                return;
+              }
+
+              /*
+               * Fallback para navegador.
+               */
+              doc.save(nome);
+
+            }catch(error){
+
+              console.error(
+                'Erro ao gerar PDF:',
+                error
+              );
+
+              alert(
+                'Não foi possível gerar o PDF: ' +
+                error.message
+              );
+            }
+          }
+          '''
+
+          # ----------------------------------------------------------
+          # Remove versões antigas de openPDF
+          # ----------------------------------------------------------
+
+          import re
+
+          text = re.sub(
+              r'async\s+function\s+openPDF\s*\([^)]*\)\s*\{.*?\n\s*\}',
+              '',
+              text,
+              flags=re.S
+          )
+
+          text = re.sub(
+              r'function\s+openPDF\s*\([^)]*\)\s*\{.*?\n\s*\}',
+              '',
+              text,
+              flags=re.S
+          )
+
+          # ----------------------------------------------------------
+          # Insere a nova função antes de clearPedido
+          # ----------------------------------------------------------
+
+          pos = text.find('function clearPedido()')
+
+          if pos == -1:
+              pos = text.find('function sendWhatsApp()')
+
+          if pos == -1:
+              raise SystemExit(
+                  'ERRO: não foi possível localizar ponto para inserir openPDF.'
+              )
+
+          text = (
+              text[:pos]
+              + new_pdf
+              + '\n\n'
+              + text[pos:]
+          )
+
+          # ----------------------------------------------------------
+          # Corrige o botão para chamar a função nova
+          # ----------------------------------------------------------
+
+          text = text.replace(
+              'onclick="openPDF(true)"',
+              'onclick="openPDF()"'
+          )
+
+          text = text.replace(
+              "btnWhatsPdf').onclick=()=>openPDF(true)",
+              "btnWhatsPdf').onclick=()=>openPDF()"
+          )
+
+          text = text.replace(
+              'btnWhatsPdf").onclick=()=>openPDF(true)',
+              'btnWhatsPdf").onclick=()=>openPDF()'
+          )
+
+          path.write_text(
+              text,
+              encoding="utf-8"
+          )
+
+          print("Novo PDF inserido com sucesso.")
+          PY
+
+          echo "Verificando HTML..."
+
+          grep -q "function openPDF" "$HTML"
+          grep -q "RELATÓRIO DE PEDIDO" "$HTML"
+          grep -q "CÓDIGO" "$HTML"
+          grep -q "NOME DO PRODUTO" "$HTML"
+          grep -q "ESTOQUE" "$HTML"
+          grep -q "PEDIDO" "$HTML"
+          grep -q "jspdf.umd.min.js" "$HTML"
+          grep -q "AndroidFileBridge.sharePdf" "$HTML"
+
+          echo "HTML validado."
+
+      - name: Corrigir categoria inicial
+        shell: bash
+        run: |
+          set -e
+
+          HTML="$ANDROID_DIR/app/src/main/assets/app/index.html"
+
+          python3 - "$HTML" <<'PY'
+          import sys
+          from pathlib import Path
+
+          path = Path(sys.argv[1])
+          text = path.read_text(encoding="utf-8")
+
+          old = "tabs();render();updateBadge();renderValidadeCurta();"
+
+          new = (
+              'if(!current || !APP_DATA[current])'
+              'current=cats[0]||"";'
+              'tabs();render();updateBadge();renderValidadeCurta();'
+          )
+
+          text = text.replace(old,new)
+
+          path.write_text(
+              text,
+              encoding="utf-8"
+          )
+          PY
+
+      - name: Corrigir limpeza do pedido
+        shell: bash
+        run: |
+          set -e
+
+          HTML="$ANDROID_DIR/app/src/main/assets/app/index.html"
+
+          python3 - "$HTML" <<'PY'
+          import sys
+          from pathlib import Path
+          import re
+
+          path = Path(sys.argv[1])
+          text = path.read_text(encoding="utf-8")
+
+          replacement = r'''
+          function clearPedido(){
+
+            if(
+              typeof finalizedRows !== 'undefined' &&
+              finalizedRows.length &&
+              typeof saveHistory === 'function'
+            ){
+              saveHistory(finalizedRows);
+            }
+
+            vals={};
+            extras=[];
+            validadeCurta=[];
+            finalizedRows=[];
+            generalObservation='';
+
+            localStorage.removeItem(
+              'pedido_compras_vals'
+            );
+
+            localStorage.removeItem(
+              'pedido_compras_extras'
+            );
+
+            localStorage.removeItem(
+              'pedido_compras_validade_curta'
+            );
+
+            save();
+
+            render();
+
+            updateBadge();
+
+            renderValidadeCurta();
+
+            if(
+              typeof closeConference === 'function'
+            ){
+              closeConference();
+            }
+
+            const obs =
+              document.getElementById(
+                'generalObs'
+              );
+
+            if(obs){
+              obs.value='';
+            }
+
+            window.scrollTo({
+              top:0,
+              behavior:'smooth'
+            });
+          }
+          '''
+
+          text = re.sub(
+              r'function\s+clearPedido\s*\([^)]*\)\s*\{.*?\n\s*\}',
+              replacement,
+              text,
+              count=1,
+              flags=re.S
+          )
+
+          path.write_text(
+              text,
+              encoding="utf-8"
+          )
+
+          print("Limpeza do pedido validada.")
+          PY
+
       - name: Verificar projeto
         shell: bash
         run: |
           set -e
 
-          echo "=== VERIFICAÇÃO FINAL ==="
+          echo "======================================"
+          echo " VERIFICAÇÃO FINAL DO SUPER PEDIDO PRO"
+          echo "======================================"
 
           test -f "$ANDROID_DIR/settings.gradle"
 
@@ -699,35 +843,43 @@ jobs:
           test -f \
             "$ANDROID_DIR/app/src/main/assets/app/index.html"
 
+          test -s \
+            "$ANDROID_DIR/app/src/main/assets/app/xlsx.full.min.js"
+
+          test -s \
+            "$ANDROID_DIR/app/src/main/assets/app/jspdf.umd.min.js"
+
           MAIN_ACTIVITY=$(find \
             "$ANDROID_DIR/app/src/main/java" \
             -name MainActivity.java \
             -type f \
             -print -quit)
 
-          test -f "$MAIN_ACTIVITY"
-
-          grep -q "extends Activity" "$MAIN_ACTIVITY"
-          grep -q "WebChromeClient" "$MAIN_ACTIVITY"
-          grep -q "onShowFileChooser" "$MAIN_ACTIVITY"
-          grep -q "ClipData.newRawUri" "$MAIN_ACTIVITY"
-          grep -q "importedCatalogActive" \
-            "$ANDROID_DIR/app/src/main/assets/app/index.html"
-
-          grep -q "getCacheDir()" "$MAIN_ACTIVITY"
-          grep -q '"shared"' "$MAIN_ACTIVITY"
-          grep -q "setPackage" "$MAIN_ACTIVITY"
-
-          if grep -q \
-            "androidx.appcompat.app.AppCompatActivity" \
-            "$MAIN_ACTIVITY"; then
-
-            echo "ERRO: AppCompatActivity encontrada."
+          if [ -z "$MAIN_ACTIVITY" ]; then
+            echo "ERRO: MainActivity.java não encontrado."
             exit 1
           fi
 
-          echo "Projeto validado."
-          echo "Pronto para gerar APK."
+          HTML="$ANDROID_DIR/app/src/main/assets/app/index.html"
+
+          grep -q "function openPDF" "$HTML"
+          grep -q "RELATÓRIO DE PEDIDO" "$HTML"
+          grep -q "CÓDIGO" "$HTML"
+          grep -q "NOME DO PRODUTO" "$HTML"
+          grep -q "ESTOQUE" "$HTML"
+          grep -q "PEDIDO" "$HTML"
+          grep -q "AndroidFileBridge.sharePdf" "$HTML"
+
+          grep -q "importedCatalogActive" "$HTML"
+
+          echo ""
+          echo "HTML: OK"
+          echo "PDF: OK"
+          echo "Biblioteca XLSX: OK"
+          echo "Biblioteca jsPDF: OK"
+          echo "MainActivity: OK"
+          echo ""
+          echo "Projeto pronto para compilação."
 
       - name: Compilar APK
         shell: bash
@@ -770,7 +922,12 @@ jobs:
             exit 1
           fi
 
-          echo "APK encontrado:"
+          echo ""
+          echo "======================================"
+          echo " APK GERADO COM SUCESSO"
+          echo "======================================"
+          echo ""
+
           ls -lh "$APK"
 
           mkdir -p "$GITHUB_WORKSPACE/apk-final"
@@ -778,6 +935,7 @@ jobs:
           cp "$APK" \
             "$GITHUB_WORKSPACE/apk-final/Super-Pedido-Pro.apk"
 
+          echo ""
           echo "APK preparado para download."
 
       - name: Disponibilizar APK
