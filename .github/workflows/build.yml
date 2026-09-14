@@ -71,50 +71,532 @@ jobs:
           grep -q "android.enableJetifier=true" gradle.properties || \
             echo "android.enableJetifier=true" >> gradle.properties
 
-      - name: Corrigir sanitizeFilename
+      - name: Aplicar correcoes da versao 9
         shell: bash
         run: |
           set -e
 
-          MAIN=$(find "$ANDROID_DIR/app/src/main/java" \
-            -name MainActivity.java \
-            -type f \
-            -print -quit)
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          import textwrap
+          import urllib.request
+          import os
 
-          test -n "$MAIN"
+          source_file = Path('/tmp/build-v9-source.yml')
 
-          echo "Corrigindo:"
-          echo "$MAIN"
+          urllib.request.urlretrieve(
+              'https://raw.githubusercontent.com/didhuuu/super-pedido-pro/44b3c889e2ac3f4da399e47df9eb992b8d28e8e4/.github/workflows/build.yml',
+              source_file
+          )
 
-          cp "$MAIN" "$MAIN.backup"
+          source = source_file.read_text(encoding='utf-8')
 
-          # A correção definitiva:
-          # substitui a chamada problemática pelo próprio nome do arquivo.
-          sed -i \
-            's/sanitizeFilename(filename)/new File(filename).getName()/g' \
-            "$MAIN"
+          marker = "python3 - <<'PY'"
+          start = source.find(marker)
 
-          # Se por acaso existir uma declaração antiga do método,
-          # ela é removida para evitar conflito.
-          sed -i \
-            '/^[[:space:]]*private String sanitizeFilename(String filename)[[:space:]]*{/,/^[[:space:]]*}[[:space:]]*$/d' \
-            "$MAIN"
+          if start < 0:
+              raise SystemExit('ERRO: script da versao 9 nao encontrado')
 
-          echo ""
-          echo "Verificando chamada problemática..."
+          start = source.find('\n', start) + 1
+          end = source.find('\n          PY', start)
 
-          if grep -n "sanitizeFilename(filename)" "$MAIN"; then
-            echo "ERRO: chamada sanitizeFilename ainda existe."
-            cp "$MAIN.backup" "$MAIN"
-            exit 1
-          fi
+          if end < 0:
+              raise SystemExit('ERRO: fim do script da versao 9 nao encontrado')
 
-          echo ""
-          echo "======================================"
-          echo "SANITIZEFILENAME CORRIGIDO"
-          echo "======================================"
+          patch = textwrap.dedent(source[start:end])
 
-          grep -n "new File(filename).getName()" "$MAIN" || true
+          exec(compile(patch, str(source_file), 'exec'), {})
+
+          root = Path(os.environ['ANDROID_DIR'])
+
+          for java in root.rglob('MainActivity.java'):
+
+              text = java.read_text(encoding='utf-8')
+
+              fixed = re.sub(
+                  r'sanitizeFilename\s*\(\s*filename\s*\)',
+                  'filename',
+                  text
+              )
+
+              if fixed != text:
+                  java.write_text(fixed, encoding='utf-8')
+                  print('sanitizeFilename corrigido em:', java)
+
+          PY
+
+      - name: Corrigir somente o relatorio PDF
+        shell: bash
+        run: |
+          set -e
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import os
+          import re
+
+          root = Path(os.environ['ANDROID_DIR'])
+
+          html_files = list(
+              root.rglob('index.html')
+          )
+
+          if not html_files:
+              html_files = list(
+                  root.rglob('*.html')
+              )
+
+          if not html_files:
+              raise SystemExit('ERRO: nenhum arquivo HTML encontrado.')
+
+          pdf_function = r'''
+          async function openPDF(sendViaWhatsApp=false){
+            const rows=finalizedRows.length?finalizedRows:getRows();
+
+            if(!rows.length){
+              alert('Nenhum item foi selecionado.');
+              return;
+            }
+
+            try{
+              const {jsPDF}=window.jspdf||{};
+
+              if(!jsPDF){
+                throw new Error('Biblioteca PDF não carregada.');
+              }
+
+              const doc=new jsPDF({
+                orientation:'landscape',
+                unit:'mm',
+                format:'a4'
+              });
+
+              const pageWidth=297;
+              const pageHeight=210;
+
+              const margin=10;
+              const contentWidth=pageWidth-(margin*2);
+
+              const colCodigo=30;
+              const colProduto=167;
+              const colEstoque=35;
+              const colPedido=35;
+
+              let y=14;
+
+              function header(){
+
+                doc.setFont('helvetica','bold');
+                doc.setFontSize(16);
+
+                doc.text(
+                  'RELATÓRIO DE PEDIDO',
+                  pageWidth/2,
+                  y,
+                  {align:'center'}
+                );
+
+                y+=7;
+
+                doc.setFont('helvetica','normal');
+                doc.setFontSize(9);
+
+                const data=new Date().toLocaleDateString(
+                  'pt-BR'
+                );
+
+                doc.text(
+                  'Data: '+data,
+                  margin,
+                  y
+                );
+
+                y+=7;
+              }
+
+              function tableHeader(){
+
+                doc.setFont('helvetica','bold');
+                doc.setFontSize(8);
+
+                doc.rect(
+                  margin,
+                  y,
+                  contentWidth,
+                  7
+                );
+
+                doc.line(
+                  margin+colCodigo,
+                  y,
+                  margin+colCodigo,
+                  y+7
+                );
+
+                doc.line(
+                  margin+colCodigo+colProduto,
+                  y,
+                  margin+colCodigo+colProduto,
+                  y+7
+                );
+
+                doc.line(
+                  margin+colCodigo+colProduto+colEstoque,
+                  y,
+                  margin+colCodigo+colProduto+colEstoque,
+                  y+7
+                );
+
+                doc.text(
+                  'CÓDIGO',
+                  margin+2,
+                  y+4.8
+                );
+
+                doc.text(
+                  'NOME DO PRODUTO',
+                  margin+colCodigo+2,
+                  y+4.8
+                );
+
+                doc.text(
+                  'ESTOQUE',
+                  margin+colCodigo+colProduto+2,
+                  y+4.8
+                );
+
+                doc.text(
+                  'PEDIDO',
+                  margin+colCodigo+colProduto+colEstoque+2,
+                  y+4.8
+                );
+
+                y+=7;
+              }
+
+              function fitText(text,maxWidth){
+
+                text=String(text||'');
+
+                if(doc.getTextWidth(text)<=maxWidth){
+                  return text;
+                }
+
+                let result=text;
+
+                while(
+                  result.length>0 &&
+                  doc.getTextWidth(result+'...')>maxWidth
+                ){
+                  result=result.slice(0,-1);
+                }
+
+                return result+'...';
+              }
+
+              function newPage(){
+
+                doc.addPage();
+
+                y=14;
+
+                header();
+              }
+
+              header();
+
+              const groups=groupRows(rows);
+
+              for(const [cat,items] of Object.entries(groups)){
+
+                if(y>178){
+                  newPage();
+                }
+
+                doc.setFont('helvetica','bold');
+                doc.setFontSize(10);
+
+                doc.text(
+                  String(cat).toUpperCase(),
+                  margin,
+                  y
+                );
+
+                y+=5;
+
+                tableHeader();
+
+                doc.setFont('helvetica','normal');
+                doc.setFontSize(7.5);
+
+                for(const x of items){
+
+                  if(y+6>198){
+                    newPage();
+
+                    doc.setFont('helvetica','bold');
+                    doc.setFontSize(10);
+
+                    doc.text(
+                      String(cat).toUpperCase(),
+                      margin,
+                      y
+                    );
+
+                    y+=5;
+
+                    tableHeader();
+
+                    doc.setFont('helvetica','normal');
+                    doc.setFontSize(7.5);
+                  }
+
+                  const h=6;
+
+                  doc.rect(
+                    margin,
+                    y,
+                    contentWidth,
+                    h
+                  );
+
+                  doc.line(
+                    margin+colCodigo,
+                    y,
+                    margin+colCodigo,
+                    y+h
+                  );
+
+                  doc.line(
+                    margin+colCodigo+colProduto,
+                    y,
+                    margin+colCodigo+colProduto,
+                    y+h
+                  );
+
+                  doc.line(
+                    margin+colCodigo+colProduto+colEstoque,
+                    y,
+                    margin+colCodigo+colProduto+colEstoque,
+                    y+h
+                  );
+
+                  const codigo=String(x.code||'');
+
+                  const nome=fitText(
+                    x.name||'',
+                    colProduto-4
+                  );
+
+                  const estoque=String(
+                    x.stock==null?'':x.stock
+                  );
+
+                  const pedido=String(
+                    x.order==null?'':x.order
+                  );
+
+                  doc.text(
+                    codigo,
+                    margin+2,
+                    y+4
+                  );
+
+                  doc.text(
+                    nome,
+                    margin+colCodigo+2,
+                    y+4
+                  );
+
+                  doc.text(
+                    estoque,
+                    margin+colCodigo+colProduto+2,
+                    y+4
+                  );
+
+                  doc.text(
+                    pedido,
+                    margin+colCodigo+colProduto+colEstoque+2,
+                    y+4
+                  );
+
+                  y+=h;
+                }
+
+                y+=5;
+              }
+
+              if(generalObservation){
+
+                if(y+12>198){
+                  doc.addPage();
+                  y=14;
+                }
+
+                doc.setFont('helvetica','bold');
+                doc.setFontSize(8);
+
+                doc.text(
+                  'OBSERVAÇÃO GERAL:',
+                  margin,
+                  y
+                );
+
+                y+=5;
+
+                doc.setFont('helvetica','normal');
+
+                const obsLines=doc.splitTextToSize(
+                  String(generalObservation),
+                  contentWidth
+                );
+
+                doc.text(
+                  obsLines,
+                  margin,
+                  y
+                );
+              }
+
+              const totalPages=doc.internal.getNumberOfPages();
+
+              for(
+                let page=1;
+                page<=totalPages;
+                page++
+              ){
+
+                doc.setPage(page);
+
+                doc.setFont('helvetica','normal');
+                doc.setFontSize(7);
+
+                doc.text(
+                  'Super Pedido Pro',
+                  margin,
+                  pageHeight-5
+                );
+
+                doc.text(
+                  'Página '+page+' de '+totalPages,
+                  pageWidth-margin,
+                  pageHeight-5,
+                  {align:'right'}
+                );
+              }
+
+              const nomeArquivo=
+                'pedido-'+
+                new Date().toISOString().slice(0,10)+
+                '.pdf';
+
+              if(
+                sendViaWhatsApp &&
+                window.AndroidFileBridge &&
+                window.AndroidFileBridge.sharePdf
+              ){
+
+                const base64=
+                  doc.output('datauristring')
+                     .split(',')[1];
+
+                window.AndroidFileBridge.sharePdf(
+                  nomeArquivo,
+                  base64
+                );
+
+                saveHistory(rows);
+                clearPedido();
+
+                return;
+              }
+
+              if(
+                window.AndroidFileBridge &&
+                window.AndroidFileBridge.sharePdf
+              ){
+
+                const base64=
+                  doc.output('datauristring')
+                     .split(',')[1];
+
+                window.AndroidFileBridge.sharePdf(
+                  nomeArquivo,
+                  base64
+                );
+
+                saveHistory(rows);
+                clearPedido();
+
+                return;
+              }
+
+              doc.save(nomeArquivo);
+
+            }catch(e){
+
+              console.error(e);
+
+              alert(
+                'Não foi possível gerar o PDF: '+
+                (e.message||e)
+              );
+            }
+          }
+          '''
+
+          replaced=False
+
+          for html in html_files:
+
+              text=html.read_text(
+                  encoding='utf-8',
+                  errors='ignore'
+              )
+
+              start=text.find(
+                  'async function openPDF(sendViaWhatsApp=false)'
+              )
+
+              if start<0:
+                  continue
+
+              end=text.find(
+                  'function sendWhatsApp',
+                  start
+              )
+
+              if end<0:
+                  continue
+
+              fixed=(
+                  text[:start]
+                  + pdf_function
+                  + '\n'
+                  + text[end:]
+              )
+
+              fixed=fixed.replace(
+                  "document.getElementById('btnWhatsPdf').onclick=()=>openPDF(true)",
+                  "document.getElementById('btnWhatsPdf').onclick=()=>openPDF(true)"
+              )
+
+              html.write_text(
+                  fixed,
+                  encoding='utf-8'
+              )
+
+              print('Relatório PDF corrigido em:',html)
+
+              replaced=True
+
+          if not replaced:
+              raise SystemExit(
+                  'ERRO: função openPDF não encontrada.'
+              )
+
+          PY
 
       - name: Preparar bibliotecas PDF e Excel
         shell: bash
@@ -136,47 +618,45 @@ jobs:
           test -s "$ASSETS/xlsx.full.min.js"
           test -s "$ASSETS/jspdf.umd.min.js"
 
-          echo "Bibliotecas OK."
-
-      - name: Verificar projeto
+      - name: Verificar codigo
         shell: bash
         run: |
           set -e
 
-          test -f "$ANDROID_DIR/settings.gradle"
-          test -f "$ANDROID_DIR/build.gradle"
-          test -f "$ANDROID_DIR/app/build.gradle"
-          test -f "$ANDROID_DIR/app/src/main/AndroidManifest.xml"
+          cd "$ANDROID_DIR"
 
-          MAIN=$(find "$ANDROID_DIR/app/src/main/java" \
-            -name MainActivity.java \
-            -type f \
-            -print -quit)
+          test -f settings.gradle
+          test -f build.gradle
+          test -f app/build.gradle
 
-          test -n "$MAIN"
+          test -s app/src/main/assets/app/xlsx.full.min.js
+          test -s app/src/main/assets/app/jspdf.umd.min.js
 
-          echo "MainActivity:"
-          echo "$MAIN"
+          if grep -R -n -E \
+            'sanitizeFilename[[:space:]]*\([[:space:]]*filename' \
+            app/src/main/java; then
 
-          if grep -q "sanitizeFilename(filename)" "$MAIN"; then
-            echo "ERRO: sanitizeFilename ainda está sendo chamado."
+            echo "ERRO: sanitizeFilename ainda existe."
             exit 1
           fi
 
+          HTML=$(find app/src/main -name index.html -type f -print -quit)
+
+          test -n "$HTML"
+
           grep -q \
-            "new File(filename).getName()" \
-            "$MAIN"
+            "async function openPDF(sendViaWhatsApp=false)" \
+            "$HTML"
 
-          test -s \
-            "$ANDROID_DIR/app/src/main/assets/app/xlsx.full.min.js"
+          grep -q \
+            "RELATÓRIO DE PEDIDO" \
+            "$HTML"
 
-          test -s \
-            "$ANDROID_DIR/app/src/main/assets/app/jspdf.umd.min.js"
+          grep -q \
+            "window.AndroidFileBridge.sharePdf" \
+            "$HTML"
 
-          echo ""
-          echo "======================================"
-          echo "VERIFICAÇÃO PRÉ-BUILD: OK"
-          echo "======================================"
+          echo "VERIFICACAO OK."
 
       - name: Compilar APK
         shell: bash
@@ -196,18 +676,21 @@ jobs:
         run: |
           set -e
 
-          APK="$ANDROID_DIR/app/build/outputs/apk/debug/app-debug.apk"
+          APK=$(find \
+            "$ANDROID_DIR/app/build/outputs/apk" \
+            -type f \
+            -name '*.apk' \
+            -print -quit)
 
-          test -f "$APK"
+          test -n "$APK"
 
-          echo ""
+          echo "APK=$APK" >> "$GITHUB_ENV"
+
           echo "======================================"
           echo "APK GERADO COM SUCESSO"
           echo "======================================"
 
           ls -lh "$APK"
-
-          echo "APK=$APK" >> "$GITHUB_ENV"
 
       - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
