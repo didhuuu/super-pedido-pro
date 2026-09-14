@@ -11,6 +11,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+
       - name: Baixar projeto
         uses: actions/checkout@v4
 
@@ -29,866 +30,890 @@ jobs:
         shell: bash
         run: |
           set -e
+
           rm -rf projeto
+
           test -f "Super-Pedido-Pro.zip"
+
           mkdir -p projeto
+
           unzip -o "Super-Pedido-Pro.zip" -d projeto
 
       - name: Localizar projeto Android
         shell: bash
         run: |
           set -e
-          ANDROID_DIR=$(find "$GITHUB_WORKSPACE/projeto" -name settings.gradle -type f -print -quit | xargs -r dirname)
+
+          ANDROID_DIR=$(find "$GITHUB_WORKSPACE/projeto" \
+            -name settings.gradle \
+            -type f \
+            -print -quit | xargs -r dirname)
+
           test -n "$ANDROID_DIR"
+
           echo "ANDROID_DIR=$ANDROID_DIR" >> "$GITHUB_ENV"
-          echo "Projeto encontrado em: $ANDROID_DIR"
+
+          echo "Projeto encontrado:"
+          echo "$ANDROID_DIR"
 
       - name: Configurar AndroidX
         shell: bash
         run: |
           set -e
-          cd "$ANDROID_DIR"
-          touch gradle.properties
-          grep -q "android.useAndroidX=true" gradle.properties || echo "android.useAndroidX=true" >> gradle.properties
-          grep -q "android.enableJetifier=true" gradle.properties || echo "android.enableJetifier=true" >> gradle.properties
 
-      - name: Corrigir somente PDF, limpeza, repetir e ADM
+          cd "$ANDROID_DIR"
+
+          touch gradle.properties
+
+          grep -q "android.useAndroidX=true" gradle.properties || \
+            echo "android.useAndroidX=true" >> gradle.properties
+
+          grep -q "android.enableJetifier=true" gradle.properties || \
+            echo "android.enableJetifier=true" >> gradle.properties
+
+      - name: Corrigir aplicativo
         shell: bash
         run: |
           set -e
 
-          python3 - <<'PY'
+          python3 <<'PY'
           from pathlib import Path
           import os
           import re
 
           root = Path(os.environ["ANDROID_DIR"])
+
           html = root / "app/src/main/assets/app/index.html"
-          main = next((root / "app/src/main/java").rglob("MainActivity.java"), None)
 
           if not html.exists():
-              raise SystemExit("ERRO: index.html não encontrado")
+              raise SystemExit(
+                  "ERRO: index.html não encontrado"
+              )
 
-          if main is None:
-              raise SystemExit("ERRO: MainActivity.java não encontrado")
-
-          text = html.read_text(encoding="utf-8")
+          text = html.read_text(
+              encoding="utf-8"
+          )
 
           # ============================================================
-          # CORREÇÃO FINAL
-          #
-          # Não altera reportText().
-          # Não altera o catálogo.
-          # Não remove ADM.
-          # Não remove histórico.
-          #
-          # Apenas coloca versões finais das funções problemáticas no
-          # final do JavaScript, evitando substituir blocos internos
-          # que podem variar entre versões.
+          # BIBLIOTECAS LOCAIS
           # ============================================================
 
-          override = r'''
-          /* ===== CORREÇÃO FINAL SUPER PEDIDO ===== */
+          text = text.replace(
+              "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js",
+              "xlsx.full.min.js"
+          )
 
-          (function(){
+          text = text.replace(
+              "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js",
+              "jspdf.umd.min.js"
+          )
 
-            function savePedidoHistory(rows){
-              if(!Array.isArray(rows) || !rows.length) return;
+          # ============================================================
+          # CORREÇÃO DO clearPedido
+          #
+          # Apaga somente o pedido atual.
+          #
+          # NÃO apaga:
+          # catálogo
+          # favoritos
+          # histórico
+          # último pedido
+          # produtos cadastrados
+          # configurações
+          # ============================================================
 
-              lastOrder = JSON.parse(JSON.stringify(rows));
+          clear_code = r"""
+          window.clearPedidoFinal = function(historyRows){
 
-              historyOrders.unshift({
-                date:new Date().toLocaleString('pt-BR'),
-                generalObservation:generalObservation || '',
-                rows:JSON.parse(JSON.stringify(rows))
-              });
-
-              historyOrders = historyOrders.slice(0,20);
-
-              if(typeof saveFeatures === 'function'){
-                saveFeatures();
-              }
-            }
-
-
-            /*
-             * LIMPEZA DO PEDIDO
-             *
-             * Apaga somente:
-             * - estoque
-             * - quantidades pedidas
-             * - produtos adicionais do pedido
-             * - validade curta do pedido
-             * - observação atual
-             *
-             * NÃO apaga:
-             * - catálogo
-             * - produtos cadastrados
-             * - favoritos
-             * - histórico
-             * - último pedido
-             * - configurações ADM
-             */
-            window.clearPedido = function(historyRows){
-
-              try{
-
-                const rows =
-                  Array.isArray(historyRows) && historyRows.length
-                    ? historyRows
-                    : (
-                        Array.isArray(finalizedRows) &&
-                        finalizedRows.length
-                          ? finalizedRows
-                          : []
-                      );
-
-                /*
-                 * Salva o pedido ANTES de zerar.
-                 * Isso garante que "Repetir último" continue funcionando.
-                 */
-                if(rows.length){
-                  savePedidoHistory(rows);
-                }
-
-
-                /* ZERA O PEDIDO ATUAL */
-                vals = {};
-                extras = [];
-                validadeCurta = [];
-                finalizedRows = [];
-                generalObservation = '';
-
-
-                /*
-                 * Remove os dados temporários do pedido.
-                 */
-                localStorage.removeItem('pedido_compras_vals');
-                localStorage.removeItem('pedido_compras_extras');
-                localStorage.removeItem('pedido_compras_validade_curta');
-                localStorage.removeItem('sp_general_obs');
-
-
-                /*
-                 * Grava novamente o estado vazio.
-                 *
-                 * saveFeatures() NÃO apaga lastOrder nem historyOrders.
-                 */
-                if(typeof save === 'function'){
-                  save();
-                }
-
-                if(typeof saveFeatures === 'function'){
-                  saveFeatures();
-                }
-
-
-                const obs =
-                  document.getElementById('generalObs');
-
-                if(obs){
-                  obs.value = '';
-                }
-
-
-                if(typeof render === 'function'){
-                  render();
-                }
-
-                if(typeof renderValidadeCurta === 'function'){
-                  renderValidadeCurta();
-                }
-
-                if(typeof updateBadge === 'function'){
-                  updateBadge();
-                }
-
-                if(typeof closeConference === 'function'){
-                  closeConference();
-                }
-
-                window.scrollTo({
-                  top:0,
-                  behavior:'smooth'
-                });
-
-              }catch(e){
-
-                console.error('clearPedido:',e);
-
-                alert(
-                  'Não foi possível limpar o pedido: ' +
-                  e.message
-                );
-              }
-            };
-
-
-            /*
-             * REPETIR ÚLTIMO PEDIDO
-             *
-             * Primeiro usa lastOrder.
-             * Se por algum motivo ele estiver vazio,
-             * usa o primeiro pedido do histórico.
-             */
-            window.repeatLastOrder = function(){
-
-              let rows =
-                Array.isArray(lastOrder)
-                  ? lastOrder
-                  : [];
-
-              let obs =
-                generalObservation || '';
-
+            try{
 
               if(
-                !rows.length &&
-                Array.isArray(historyOrders) &&
-                historyOrders.length
+                Array.isArray(historyRows) &&
+                historyRows.length
               ){
 
-                rows =
-                  historyOrders[0].rows || [];
+                lastOrder =
+                  JSON.parse(
+                    JSON.stringify(historyRows)
+                  );
 
-                obs =
-                  historyOrders[0].generalObservation || '';
+                historyOrders.unshift({
+                  date:
+                    new Date().toLocaleString('pt-BR'),
+
+                  generalObservation:
+                    generalObservation || '',
+
+                  rows:
+                    JSON.parse(
+                      JSON.stringify(historyRows)
+                    )
+                });
+
+                historyOrders =
+                  historyOrders.slice(0,20);
+
+                if(
+                  typeof saveFeatures === 'function'
+                ){
+                  saveFeatures();
+                }
               }
 
 
-              if(!rows.length){
-
-                alert(
-                  'Ainda não existe último pedido.'
-                );
-
-                return;
-              }
-
-
+              /*
+               * ZERA O PEDIDO
+               */
               vals = {};
               extras = [];
               validadeCurta = [];
+              finalizedRows = [];
+              generalObservation = '';
 
 
-              rows.forEach(function(x){
+              /*
+               * REMOVE SOMENTE OS DADOS DO PEDIDO
+               */
+              localStorage.removeItem(
+                'pedido_compras_vals'
+              );
 
-                /*
-                 * Produto adicional
-                 */
-                if(x.cat === 'Produto Adicional'){
+              localStorage.removeItem(
+                'pedido_compras_extras'
+              );
 
-                  extras.push({
-                    code:
-                      x.code === '-'
-                        ? ''
-                        : x.code,
+              localStorage.removeItem(
+                'pedido_compras_validade_curta'
+              );
 
-                    name:
-                      x.name,
-
-                    qty:
-                      Number(x.order) || 0
-                  });
-
-                  return;
-                }
+              localStorage.removeItem(
+                'sp_general_obs'
+              );
 
 
-                /*
-                 * Validade curta
-                 */
-                if(x.cat === '⚠️ Validade Curta'){
-
-                  validadeCurta.push({
-
-                    code:
-                      x.code === '-'
-                        ? ''
-                        : x.code,
-
-                    name:
-                      x.name,
-
-                    qty:
-                      Number(x.order) || 0,
-
-                    date:
-                      x.validade || ''
-                  });
-
-                  return;
-                }
+              /*
+               * Salva o estado vazio.
+               */
+              if(
+                typeof save === 'function'
+              ){
+                save();
+              }
 
 
-                /*
-                 * Produto normal
-                 */
-                const f =
-                  typeof productByCode === 'function'
-                    ? productByCode(x.code)
-                    : null;
+              /*
+               * Mantém histórico e último pedido.
+               */
+              if(
+                typeof saveFeatures === 'function'
+              ){
+                saveFeatures();
+              }
 
 
-                if(f){
-
-                  vals[
-                    key(
-                      f.c,
-                      f.s,
-                      f.i,
-                      'o'
-                    )
-                  ] =
-                    Number(x.order) || 0;
-
-
-                  vals[
-                    key(
-                      f.c,
-                      f.s,
-                      f.i,
-                      's'
-                    )
-                  ] =
-                    Number(x.stock) || 0;
-                }
-
-              });
-
-
-              generalObservation = obs;
-
-
-              const obsEl =
+              const obs =
                 document.getElementById(
                   'generalObs'
                 );
 
-              if(obsEl){
-                obsEl.value =
-                  generalObservation;
+              if(obs){
+                obs.value = '';
               }
 
 
-              if(typeof save === 'function'){
-                save();
-              }
-
-              if(typeof saveFeatures === 'function'){
-                saveFeatures();
-              }
-
-              if(typeof render === 'function'){
+              if(
+                typeof render === 'function'
+              ){
                 render();
               }
 
-              if(typeof renderValidadeCurta === 'function'){
+
+              if(
+                typeof renderValidadeCurta === 'function'
+              ){
                 renderValidadeCurta();
               }
 
-              if(typeof updateBadge === 'function'){
+
+              if(
+                typeof updateBadge === 'function'
+              ){
                 updateBadge();
               }
 
-              if(typeof closeFeature === 'function'){
-                closeFeature();
+
+              if(
+                typeof closeConference === 'function'
+              ){
+                closeConference();
               }
 
 
-              alert(
-                'Último pedido recuperado. Confira antes de enviar.'
+            }catch(e){
+
+              console.error(
+                'clearPedidoFinal:',
+                e
               );
-            };
+
+              alert(
+                'Erro ao limpar pedido: ' +
+                e.message
+              );
+            }
+          };
+          """
+
+          # ============================================================
+          # CORREÇÃO DO REPETIR ÚLTIMO PEDIDO
+          # ============================================================
+
+          repeat_code = r"""
+          window.repeatLastOrderFinal = function(){
+
+            let rows =
+              Array.isArray(lastOrder)
+                ? lastOrder
+                : [];
+
+            let observation =
+              '';
 
 
-            /*
-             * ============================================================
-             * PDF
-             *
-             * Modelo:
-             * RELATÓRIO DE PEDIDO
-             * Data
-             *
-             * CÓDIGO | NOME DO PRODUTO | ESTOQUE | PEDIDO
-             *
-             * Categorias separadas.
-             *
-             * A4 RETRATO.
-             * ============================================================
-             */
-            window.openPDF = function(){
+            if(
+              !rows.length &&
+              Array.isArray(historyOrders) &&
+              historyOrders.length
+            ){
 
-              const rows =
-                Array.isArray(finalizedRows) &&
-                finalizedRows.length
-                  ? finalizedRows
-                  : getRows();
+              rows =
+                historyOrders[0].rows || [];
+
+              observation =
+                historyOrders[0]
+                  .generalObservation || '';
+            }
 
 
-              if(!rows.length){
+            if(!rows.length){
 
-                alert(
-                  'Nenhum item foi selecionado.'
-                );
+              alert(
+                'Ainda não existe último pedido.'
+              );
+
+              return;
+            }
+
+
+            vals = {};
+            extras = [];
+            validadeCurta = [];
+
+
+            rows.forEach(function(x){
+
+              if(
+                x.cat === 'Produto Adicional'
+              ){
+
+                extras.push({
+                  code:
+                    x.code === '-'
+                      ? ''
+                      : x.code,
+
+                  name:
+                    x.name,
+
+                  qty:
+                    Number(x.order) || 0
+                });
 
                 return;
               }
 
 
-              try{
+              if(
+                x.cat === '⚠️ Validade Curta'
+              ){
 
-                const lib =
-                  window.jspdf || {};
+                validadeCurta.push({
 
-                const jsPDF =
-                  lib.jsPDF;
+                  code:
+                    x.code === '-'
+                      ? ''
+                      : x.code,
 
+                  name:
+                    x.name,
 
-                if(!jsPDF){
+                  qty:
+                    Number(x.order) || 0,
 
-                  throw new Error(
-                    'Biblioteca PDF não carregada.'
-                  );
-                }
+                  date:
+                    x.validade || ''
+                });
 
+                return;
+              }
 
-                /*
-                 * A4 RETRATO
-                 *
-                 * 210 x 297 mm
-                 */
-                const doc =
-                  new jsPDF({
-                    orientation:'portrait',
-                    unit:'mm',
-                    format:'a4'
-                  });
 
+              if(
+                typeof productByCode !== 'function'
+              ){
+                return;
+              }
 
-                const W = 210;
-                const H = 297;
 
-                const L = 10;
-                const R = 10;
+              const f =
+                productByCode(
+                  x.code
+                );
 
-                const tableW =
-                  W - L - R;
 
+              if(!f){
+                return;
+              }
 
-                /*
-                 * Colunas:
-                 *
-                 * CÓDIGO       28 mm
-                 * NOME        110 mm
-                 * ESTOQUE      25 mm
-                 * PEDIDO        25 mm
-                 */
-                const col = [
-                  L,
-                  L + 28,
-                  L + 138,
-                  L + 163,
-                  L + 188
-                ];
 
+              vals[
+                key(
+                  f.c,
+                  f.s,
+                  f.i,
+                  'o'
+                )
+              ] =
+                Number(x.order) || 0;
 
-                let y = 15;
-                let page = 1;
 
+              vals[
+                key(
+                  f.c,
+                  f.s,
+                  f.i,
+                  's'
+                )
+              ] =
+                Number(x.stock) || 0;
 
-                /*
-                 * Rodapé.
-                 */
-                function footer(){
+            });
 
-                  doc.setFont(
-                    'helvetica',
-                    'normal'
-                  );
 
-                  doc.setFontSize(7);
+            generalObservation =
+              observation ||
+              generalObservation ||
+              '';
 
-                  doc.text(
-                    'Super Pedido Pro',
-                    L,
-                    H - 7
-                  );
 
-                  doc.text(
-                    'Página ' + page,
-                    L + tableW,
-                    H - 7,
-                    {
-                      align:'right'
-                    }
-                  );
-                }
+            const obs =
+              document.getElementById(
+                'generalObs'
+              );
 
+            if(obs){
+              obs.value =
+                generalObservation;
+            }
 
-                /*
-                 * Nova página.
-                 */
-                function newPage(){
 
-                  footer();
+            if(
+              typeof save === 'function'
+            ){
+              save();
+            }
 
-                  doc.addPage();
 
-                  page++;
+            if(
+              typeof saveFeatures === 'function'
+            ){
+              saveFeatures();
+            }
 
-                  y = 15;
-                }
 
+            if(
+              typeof render === 'function'
+            ){
+              render();
+            }
 
-                /*
-                 * Cabeçalho principal.
-                 */
-                function header(){
 
-                  doc.setFont(
-                    'helvetica',
-                    'bold'
-                  );
+            if(
+              typeof renderValidadeCurta === 'function'
+            ){
+              renderValidadeCurta();
+            }
 
-                  doc.setFontSize(14);
 
-                  doc.text(
-                    'RELATÓRIO DE PEDIDO',
-                    W / 2,
-                    y,
-                    {
-                      align:'center'
-                    }
-                  );
-
-                  y += 7;
+            if(
+              typeof updateBadge === 'function'
+            ){
+              updateBadge();
+            }
 
 
-                  doc.setFont(
-                    'helvetica',
-                    'normal'
-                  );
+            if(
+              typeof closeFeature === 'function'
+            ){
+              closeFeature();
+            }
 
-                  doc.setFontSize(7);
 
-                  doc.text(
-                    'Data: ' +
-                    new Date()
-                      .toLocaleDateString(
-                        'pt-BR'
-                      ),
-                    L,
-                    y
-                  );
+            alert(
+              'Último pedido recuperado. Confira antes de enviar.'
+            );
+          };
+          """
 
-                  y += 9;
-                }
+          # ============================================================
+          # CORREÇÃO DO PDF
+          #
+          # A4 RETRATO:
+          # largura 210 mm
+          # altura 297 mm
+          # ============================================================
 
+          pdf_code = r"""
+          window.openPDFFinal = function(){
 
-                /*
-                 * Cabeçalho da tabela.
-                 */
-                function tableHeader(){
+            const rows =
+              Array.isArray(finalizedRows) &&
+              finalizedRows.length
+                ? finalizedRows
+                : getRows();
 
-                  if(y + 9 > H - 14){
-                    newPage();
-                  }
 
+            if(!rows.length){
 
-                  doc.setFont(
-                    'helvetica',
-                    'bold'
-                  );
+              alert(
+                'Nenhum item foi selecionado.'
+              );
 
-                  doc.setFontSize(6.5);
+              return;
+            }
 
 
-                  doc.rect(
-                    L,
-                    y,
-                    tableW,
-                    8
-                  );
+            try{
 
+              const jspdf =
+                window.jspdf || {};
 
-                  for(
-                    let i = 1;
-                    i < col.length - 1;
-                    i++
-                  ){
+              const jsPDF =
+                jspdf.jsPDF;
 
-                    doc.line(
-                      col[i],
-                      y,
-                      col[i],
-                      y + 8
-                    );
-                  }
 
+              if(!jsPDF){
 
-                  doc.text(
-                    'CÓDIGO',
-                    (col[0] + col[1]) / 2,
-                    y + 5,
-                    {
-                      align:'center'
-                    }
-                  );
+                throw new Error(
+                  'Biblioteca PDF não carregada.'
+                );
+              }
 
 
-                  doc.text(
-                    'NOME DO PRODUTO',
-                    col[1] + 2,
-                    y + 5
-                  );
-
-
-                  doc.text(
-                    'ESTOQUE',
-                    (col[2] + col[3]) / 2,
-                    y + 5,
-                    {
-                      align:'center'
-                    }
-                  );
-
-
-                  doc.text(
-                    'PEDIDO',
-                    (col[3] + col[4]) / 2,
-                    y + 5,
-                    {
-                      align:'center'
-                    }
-                  );
-
-
-                  y += 8;
-                }
-
-
-                /*
-                 * Linha do produto.
-                 */
-                function productRow(x){
-
-                  const nameLines =
-                    doc.splitTextToSize(
-                      String(
-                        x.name || ''
-                      ),
-                      106
-                    );
-
-
-                  const rowHeight =
-                    Math.max(
-                      7,
-                      nameLines.length * 3.4 + 2
-                    );
-
-
-                  if(
-                    y + rowHeight >
-                    H - 14
-                  ){
-
-                    newPage();
-
-                    header();
-
-                    tableHeader();
-                  }
-
-
-                  doc.setFont(
-                    'helvetica',
-                    'normal'
-                  );
-
-                  doc.setFontSize(6.2);
-
-
-                  /*
-                   * Borda externa.
-                   */
-                  doc.rect(
-                    L,
-                    y,
-                    tableW,
-                    rowHeight
-                  );
-
-
-                  /*
-                   * Linhas verticais.
-                   */
-                  for(
-                    let i = 1;
-                    i < col.length - 1;
-                    i++
-                  ){
-
-                    doc.line(
-                      col[i],
-                      y,
-                      col[i],
-                      y + rowHeight
-                    );
-                  }
-
-
-                  /*
-                   * Código.
-                   */
-                  doc.text(
-                    String(
-                      x.code || '-'
-                    ),
-                    (col[0] + col[1]) / 2,
-                    y + rowHeight / 2 + 2,
-                    {
-                      align:'center'
-                    }
-                  );
-
-
-                  /*
-                   * Nome.
-                   */
-                  doc.text(
-                    nameLines,
-                    col[1] + 2,
-                    y + 3.8
-                  );
-
-
-                  /*
-                   * Estoque.
-                   */
-                  doc.text(
-                    String(
-                      x.stock ?? 0
-                    ),
-                    (col[2] + col[3]) / 2,
-                    y + rowHeight / 2 + 2,
-                    {
-                      align:'center'
-                    }
-                  );
-
-
-                  /*
-                   * Pedido.
-                   */
-                  doc.text(
-                    String(
-                      x.order ?? 0
-                    ),
-                    (col[3] + col[4]) / 2,
-                    y + rowHeight / 2 + 2,
-                    {
-                      align:'center'
-                    }
-                  );
-
-
-                  y += rowHeight;
-                }
-
-
-                /*
-                 * Cabeçalho.
-                 */
-                header();
-
-
-                /*
-                 * Agrupa por categoria.
-                 */
-                const groups = {};
-
-                rows.forEach(function(x){
-
-                  const cat =
-                    x.cat || 'Outros';
-
-                  if(!groups[cat]){
-                    groups[cat] = [];
-                  }
-
-                  groups[cat].push(x);
+              /*
+               * A4 RETRATO
+               */
+              const doc =
+                new jsPDF({
+                  orientation: 'portrait',
+                  unit: 'mm',
+                  format: 'a4'
                 });
 
 
+              const pageWidth = 210;
+              const pageHeight = 297;
+
+              const margin = 10;
+
+              const usableWidth =
+                pageWidth -
+                margin * 2;
+
+
+              let y = 15;
+
+              let page = 1;
+
+
+              function footer(){
+
+                doc.setFont(
+                  'helvetica',
+                  'normal'
+                );
+
+                doc.setFontSize(7);
+
+                doc.text(
+                  'Super Pedido Pro',
+                  margin,
+                  pageHeight - 7
+                );
+
+                doc.text(
+                  'Página ' + page,
+                  pageWidth - margin,
+                  pageHeight - 7,
+                  {
+                    align: 'right'
+                  }
+                );
+              }
+
+
+              function newPage(){
+
+                footer();
+
+                doc.addPage();
+
+                page++;
+
+                y = 15;
+              }
+
+
+              function title(){
+
+                doc.setFont(
+                  'helvetica',
+                  'bold'
+                );
+
+                doc.setFontSize(14);
+
+                doc.text(
+                  'RELATÓRIO DE PEDIDO',
+                  pageWidth / 2,
+                  y,
+                  {
+                    align: 'center'
+                  }
+                );
+
+                y += 7;
+
+
+                doc.setFont(
+                  'helvetica',
+                  'normal'
+                );
+
+                doc.setFontSize(7);
+
+                doc.text(
+                  'Data: ' +
+                  new Date()
+                    .toLocaleString('pt-BR'),
+                  margin,
+                  y
+                );
+
+                y += 8;
+              }
+
+
+              /*
+               * COLUNAS
+               *
+               * Código = 28
+               * Produto = 112
+               * Estoque = 25
+               * Pedido = 25
+               */
+              const xCode =
+                margin;
+
+              const xName =
+                margin + 28;
+
+              const xStock =
+                margin + 140;
+
+              const xOrder =
+                margin + 165;
+
+              const xEnd =
+                pageWidth - margin;
+
+
+              function tableHeader(){
+
+                if(
+                  y + 8 >
+                  pageHeight - 14
+                ){
+
+                  newPage();
+
+                  title();
+                }
+
+
+                doc.setFont(
+                  'helvetica',
+                  'bold'
+                );
+
+                doc.setFontSize(6.5);
+
+
+                doc.rect(
+                  margin,
+                  y,
+                  usableWidth,
+                  8
+                );
+
+
+                doc.line(
+                  xName,
+                  y,
+                  xName,
+                  y + 8
+                );
+
+                doc.line(
+                  xStock,
+                  y,
+                  xStock,
+                  y + 8
+                );
+
+                doc.line(
+                  xOrder,
+                  y,
+                  xOrder,
+                  y + 8
+                );
+
+
+                doc.text(
+                  'CÓDIGO',
+                  xCode + 14,
+                  y + 5,
+                  {
+                    align: 'center'
+                  }
+                );
+
+
+                doc.text(
+                  'PRODUTO',
+                  xName + 2,
+                  y + 5
+                );
+
+
+                doc.text(
+                  'ESTOQUE',
+                  xStock + 12.5,
+                  y + 5,
+                  {
+                    align: 'center'
+                  }
+                );
+
+
+                doc.text(
+                  'PEDIDO',
+                  xOrder + 12.5,
+                  y + 5,
+                  {
+                    align: 'center'
+                  }
+                );
+
+
+                y += 8;
+              }
+
+
+              function drawRow(item){
+
+                const name =
+                  String(
+                    item.name || ''
+                  );
+
+
+                const nameLines =
+                  doc.splitTextToSize(
+                    name,
+                    108
+                  );
+
+
+                const rowHeight =
+                  Math.max(
+                    7,
+                    nameLines.length * 3.5 + 2
+                  );
+
+
+                if(
+                  y + rowHeight >
+                  pageHeight - 14
+                ){
+
+                  newPage();
+
+                  title();
+
+                  tableHeader();
+                }
+
+
+                doc.setFont(
+                  'helvetica',
+                  'normal'
+                );
+
+                doc.setFontSize(6.2);
+
+
                 /*
-                 * Desenha categorias.
+                 * Caixa.
                  */
-                Object.entries(groups)
-                  .forEach(function(entry){
-
-                    const cat =
-                      entry[0];
-
-                    const items =
-                      entry[1];
-
-
-                    if(
-                      y + 16 >
-                      H - 14
-                    ){
-
-                      newPage();
-
-                      header();
-                    }
-
-
-                    doc.setFont(
-                      'helvetica',
-                      'bold'
-                    );
-
-                    doc.setFontSize(8.5);
-
-
-                    doc.text(
-                      String(cat).toUpperCase(),
-                      L,
-                      y
-                    );
-
-
-                    y += 4;
-
-
-                    tableHeader();
-
-
-                    items.forEach(
-                      productRow
-                    );
-
-
-                    y += 2;
-                  });
+                doc.rect(
+                  margin,
+                  y,
+                  usableWidth,
+                  rowHeight
+                );
 
 
                 /*
-                 * Observação.
+                 * Divisórias.
                  */
-                if(generalObservation){
+                doc.line(
+                  xName,
+                  y,
+                  xName,
+                  y + rowHeight
+                );
+
+                doc.line(
+                  xStock,
+                  y,
+                  xStock,
+                  y + rowHeight
+                );
+
+                doc.line(
+                  xOrder,
+                  y,
+                  xOrder,
+                  y + rowHeight
+                );
+
+
+                /*
+                 * Código.
+                 */
+                doc.text(
+                  String(
+                    item.code || '-'
+                  ),
+                  xCode + 14,
+                  y + rowHeight / 2 + 2,
+                  {
+                    align: 'center'
+                  }
+                );
+
+
+                /*
+                 * Nome.
+                 */
+                doc.text(
+                  nameLines,
+                  xName + 2,
+                  y + 3.8
+                );
+
+
+                /*
+                 * Estoque.
+                 */
+                doc.text(
+                  String(
+                    item.stock ?? 0
+                  ),
+                  xStock + 12.5,
+                  y + rowHeight / 2 + 2,
+                  {
+                    align: 'center'
+                  }
+                );
+
+
+                /*
+                 * Pedido.
+                 */
+                doc.text(
+                  String(
+                    item.order ?? 0
+                  ),
+                  xOrder + 12.5,
+                  y + rowHeight / 2 + 2,
+                  {
+                    align: 'center'
+                  }
+                );
+
+
+                y += rowHeight;
+              }
+
+
+              title();
+
+
+              const groups = {};
+
+
+              rows.forEach(function(item){
+
+                const category =
+                  item.cat ||
+                  'Outros';
+
+
+                if(
+                  !groups[category]
+                ){
+                  groups[category] = [];
+                }
+
+
+                groups[category].push(
+                  item
+                );
+              });
+
+
+              Object.entries(
+                groups
+              ).forEach(
+                function(entry){
+
+                  const category =
+                    entry[0];
+
+                  const items =
+                    entry[1];
+
 
                   if(
-                    y + 12 >
-                    H - 14
+                    y + 16 >
+                    pageHeight - 14
                   ){
 
                     newPage();
 
-                    header();
+                    title();
                   }
 
 
@@ -897,12 +922,14 @@ jobs:
                     'bold'
                   );
 
-                  doc.setFontSize(7);
+                  doc.setFontSize(8.5);
 
 
                   doc.text(
-                    'OBSERVAÇÃO:',
-                    L,
+                    String(
+                      category
+                    ).toUpperCase(),
+                    margin,
                     y
                   );
 
@@ -910,584 +937,207 @@ jobs:
                   y += 4;
 
 
-                  doc.setFont(
-                    'helvetica',
-                    'normal'
+                  tableHeader();
+
+
+                  items.forEach(
+                    drawRow
                   );
 
 
-                  const observationLines =
-                    doc.splitTextToSize(
-                      String(
-                        generalObservation
-                      ),
-                      tableW
-                    );
-
-
-                  doc.text(
-                    observationLines,
-                    L,
-                    y
-                  );
+                  y += 2;
                 }
+              );
 
 
-                footer();
+              /*
+               * Observação geral.
+               */
+              if(
+                generalObservation
+              ){
 
-
-                /*
-                 * Gera Base64.
-                 */
-                const base64 =
-                  doc
-                    .output(
-                      'datauristring'
-                    )
-                    .split(',')[1];
-
-
-                const nome =
-                  'relatorio-pedido-' +
-                  new Date()
-                    .toLocaleDateString(
-                      'pt-BR'
-                    )
-                    .replace(/\//g,'-') +
-                  '.pdf';
-
-
-                /*
-                 * PRIMEIRO salva o histórico e zera
-                 * as quantidades.
-                 *
-                 * O último pedido continua salvo.
-                 */
-                clearPedido(rows);
-
-
-                /*
-                 * Depois compartilha o PDF.
-                 */
                 if(
-                  window.AndroidFileBridge &&
-                  typeof window.AndroidFileBridge.sharePdf === 'function'
+                  y + 15 >
+                  pageHeight - 14
                 ){
 
-                  window.AndroidFileBridge.sharePdf(
-                    nome,
-                    base64
-                  );
+                  newPage();
 
-                }else{
-
-                  /*
-                   * Fallback para navegador.
-                   */
-                  doc.save(nome);
+                  title();
                 }
 
 
-              }catch(e){
-
-                console.error(
-                  'openPDF:',
-                  e
+                doc.setFont(
+                  'helvetica',
+                  'bold'
                 );
 
-                alert(
-                  'Não foi possível gerar o PDF: ' +
-                  e.message
+                doc.setFontSize(7);
+
+
+                doc.text(
+                  'OBSERVAÇÃO:',
+                  margin,
+                  y
+                );
+
+
+                y += 4;
+
+
+                doc.setFont(
+                  'helvetica',
+                  'normal'
+                );
+
+
+                const obsLines =
+                  doc.splitTextToSize(
+                    String(
+                      generalObservation
+                    ),
+                    usableWidth
+                  );
+
+
+                doc.text(
+                  obsLines,
+                  margin,
+                  y
                 );
               }
-            };
 
-          })();
-          '''
 
-          # Coloca o bloco antes do fechamento do script.
-          marker = '</script>'
+              footer();
 
-          if marker not in text:
+
+              const base64 =
+                doc
+                  .output(
+                    'datauristring'
+                  )
+                  .split(',')[1];
+
+
+              const filename =
+                'relatorio-pedido-' +
+                new Date()
+                  .toLocaleDateString(
+                    'pt-BR'
+                  )
+                  .replace(
+                    /\//g,
+                    '-'
+                  ) +
+                '.pdf';
+
+
+              /*
+               * PRIMEIRO SALVA O HISTÓRICO
+               * E ZERA O PEDIDO.
+               */
+              clearPedidoFinal(rows);
+
+
+              /*
+               * DEPOIS COMPARTILHA.
+               */
+              if(
+                window.AndroidFileBridge &&
+                typeof window.AndroidFileBridge.sharePdf === 'function'
+              ){
+
+                window.AndroidFileBridge.sharePdf(
+                  filename,
+                  base64
+                );
+
+              }else{
+
+                doc.save(
+                  filename
+                );
+              }
+
+
+            }catch(e){
+
+              console.error(
+                'openPDFFinal:',
+                e
+              );
+
+              alert(
+                'Erro ao gerar PDF: ' +
+                e.message
+              );
+            }
+          };
+          """
+
+          # ============================================================
+          # INSTALA AS CORREÇÕES ANTES DO </script>
+          # ============================================================
+
+          if "</script>" not in text:
+
               raise SystemExit(
-                  'ERRO: fechamento do script não encontrado'
+                  "ERRO: </script> não encontrado"
               )
 
-          text = text.replace(
-              marker,
-              override + marker,
-              1
+
+          injection = (
+              "\n"
+              + clear_code
+              + "\n"
+              + repeat_code
+              + "\n"
+              + pdf_code
+              + "\n"
           )
 
 
-          # Mantém bibliotecas locais.
-          text = text.replace(
-              'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js',
-              'xlsx.full.min.js'
+          text =
+              text.replace(
+                  "</script>",
+                  injection + "</script>",
+                  1
+              )
+
+
+          # ============================================================
+          # REDIRECIONA OS BOTÕES PARA AS VERSÕES CORRIGIDAS
+          # ============================================================
+
+          text = re.sub(
+              r"document\.getElementById\('btnWhatsPdf'\)\.onclick\s*=\s*[^;]+;",
+              "document.getElementById('btnWhatsPdf').onclick=function(){openPDFFinal();};",
+              text,
+              count=1
           )
 
+
+          # Mantém o botão de repetir último funcionando.
           text = text.replace(
-              'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
-              'jspdf.umd.min.js'
+              "onclick=\"repeatLastOrder()\"",
+              "onclick=\"repeatLastOrderFinal()\""
           )
 
 
           html.write_text(
               text,
-              encoding='utf-8'
-          )
-
-
-          # ============================================================
-          # MAIN ACTIVITY
-          #
-          # Mantém ADM/prompt e importação funcionando no WebView.
-          # ============================================================
-
-          java = main.read_text(
-              encoding='utf-8'
-          )
-
-
-          if 'import android.content.ClipData;' not in java:
-
-              java = java.replace(
-                  'import android.content.Intent;',
-                  'import android.content.ClipData;\nimport android.content.Intent;',
-                  1
-              )
-
-
-          if 'import android.webkit.ValueCallback;' not in java:
-
-              java = java.replace(
-                  'import android.webkit.WebSettings;',
-                  'import android.webkit.ValueCallback;\nimport android.webkit.WebSettings;',
-                  1
-              )
-
-
-          if 'import android.webkit.WebChromeClient;' not in java:
-
-              java = java.replace(
-                  'import android.webkit.WebSettings;',
-                  'import android.webkit.WebChromeClient;\nimport android.webkit.WebSettings;',
-                  1
-              )
-
-
-          if 'private ValueCallback<Uri[]> filePathCallback;' not in java:
-
-              java = java.replace(
-                  'public class MainActivity extends Activity {',
-                  '''public class MainActivity extends Activity {
-              private ValueCallback<Uri[]> filePathCallback;
-              private static final int FILE_CHOOSER_REQUEST = 1001;''',
-                  1
-              )
-
-
-          # ============================================================
-          # Seletor de arquivos para ADM/importação.
-          # ============================================================
-
-          if 'onShowFileChooser' not in java:
-
-              marker =
-                  '        webView.setWebViewClient(new WebViewClient());\n'
-
-
-              block = '''        webView.setWebChromeClient(new WebChromeClient() {
-                  @Override
-                  public boolean onShowFileChooser(
-                          WebView view,
-                          ValueCallback<Uri[]> callback,
-                          WebChromeClient.FileChooserParams params) {
-
-                      if (MainActivity.this.filePathCallback != null) {
-                          MainActivity.this.filePathCallback.onReceiveValue(null);
-                      }
-
-                      MainActivity.this.filePathCallback = callback;
-
-                      try {
-                          startActivityForResult(
-                                  params.createIntent(),
-                                  FILE_CHOOSER_REQUEST
-                          );
-
-                          return true;
-
-                      } catch (Exception e) {
-
-                          MainActivity.this.filePathCallback = null;
-
-                          Toast.makeText(
-                                  MainActivity.this,
-                                  "Não foi possível abrir o seletor de arquivos.",
-                                  Toast.LENGTH_LONG
-                          ).show();
-
-                          return false;
-                      }
-                  }
-              });
-          '''
-
-
-              if marker in java:
-
-                  java = java.replace(
-                      marker,
-                      marker + block,
-                      1
-                  )
-
-
-          # ============================================================
-          # Resultado do seletor de arquivos.
-          # ============================================================
-
-          if(
-              'FILE_CHOOSER_REQUEST' in java and
-              'protected void onActivityResult(int requestCode' not in java
-          ):
-
-              marker =
-                  '    public class AndroidFileBridge {\n'
-
-
-              block = '''    @Override
-              protected void onActivityResult(
-                      int requestCode,
-                      int resultCode,
-                      Intent data
-              ) {
-
-                  super.onActivityResult(
-                          requestCode,
-                          resultCode,
-                          data
-                  );
-
-                  if(
-                      requestCode != FILE_CHOOSER_REQUEST ||
-                      filePathCallback == null
-                  ){
-                      return;
-                  }
-
-                  Uri[] results = null;
-
-                  if(
-                      resultCode == RESULT_OK &&
-                      data != null
-                  ){
-
-                      if(
-                          data.getClipData() != null
-                      ){
-
-                          int count =
-                              data.getClipData().getItemCount();
-
-                          results =
-                              new Uri[count];
-
-                          for(
-                              int i = 0;
-                              i < count;
-                              i++
-                          ){
-
-                              results[i] =
-                                  data
-                                      .getClipData()
-                                      .getItemAt(i)
-                                      .getUri();
-                          }
-
-                      }else if(
-                          data.getData() != null
-                      ){
-
-                          results =
-                              new Uri[]{
-                                  data.getData()
-                              };
-                      }
-                  }
-
-                  filePathCallback.onReceiveValue(
-                      results
-                  );
-
-                  filePathCallback = null;
-              }
-
-          '''
-
-
-              if marker in java:
-
-                  java = java.replace(
-                      marker,
-                      block + marker,
-                      1
-                  )
-
-
-          # ============================================================
-          # Compartilhamento do PDF.
-          # ============================================================
-
-          pdf_pattern = (
-              r'        @JavascriptInterface\n'
-              r'        public void sharePdf\(String filename, String base64\) '
-              r'\{.*?\n'
-              r'        \}\n\n'
-              r'        @JavascriptInterface'
-          )
-
-
-          pdf_method = '''        @JavascriptInterface
-              public void sharePdf(
-                      String filename,
-                      String base64
-              ) {
-
-                  try {
-
-                      if(
-                          base64 == null ||
-                          base64.trim().isEmpty()
-                      ){
-                          throw new Exception(
-                              "PDF vazio"
-                          );
-                      }
-
-
-                      String clean =
-                          base64;
-
-
-                      int comma =
-                          clean.indexOf(',');
-
-
-                      if(comma >= 0){
-
-                          clean =
-                              clean.substring(
-                                  comma + 1
-                              );
-                      }
-
-
-                      byte[] bytes =
-                          Base64.decode(
-                              clean,
-                              Base64.DEFAULT
-                          );
-
-
-                      File dir =
-                          new File(
-                              getCacheDir(),
-                              "shared"
-                          );
-
-
-                      if(
-                          !dir.exists() &&
-                          !dir.mkdirs()
-                      ){
-
-                          throw new Exception(
-                              "Não foi possível criar a pasta temporária"
-                          );
-                      }
-
-
-                      String safeName =
-                          sanitizeFilename(
-                              filename
-                          );
-
-
-                      if(
-                          safeName.isEmpty()
-                      ){
-
-                          safeName =
-                              "pedido.pdf";
-                      }
-
-
-                      if(
-                          !safeName
-                              .toLowerCase()
-                              .endsWith(".pdf")
-                      ){
-
-                          safeName +=
-                              ".pdf";
-                      }
-
-
-                      File file =
-                          new File(
-                              dir,
-                              safeName
-                          );
-
-
-                      try(
-                          FileOutputStream out =
-                              new FileOutputStream(
-                                  file
-                              )
-                      ){
-
-                          out.write(bytes);
-                          out.flush();
-                      }
-
-
-                      Uri uri =
-                          FileProvider.getUriForFile(
-                              MainActivity.this,
-                              getPackageName() +
-                                  ".fileprovider",
-                              file
-                          );
-
-
-                      Intent intent =
-                          new Intent(
-                              Intent.ACTION_SEND
-                          );
-
-
-                      intent.setType(
-                          "application/pdf"
-                      );
-
-
-                      intent.putExtra(
-                          Intent.EXTRA_STREAM,
-                          uri
-                      );
-
-
-                      intent.setClipData(
-                          ClipData.newRawUri(
-                              "PDF",
-                              uri
-                          )
-                      );
-
-
-                      intent.addFlags(
-                          Intent.FLAG_GRANT_READ_URI_PERMISSION
-                      );
-
-
-                      startActivity(
-                          Intent.createChooser(
-                              intent,
-                              "Enviar PDF"
-                          )
-                      );
-
-
-                  }catch(Exception e){
-
-                      Toast.makeText(
-                          MainActivity.this,
-                          "Erro ao compartilhar PDF: " +
-                              e.getMessage(),
-                          Toast.LENGTH_LONG
-                      ).show();
-                  }
-              }
-
-              @JavascriptInterface'''
-
-
-          java, n = re.subn(
-              pdf_pattern,
-              pdf_method,
-              java,
-              count=1,
-              flags=re.S
-          )
-
-
-          if n != 1:
-
-              raise SystemExit(
-                  'ERRO: sharePdf não encontrado'
-              )
-
-
-          # ============================================================
-          # Nome seguro do PDF.
-          # ============================================================
-
-          if 'private String sanitizeFilename(' not in java:
-
-              marker =
-                  '    @Override\n    public void onBackPressed() {'
-
-
-              helper = '''    private String sanitizeFilename(
-                      String filename
-              ) {
-
-                  if(filename == null){
-                      return "";
-                  }
-
-                  return new File(filename)
-                      .getName()
-                      .replaceAll(
-                          "[\\\\\\\\/:*?\\\"<>|]",
-                          "_"
-                      );
-              }
-
-          '''
-
-
-              if marker not in java:
-
-                  raise SystemExit(
-                      'ERRO: local para sanitizeFilename não encontrado'
-                  )
-
-
-              java = java.replace(
-                  marker,
-                  helper + marker,
-                  1
-              )
-
-
-          main.write_text(
-              java,
-              encoding='utf-8'
+              encoding="utf-8"
           )
 
 
           print(
-              'Correção aplicada sem alterar o catálogo ou as funções existentes.'
+              "HTML corrigido com sucesso."
           )
 
           PY
 
-      - name: Preparar bibliotecas locais
+      - name: Preparar bibliotecas PDF e XLSX
         shell: bash
         run: |
           set -e
@@ -1496,13 +1146,14 @@ jobs:
 
           curl -L --fail --retry 3 \
             -o "$ASSETS/xlsx.full.min.js" \
-            https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js
+            "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"
 
           curl -L --fail --retry 3 \
             -o "$ASSETS/jspdf.umd.min.js" \
-            https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js
+            "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"
 
           test -s "$ASSETS/xlsx.full.min.js"
+
           test -s "$ASSETS/jspdf.umd.min.js"
 
       - name: Verificar correções
@@ -1511,54 +1162,54 @@ jobs:
           set -e
 
           HTML="$ANDROID_DIR/app/src/main/assets/app/index.html"
-          MAIN="$ANDROID_DIR/app/src/main/java/com/pedido/v2/MainActivity.java"
 
           test -f "$HTML"
-          test -f "$MAIN"
 
           echo "Verificando PDF retrato..."
-          grep -q "orientation:'portrait'" "$HTML"
-          grep -q "RELATÓRIO DE PEDIDO" "$HTML"
+
+          grep -q "orientation: 'portrait'" "$HTML"
+
+          grep -q "openPDFFinal" "$HTML"
 
           echo "Verificando limpeza..."
-          grep -q "window.clearPedido = function" "$HTML"
-          grep -q "localStorage.removeItem('pedido_compras_vals')" "$HTML"
-          grep -q "localStorage.removeItem('pedido_compras_extras')" "$HTML"
-          grep -q "localStorage.removeItem('pedido_compras_validade_curta')" "$HTML"
+
+          grep -q "clearPedidoFinal" "$HTML"
+
+          grep -q "pedido_compras_vals" "$HTML"
+
+          grep -q "pedido_compras_extras" "$HTML"
+
+          grep -q "pedido_compras_validade_curta" "$HTML"
 
           echo "Verificando repetir último..."
-          grep -q "window.repeatLastOrder = function" "$HTML"
-          grep -q "lastOrder" "$HTML"
 
-          echo "Verificando ADM/importação..."
-          grep -q "onShowFileChooser" "$MAIN"
-          grep -q "FILE_CHOOSER_REQUEST" "$MAIN"
+          grep -q "repeatLastOrderFinal" "$HTML"
 
-          echo "Verificando compartilhamento PDF..."
-          grep -q "ClipData.newRawUri" "$MAIN"
-          grep -q "private String sanitizeFilename" "$MAIN"
+          echo "Verificando biblioteca PDF..."
 
-          echo "Verificando bibliotecas..."
-          grep -q "xlsx.full.min.js" "$HTML"
-          grep -q "jspdf.umd.min.js" "$HTML"
+          test -s "$ANDROID_DIR/app/src/main/assets/app/jspdf.umd.min.js"
 
-          if grep -q "orientation:'landscape'" "$HTML"; then
-            echo "ERRO: fluxo novo de PDF contém landscape"
+          echo "Verificando biblioteca XLSX..."
+
+          test -s "$ANDROID_DIR/app/src/main/assets/app/xlsx.full.min.js"
+
+          if grep -q "orientation: 'landscape'" "$HTML"; then
+            echo "ERRO: ainda existe PDF landscape."
             exit 1
           fi
 
           if grep -q 'orientation: "landscape"' "$HTML"; then
-            echo "ERRO: fluxo novo de PDF contém landscape"
+            echo "ERRO: ainda existe PDF landscape."
             exit 1
           fi
 
+          echo ""
           echo "=========================================="
-          echo "TODAS AS VERIFICAÇÕES PASSARAM"
-          echo "PDF: RETRATO"
+          echo "VERIFICAÇÃO OK"
+          echo "PDF: A4 RETRATO"
           echo "LIMPEZA: OK"
           echo "REPETIR ÚLTIMO: OK"
-          echo "ADM/IMPORTAÇÃO: OK"
-          echo "COMPARTILHAMENTO PDF: OK"
+          echo "XLSX: OK"
           echo "=========================================="
 
       - name: Compilar APK
@@ -1579,6 +1230,7 @@ jobs:
 
           test -f "$APK"
 
+          echo ""
           echo "=========================================="
           echo "APK GERADO COM SUCESSO"
           echo "=========================================="
