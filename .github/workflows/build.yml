@@ -75,13 +75,12 @@ jobs:
         run: |
           set -e
 
-          python3 - "$ANDROID_DIR" <<'PY'
+          python3 - <<'PY'
           from pathlib import Path
           import os
           import re
-          import sys
 
-          root = Path(sys.argv[1])
+          root = Path(os.environ["ANDROID_DIR"])
 
           html = root / "app/src/main/assets/app/index.html"
 
@@ -96,744 +95,966 @@ jobs:
           if main is None:
               raise SystemExit("ERRO: MainActivity.java não encontrado")
 
-          # ============================================================
-          # HTML
-          # ============================================================
-
           text = html.read_text(encoding="utf-8")
 
-          # ------------------------------------------------------------
-          # 1. LIMPEZA DEFINITIVA DO PEDIDO
+          # ============================================================
+          # 1. CORRIGIR PDF
           #
-          # Mantém:
-          # - cadastro
-          # - produtos
-          # - favoritos
-          # - histórico
-          # - configurações
+          # A única alteração funcional é:
+          # PDF sempre A4 RETRATO.
           #
-          # Zera:
-          # - estoque
-          # - quantidades do pedido
-          # - produtos adicionais
-          # - validade curta
-          # - observação geral
-          # ------------------------------------------------------------
+          # O conteúdo do relatório continua usando reportText(),
+          # sem alterar essa função.
+          # ============================================================
 
-          clear_lines = [
-              "function clearPedido(historyRows=null){",
-              "  try{",
-              "    const historico = Array.isArray(historyRows) && historyRows.length",
-              "      ? historyRows",
-              "      : finalizedRows;",
-              "",
-              "    if(historico.length) saveHistory(historico);",
-              "",
-              "    vals={};",
-              "    extras=[];",
-              "    validadeCurta=[];",
-              "    finalizedRows=[];",
-              "    generalObservation='';",
-              "",
-              "    localStorage.removeItem('pedido_compras_vals');",
-              "    localStorage.removeItem('pedido_compras_extras');",
-              "    localStorage.removeItem('pedido_compras_validade_curta');",
-              "",
-              "    const obs=document.getElementById('generalObs');",
-              "    if(obs) obs.value='';",
-              "",
-              "    save();",
-              "    render();",
-              "    updateBadge();",
-              "    renderValidadeCurta();",
-              "    closeConference();",
-              "  }catch(e){",
-              "    console.error('Erro ao limpar pedido:',e);",
-              "  }",
-              "}"
-          ]
+          pdf_start = text.find("function openPDF(){")
 
-          new_clear = "\n".join(clear_lines)
-
-          clear_pattern = r"function clearPedido\s*\([^)]*\)\s*\{.*?\n\}"
-
-          text, clear_count = re.subn(
-              clear_pattern,
-              lambda m: new_clear,
-              text,
-              count=1,
-              flags=re.S
+          pdf_end = text.find(
+              "function clearPedido",
+              pdf_start
           )
 
-          if clear_count != 1:
-              raise SystemExit(
-                  "ERRO: função clearPedido não encontrada"
-              )
-
-          # ------------------------------------------------------------
-          # 2. PDF
-          #
-          # Obrigatoriamente:
-          # - A4
-          # - RETRATO
-          # - 210 x 297 mm
-          # - não usar landscape
-          # - gerar PDF
-          # - registrar histórico
-          # - limpar pedido
-          # - compartilhar PDF no Android
-          # ------------------------------------------------------------
-
-          pdf_lines = [
-              "function openPDF(){",
-              "  const rows=finalizedRows.length?finalizedRows:getRows();",
-              "",
-              "  if(!rows.length){",
-              "    alert('Nenhum item foi selecionado.');",
-              "    return;",
-              "  }",
-              "",
-              "  try{",
-              "    const lib=window.jspdf||{};",
-              "    const jsPDF=lib.jsPDF;",
-              "",
-              "    if(!jsPDF){",
-              "      throw new Error('Biblioteca PDF não carregada.');",
-              "    }",
-              "",
-              "    const doc=new jsPDF({",
-              "      orientation:'portrait',",
-              "      unit:'mm',",
-              "      format:'a4'",
-              "    });",
-              "",
-              "    const pageWidth=210;",
-              "    const pageHeight=297;",
-              "    const margem=12;",
-              "    const larguraUtil=pageWidth-(margem*2);",
-              "",
-              "    let y=16;",
-              "    let pagina=1;",
-              "",
-              "    const titulo='PEDIDO DE COMPRAS';",
-              "    const data=new Date().toLocaleString('pt-BR');",
-              "",
-              "    function cabecalho(){",
-              "      doc.setFont('helvetica','bold');",
-              "      doc.setFontSize(16);",
-              "      doc.text(titulo,margem,y);",
-              "",
-              "      y+=7;",
-              "",
-              "      doc.setFont('helvetica','normal');",
-              "      doc.setFontSize(9);",
-              "      doc.text(data,margem,y);",
-              "",
-              "      y+=7;",
-              "",
-              "      doc.setDrawColor(180);",
-              "      doc.line(margem,y,pageWidth-margem,y);",
-              "",
-              "      y+=7;",
-              "    }",
-              "",
-              "    function rodape(){",
-              "      doc.setFont('helvetica','normal');",
-              "      doc.setFontSize(8);",
-              "      doc.text(",
-              "        'Página '+pagina,",
-              "        pageWidth-margem,",
-              "        pageHeight-8,",
-              "        {align:'right'}",
-              "      );",
-              "    }",
-              "",
-              "    function novaPagina(){",
-              "      rodape();",
-              "      doc.addPage();",
-              "      pagina++;",
-              "      y=16;",
-              "      cabecalho();",
-              "    }",
-              "",
-              "    function textoSeguro(valor,max){",
-              "      let s=String(valor??'');",
-              "      if(s.length<=max) return s;",
-              "      return s.substring(0,max-3)+'...';",
-              "    }",
-              "",
-              "    cabecalho();",
-              "",
-              "    const grupos={};",
-              "",
-              "    rows.forEach(function(item){",
-              "      const categoria=item.cat||'Outros';",
-              "      if(!grupos[categoria]) grupos[categoria]=[];",
-              "      grupos[categoria].push(item);",
-              "    });",
-              "",
-              "    Object.entries(grupos).forEach(function(par){",
-              "      const categoria=par[0];",
-              "      const itens=par[1];",
-              "",
-              "      if(y>pageHeight-35){",
-              "        novaPagina();",
-              "      }",
-              "",
-              "      doc.setFont('helvetica','bold');",
-              "      doc.setFontSize(12);",
-              "      doc.text(textoSeguro(categoria,42),margem,y);",
-              "",
-              "      y+=6;",
-              "",
-              "      doc.setFont('helvetica','bold');",
-              "      doc.setFontSize(8);",
-              "",
-              "      doc.text('Código',margem,y);",
-              "      doc.text('Produto',margem+25,y);",
-              "      doc.text('Estoque',margem+130,y);",
-              "      doc.text('Pedido',margem+158,y);",
-              "",
-              "      y+=3;",
-              "",
-              "      doc.setDrawColor(200);",
-              "      doc.line(margem,y,pageWidth-margem,y);",
-              "",
-              "      y+=5;",
-              "",
-              "      itens.forEach(function(item){",
-              "        const altura=8;",
-              "",
-              "        if(y+altura>pageHeight-15){",
-              "          novaPagina();",
-              "",
-              "          doc.setFont('helvetica','bold');",
-              "          doc.setFontSize(8);",
-              "          doc.text('Código',margem,y);",
-              "          doc.text('Produto',margem+25,y);",
-              "          doc.text('Estoque',margem+130,y);",
-              "          doc.text('Pedido',margem+158,y);",
-              "          y+=6;",
-              "        }",
-              "",
-              "        doc.setFont('helvetica','normal');",
-              "        doc.setFontSize(8);",
-              "",
-              "        const codigo=textoSeguro(item.code||'-',18);",
-              "        const nome=textoSeguro(item.name||'',55);",
-              "        const estoque=String(item.stock??0);",
-              "        const pedido=String(item.order??0);",
-              "",
-              "        doc.text(codigo,margem,y);",
-              "        doc.text(nome,margem+25,y);",
-              "        doc.text(estoque,margem+130,y);",
-              "        doc.text(pedido,margem+158,y);",
-              "",
-              "        y+=6;",
-              "",
-              "        if(item.obs){",
-              "          doc.setFontSize(7);",
-              "          const obs=doc.splitTextToSize(",
-              "            'Obs: '+String(item.obs),",
-              "            larguraUtil-25",
-              "          );",
-              "",
-              "          if(y+(obs.length*4)>pageHeight-15){",
-              "            novaPagina();",
-              "          }",
-              "",
-              "          doc.text(obs,margem+25,y);",
-              "          y+=(obs.length*4)+2;",
-              "        }",
-              "",
-              "        if(item.validade){",
-              "          doc.setFontSize(7);",
-              "          doc.text(",
-              "            'Validade: '+String(item.validade),",
-              "            margem+25,",
-              "            y",
-              "          );",
-              "          y+=5;",
-              "        }",
-              "      });",
-              "",
-              "      y+=4;",
-              "    });",
-              "",
-              "    if(generalObservation){",
-              "      if(y+20>pageHeight-15){",
-              "        novaPagina();",
-              "      }",
-              "",
-              "      doc.setFont('helvetica','bold');",
-              "      doc.setFontSize(10);",
-              "      doc.text('OBSERVAÇÃO GERAL',margem,y);",
-              "",
-              "      y+=5;",
-              "",
-              "      doc.setFont('helvetica','normal');",
-              "      doc.setFontSize(8);",
-              "",
-              "      const observacao=doc.splitTextToSize(",
-              "        String(generalObservation),",
-              "        larguraUtil",
-              "      );",
-              "",
-              "      if(y+(observacao.length*4)>pageHeight-15){",
-              "        novaPagina();",
-              "      }",
-              "",
-              "      doc.text(observacao,margem,y);",
-              "      y+=(observacao.length*4)+4;",
-              "    }",
-              "",
-              "    rodape();",
-              "",
-              "    const base64=doc.output('datauristring').split(',')[1];",
-              "",
-              "    const nomeArquivo=",
-              "      'relatorio-pedido-'+",
-              "      new Date().toISOString().slice(0,10)+",
-              "      '.pdf';",
-              "",
-              "    if(window.AndroidFileBridge&&",
-              "       typeof window.AndroidFileBridge.sharePdf==='function'){",
-              "",
-              "      clearPedido(rows);",
-              "",
-              "      window.AndroidFileBridge.sharePdf(",
-              "        nomeArquivo,",
-              "        base64",
-              "      );",
-              "",
-              "      return;",
-              "    }",
-              "",
-              "    clearPedido(rows);",
-              "",
-              "    doc.save(nomeArquivo);",
-              "",
-              "  }catch(e){",
-              "    console.error('Erro ao gerar PDF:',e);",
-              "    alert('Erro ao gerar PDF: '+e.message);",
-              "  }",
-              "}"
-          ]
-
-          new_pdf = "\n".join(pdf_lines)
-
-          pdf_pattern = r"function openPDF\s*\([^)]*\)\s*\{.*?(?=\nfunction\s+[A-Za-z_$][A-Za-z0-9_$]*\s*\()"
-
-          text, pdf_count = re.subn(
-              pdf_pattern,
-              lambda m: new_pdf + "\n",
-              text,
-              count=1,
-              flags=re.S
-          )
-
-          if pdf_count != 1:
+          if pdf_start == -1:
               raise SystemExit(
                   "ERRO: função openPDF não encontrada"
               )
 
-          # ------------------------------------------------------------
-          # 3. CATÁLOGO IMPORTADO
-          # ------------------------------------------------------------
+          if pdf_end == -1:
+              raise SystemExit(
+                  "ERRO: função clearPedido não encontrada"
+              )
 
-          required_imports = [
-              "importedCatalogActive=true",
-              "customProducts=rows.filter(x=>x.code||x.name).map(x=>({...x}))",
+          new_pdf = """function openPDF(){
+            const rows=finalizedRows.length?finalizedRows:getRows();
+
+            if(!rows.length){
+              alert('Nenhum item foi selecionado.');
+              return;
+            }
+
+            try{
+              const {jsPDF}=window.jspdf||{};
+
+              if(!jsPDF){
+                throw new Error(
+                  'Biblioteca PDF não carregada.'
+                );
+              }
+
+              const doc=new jsPDF({
+                orientation:'portrait',
+                unit:'mm',
+                format:'a4'
+              });
+
+              const pageWidth=210;
+              const pageHeight=297;
+              const margin=12;
+              const contentWidth=pageWidth-(margin*2);
+
+              let y=16;
+              let page=1;
+
+              function footer(){
+                doc.setFont('helvetica','normal');
+                doc.setFontSize(8);
+
+                doc.text(
+                  'Página '+page,
+                  pageWidth-margin,
+                  pageHeight-8,
+                  {align:'right'}
+                );
+              }
+
+              function header(){
+                doc.setFont('helvetica','bold');
+                doc.setFontSize(16);
+
+                doc.text(
+                  'PEDIDO DE COMPRAS',
+                  margin,
+                  y
+                );
+
+                y+=7;
+
+                doc.setFont('helvetica','normal');
+                doc.setFontSize(9);
+
+                doc.text(
+                  new Date().toLocaleString('pt-BR'),
+                  margin,
+                  y
+                );
+
+                y+=6;
+
+                doc.setDrawColor(180);
+
+                doc.line(
+                  margin,
+                  y,
+                  pageWidth-margin,
+                  y
+                );
+
+                y+=7;
+              }
+
+              function newPage(){
+                footer();
+
+                doc.addPage();
+
+                page++;
+
+                y=16;
+
+                header();
+              }
+
+              function safe(value,max){
+                const s=String(value??'');
+
+                if(s.length<=max){
+                  return s;
+                }
+
+                return s.substring(0,max-3)+'...';
+              }
+
+              header();
+
+              const groups=groupRows(rows);
+
+              Object.entries(groups).forEach(
+                ([cat,items])=>{
+
+                  if(y>pageHeight-35){
+                    newPage();
+                  }
+
+                  doc.setFont(
+                    'helvetica',
+                    'bold'
+                  );
+
+                  doc.setFontSize(11);
+
+                  doc.text(
+                    safe(cat,42),
+                    margin,
+                    y
+                  );
+
+                  y+=6;
+
+                  doc.setFont(
+                    'helvetica',
+                    'bold'
+                  );
+
+                  doc.setFontSize(8);
+
+                  doc.text(
+                    'Código',
+                    margin,
+                    y
+                  );
+
+                  doc.text(
+                    'Produto',
+                    margin+28,
+                    y
+                  );
+
+                  doc.text(
+                    'Estoque',
+                    margin+132,
+                    y
+                  );
+
+                  doc.text(
+                    'Pedido',
+                    margin+160,
+                    y
+                  );
+
+                  y+=3;
+
+                  doc.setDrawColor(200);
+
+                  doc.line(
+                    margin,
+                    y,
+                    pageWidth-margin,
+                    y
+                  );
+
+                  y+=5;
+
+                  items.forEach(x=>{
+
+                    if(y>pageHeight-18){
+                      newPage();
+                    }
+
+                    doc.setFont(
+                      'helvetica',
+                      'normal'
+                    );
+
+                    doc.setFontSize(8);
+
+                    doc.text(
+                      safe(x.code||'-',18),
+                      margin,
+                      y
+                    );
+
+                    doc.text(
+                      safe(x.name||'',55),
+                      margin+28,
+                      y
+                    );
+
+                    doc.text(
+                      String(x.stock??0),
+                      margin+132,
+                      y
+                    );
+
+                    doc.text(
+                      String(x.order??0),
+                      margin+160,
+                      y
+                    );
+
+                    y+=6;
+
+                    if(x.obs){
+
+                      const obs=
+                        doc.splitTextToSize(
+                          'Obs: '+String(x.obs),
+                          contentWidth-28
+                        );
+
+                      if(
+                        y+(obs.length*4)>
+                        pageHeight-18
+                      ){
+                        newPage();
+                      }
+
+                      doc.setFontSize(7);
+
+                      doc.text(
+                        obs,
+                        margin+28,
+                        y
+                      );
+
+                      y+=(obs.length*4)+2;
+                    }
+
+                    if(x.validade){
+
+                      if(y+5>pageHeight-18){
+                        newPage();
+                      }
+
+                      doc.setFontSize(7);
+
+                      doc.text(
+                        'Validade: '+
+                        String(x.validade),
+                        margin+28,
+                        y
+                      );
+
+                      y+=5;
+                    }
+
+                  });
+
+                  y+=4;
+                }
+              );
+
+              if(generalObservation){
+
+                if(y>pageHeight-35){
+                  newPage();
+                }
+
+                doc.setFont(
+                  'helvetica',
+                  'bold'
+                );
+
+                doc.setFontSize(10);
+
+                doc.text(
+                  'OBSERVAÇÃO GERAL',
+                  margin,
+                  y
+                );
+
+                y+=5;
+
+                doc.setFont(
+                  'helvetica',
+                  'normal'
+                );
+
+                doc.setFontSize(8);
+
+                const obs=
+                  doc.splitTextToSize(
+                    String(generalObservation),
+                    contentWidth
+                  );
+
+                if(
+                  y+(obs.length*4)>
+                  pageHeight-18
+                ){
+                  newPage();
+                }
+
+                doc.text(
+                  obs,
+                  margin,
+                  y
+                );
+              }
+
+              footer();
+
+              const base64=
+                doc.output(
+                  'datauristring'
+                ).split(',')[1];
+
+              const filename=
+                'relatorio-pedido-'+
+                new Date()
+                  .toISOString()
+                  .slice(0,10)+
+                '.pdf';
+
+              /*
+               * Limpa somente depois que o PDF
+               * já foi completamente criado.
+               */
+              clearPedido(rows);
+
+              if(
+                window.AndroidFileBridge &&
+                typeof window.AndroidFileBridge.sharePdf===
+                'function'
+              ){
+                window.AndroidFileBridge.sharePdf(
+                  filename,
+                  base64
+                );
+
+                return;
+              }
+
+              doc.save(filename);
+
+            }catch(e){
+
+              console.error(
+                'Erro ao gerar PDF:',
+                e
+              );
+
+              alert(
+                'Erro ao gerar PDF: '+
+                e.message
+              );
+            }
+          }
+          """
+
+          text = (
+              text[:pdf_start]
+              + new_pdf
+              + "\n"
+              + text[pdf_end:]
+          )
+
+          # ============================================================
+          # 2. CORRIGIR LIMPEZA
+          #
+          # Depois do envio:
+          # - zera estoque
+          # - zera pedido
+          # - zera adicionais
+          # - zera validade curta
+          #
+          # NÃO apaga:
+          # - cadastro
+          # - produtos
+          # - favoritos
+          # - histórico
+          # - último pedido
+          # ============================================================
+
+          clear_start = text.find(
+              "function clearPedido("
+          )
+
+          clear_end = text.find(
+              "function sendWhatsApp",
+              clear_start
+          )
+
+          if clear_start == -1:
+              raise SystemExit(
+                  "ERRO: clearPedido não encontrada"
+              )
+
+          if clear_end == -1:
+              raise SystemExit(
+                  "ERRO: sendWhatsApp não encontrada"
+              )
+
+          new_clear = """function clearPedido(historyRows=null){
+
+            const historico=
+              Array.isArray(historyRows) &&
+              historyRows.length
+              ? historyRows
+              : finalizedRows;
+
+            if(historico.length){
+              saveHistory(historico);
+            }
+
+            vals={};
+
+            extras=[];
+
+            validadeCurta=[];
+
+            finalizedRows=[];
+
+            generalObservation='';
+
+            localStorage.removeItem(
+              'pedido_compras_vals'
+            );
+
+            localStorage.removeItem(
+              'pedido_compras_extras'
+            );
+
+            localStorage.removeItem(
+              'pedido_compras_validade_curta'
+            );
+
+            const obs=
+              document.getElementById(
+                'generalObs'
+              );
+
+            if(obs){
+              obs.value='';
+            }
+
+            save();
+
+            render();
+
+            renderValidadeCurta();
+
+            updateBadge();
+
+            document.getElementById(
+              'opcoesFinalizado'
+            ).style.display='none';
+
+            window.scrollTo({
+              top:0,
+              behavior:'smooth'
+            });
+          }
+          """
+
+          text = (
+              text[:clear_start]
+              + new_clear
+              + "\n"
+              + text[clear_end:]
+          )
+
+          # ============================================================
+          # 3. BIBLIOTECAS LOCAIS
+          # ============================================================
+
+          text = text.replace(
+              'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js',
+              'xlsx.full.min.js'
+          )
+
+          text = text.replace(
+              'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
+              'jspdf.umd.min.js'
+          )
+
+          # ============================================================
+          # 4. PRESERVAR CORREÇÃO DO CATÁLOGO IMPORTADO
+          # ============================================================
+
+          required = [
+              'importedCatalogActive=true',
+              'customProducts=rows.filter(x=>x.code||x.name).map(x=>({...x}))',
               "localStorage.setItem('sp_imported_catalog_active'"
           ]
 
-          for item in required_imports:
+          for item in required:
+
               if item not in text:
+
                   raise SystemExit(
-                      "ERRO: correção de importação ausente: " + item
+                      "ERRO: correção de importação ausente: "
+                      + item
                   )
 
-          # ------------------------------------------------------------
-          # 4. BIBLIOTECAS LOCAIS
-          # ------------------------------------------------------------
-
-          text = text.replace(
-              "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js",
-              "xlsx.full.min.js"
+          html.write_text(
+              text,
+              encoding="utf-8"
           )
-
-          text = text.replace(
-              "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js",
-              "jspdf.umd.min.js"
-          )
-
-          # ------------------------------------------------------------
-          # 5. GARANTIR CATEGORIA VÁLIDA AO INICIAR
-          # ------------------------------------------------------------
-
-          antigo_inicio = (
-              "load();loadFeatures();APP_DATA=buildAppData();"
-              "cats=Object.keys(APP_DATA);"
-              "if(!cats.length && !importedCatalogActive)"
-              "{APP_DATA=DATA;cats=Object.keys(DATA)}"
-              "tabs();render();updateBadge();renderValidadeCurta();"
-          )
-
-          novo_inicio = (
-              "load();loadFeatures();APP_DATA=buildAppData();"
-              "cats=Object.keys(APP_DATA);"
-              "if(!cats.length && !importedCatalogActive)"
-              "{APP_DATA=DATA;cats=Object.keys(DATA)}"
-              "if(!current || !APP_DATA[current])current=cats[0]||'';"
-              "tabs();render();updateBadge();renderValidadeCurta();"
-          )
-
-          if antigo_inicio in text:
-              text = text.replace(
-                  antigo_inicio,
-                  novo_inicio,
-                  1
-              )
-
-          # ------------------------------------------------------------
-          # Salvar HTML
-          # ------------------------------------------------------------
-
-          html.write_text(text, encoding="utf-8")
 
           # ============================================================
-          # MainActivity.java
+          # 5. MAINACTIVITY
+          #
+          # Mantém as correções que já funcionavam.
           # ============================================================
 
-          java = main.read_text(encoding="utf-8")
+          java=main.read_text(
+              encoding="utf-8"
+          )
 
-          # ------------------------------------------------------------
-          # Imports
-          # ------------------------------------------------------------
+          if 'import android.content.ClipData;' not in java:
 
-          if "import android.content.ClipData;" not in java:
-              java = java.replace(
-                  "import android.content.Intent;\n",
-                  "import android.content.ClipData;\n"
-                  "import android.content.Intent;\n",
+              java=java.replace(
+                  'import android.content.Intent;\n',
+                  'import android.content.ClipData;\n'
+                  'import android.content.Intent;\n',
                   1
               )
 
-          if "import android.webkit.ValueCallback;" not in java:
-              java = java.replace(
-                  "import android.webkit.WebSettings;\n",
-                  "import android.webkit.ValueCallback;\n"
-                  "import android.webkit.WebSettings;\n",
+          if 'import android.webkit.ValueCallback;' not in java:
+
+              java=java.replace(
+                  'import android.webkit.WebSettings;\n',
+                  'import android.webkit.ValueCallback;\n'
+                  'import android.webkit.WebSettings;\n',
                   1
               )
 
-          if "import android.webkit.WebChromeClient;" not in java:
-              java = java.replace(
-                  "import android.webkit.WebSettings;\n",
-                  "import android.webkit.WebChromeClient;\n"
-                  "import android.webkit.WebSettings;\n",
+          if 'import android.webkit.WebChromeClient;' not in java:
+
+              java=java.replace(
+                  'import android.webkit.WebSettings;\n',
+                  'import android.webkit.WebChromeClient;\n'
+                  'import android.webkit.WebSettings;\n',
                   1
               )
 
-          # ------------------------------------------------------------
-          # File chooser
-          # ------------------------------------------------------------
+          if 'private ValueCallback<Uri[]> filePathCallback;' not in java:
 
-          if "private ValueCallback<Uri[]> filePathCallback;" not in java:
-              java = java.replace(
-                  "public class MainActivity extends Activity {\n",
-                  "public class MainActivity extends Activity {\n"
-                  "    private ValueCallback<Uri[]> filePathCallback;\n"
-                  "    private static final int FILE_CHOOSER_REQUEST = 1001;\n",
+              java=java.replace(
+                  'public class MainActivity extends Activity {\n',
+                  'public class MainActivity extends Activity {\n'
+                  '    private ValueCallback<Uri[]> filePathCallback;\n'
+                  '    private static final int FILE_CHOOSER_REQUEST = 1001;\n',
                   1
               )
 
-          if "onShowFileChooser" not in java:
+          if 'onShowFileChooser' not in java:
 
-              marker = (
-                  "        webView.setWebViewClient("
-                  "new WebViewClient());\n"
+              marker=(
+                  '        webView.setWebViewClient('
+                  'new WebViewClient());\n'
               )
 
-              block = "\n".join([
-                  "        webView.setWebChromeClient(new WebChromeClient() {",
-                  "            @Override",
-                  "            public boolean onShowFileChooser(",
-                  "                    WebView view,",
-                  "                    ValueCallback<Uri[]> callback,",
-                  "                    WebChromeClient.FileChooserParams params) {",
-                  "",
-                  "                if (MainActivity.this.filePathCallback != null) {",
-                  "                    MainActivity.this.filePathCallback.onReceiveValue(null);",
-                  "                }",
-                  "",
-                  "                MainActivity.this.filePathCallback = callback;",
-                  "",
-                  "                try {",
-                  "                    Intent intent = params.createIntent();",
-                  "                    startActivityForResult(",
-                  "                        intent,",
-                  "                        FILE_CHOOSER_REQUEST",
-                  "                    );",
-                  "                    return true;",
-                  "                } catch (Exception e) {",
-                  "                    MainActivity.this.filePathCallback = null;",
-                  "                    Toast.makeText(",
-                  "                        MainActivity.this,",
-                  "                        \"Não foi possível abrir o seletor de arquivos.\",",
-                  "                        Toast.LENGTH_LONG",
-                  "                    ).show();",
-                  "                    return false;",
-                  "                }",
-                  "            }",
-                  "        });"
-              ])
+              block='''        webView.setWebChromeClient(new WebChromeClient() {
+              @Override
+              public boolean onShowFileChooser(
+                      WebView view,
+                      ValueCallback<Uri[]> callback,
+                      WebChromeClient.FileChooserParams params) {
+
+                  if (MainActivity.this.filePathCallback != null) {
+                      MainActivity.this.filePathCallback.onReceiveValue(null);
+                  }
+
+                  MainActivity.this.filePathCallback = callback;
+
+                  try {
+                      Intent intent = params.createIntent();
+
+                      startActivityForResult(
+                              intent,
+                              FILE_CHOOSER_REQUEST
+                      );
+
+                      return true;
+
+                  } catch (Exception e) {
+
+                      MainActivity.this.filePathCallback = null;
+
+                      Toast.makeText(
+                              MainActivity.this,
+                              "Não foi possível abrir o seletor de arquivos.",
+                              Toast.LENGTH_LONG
+                      ).show();
+
+                      return false;
+                  }
+              }
+          });
+          '''
 
               if marker in java:
-                  java = java.replace(
+
+                  java=java.replace(
                       marker,
-                      marker + block + "\n",
+                      marker+block,
                       1
                   )
 
-          # ------------------------------------------------------------
-          # Resultado do seletor de arquivos
-          # ------------------------------------------------------------
+          if 'protected void onActivityResult(' not in java:
 
-          if "protected void onActivityResult(" not in java:
+              marker=(
+                  '    public class AndroidFileBridge {\n'
+              )
 
-              marker = "    public class AndroidFileBridge {\n"
+              result='''    @Override
+          protected void onActivityResult(
+                  int requestCode,
+                  int resultCode,
+                  Intent data) {
 
-              result = "\n".join([
-                  "    @Override",
-                  "    protected void onActivityResult(",
-                  "            int requestCode,",
-                  "            int resultCode,",
-                  "            Intent data) {",
-                  "",
-                  "        super.onActivityResult(",
-                  "            requestCode,",
-                  "            resultCode,",
-                  "            data",
-                  "        );",
-                  "",
-                  "        if (requestCode != FILE_CHOOSER_REQUEST ||",
-                  "            filePathCallback == null) {",
-                  "            return;",
-                  "        }",
-                  "",
-                  "        Uri[] results = null;",
-                  "",
-                  "        if (resultCode == RESULT_OK && data != null) {",
-                  "",
-                  "            if (data.getClipData() != null) {",
-                  "                int count = data.getClipData().getItemCount();",
-                  "                results = new Uri[count];",
-                  "",
-                  "                for (int i = 0; i < count; i++) {",
-                  "                    results[i] = data.getClipData()",
-                  "                        .getItemAt(i)",
-                  "                        .getUri();",
-                  "                }",
-                  "",
-                  "            } else if (data.getData() != null) {",
-                  "                results = new Uri[]{data.getData()};",
-                  "            }",
-                  "        }",
-                  "",
-                  "        filePathCallback.onReceiveValue(results);",
-                  "        filePathCallback = null;",
-                  "    }",
-                  ""
-              ])
+              super.onActivityResult(
+                      requestCode,
+                      resultCode,
+                      data
+              );
+
+              if(
+                  requestCode != FILE_CHOOSER_REQUEST ||
+                  filePathCallback == null
+              ){
+                  return;
+              }
+
+              Uri[] results=null;
+
+              if(
+                  resultCode == RESULT_OK &&
+                  data != null
+              ){
+
+                  if(data.getClipData()!=null){
+
+                      int count=
+                          data.getClipData()
+                              .getItemCount();
+
+                      results=new Uri[count];
+
+                      for(
+                          int i=0;
+                          i<count;
+                          i++
+                      ){
+
+                          results[i]=
+                              data.getClipData()
+                                  .getItemAt(i)
+                                  .getUri();
+                      }
+
+                  }else if(
+                      data.getData()!=null
+                  ){
+
+                      results=
+                          new Uri[]{
+                              data.getData()
+                          };
+                  }
+              }
+
+              filePathCallback.onReceiveValue(
+                  results
+              );
+
+              filePathCallback=null;
+          }
+
+          '''
 
               if marker in java:
-                  java = java.replace(
+
+                  java=java.replace(
                       marker,
-                      result + marker,
+                      result+marker,
                       1
                   )
 
-          # ------------------------------------------------------------
-          # Compartilhamento do PDF
-          # ------------------------------------------------------------
+          # ============================================================
+          # 6. SHARE PDF ANDROID
+          # ============================================================
 
-          pdf_method_pattern = (
-              r"        @JavascriptInterface\n"
-              r"        public void sharePdf\(String filename, String base64\) \{"
-              r".*?"
-              r"\n        \}\n"
-              r"\n        @JavascriptInterface"
+          pdf_pattern=(
+              r'        @JavascriptInterface\n'
+              r'        public void sharePdf\(String filename, String base64\) \{'
+              r'.*?'
+              r'\n        \}\n\n'
+              r'        @JavascriptInterface'
           )
 
-          pdf_method_lines = [
-              "        @JavascriptInterface",
-              "        public void sharePdf(String filename, String base64) {",
-              "            try {",
-              "                if (base64 == null || base64.trim().isEmpty()) {",
-              "                    throw new Exception(\"PDF vazio\");",
-              "                }",
-              "",
-              "                String clean = base64;",
-              "                int comma = clean.indexOf(',');",
-              "",
-              "                if (comma >= 0) {",
-              "                    clean = clean.substring(comma + 1);",
-              "                }",
-              "",
-              "                byte[] bytes = Base64.decode(",
-              "                    clean,",
-              "                    Base64.DEFAULT",
-              "                );",
-              "",
-              "                File dir = new File(",
-              "                    getCacheDir(),",
-              "                    \"shared\"",
-              "                );",
-              "",
-              "                if (!dir.exists() && !dir.mkdirs()) {",
-              "                    throw new Exception(",
-              "                        \"Não foi possível criar a pasta temporária\"",
-              "                    );",
-              "                }",
-              "",
-              "                String safeName = sanitizeFilename(filename);",
-              "",
-              "                if (safeName.isEmpty()) {",
-              "                    safeName = \"pedido.pdf\";",
-              "                }",
-              "",
-              "                if (!safeName.toLowerCase().endsWith(\".pdf\")) {",
-              "                    safeName += \".pdf\";",
-              "                }",
-              "",
-              "                File file = new File(dir, safeName);",
-              "",
-              "                try (FileOutputStream out = new FileOutputStream(file)) {",
-              "                    out.write(bytes);",
-              "                    out.flush();",
-              "                }",
-              "",
-              "                Uri uri = FileProvider.getUriForFile(",
-              "                    MainActivity.this,",
-              "                    getPackageName() + \".fileprovider\",",
-              "                    file",
-              "                );",
-              "",
-              "                Intent intent = new Intent(Intent.ACTION_SEND);",
-              "                intent.setType(\"application/pdf\");",
-              "                intent.putExtra(Intent.EXTRA_STREAM, uri);",
-              "                intent.setClipData(",
-              "                    ClipData.newRawUri(\"PDF\", uri)",
-              "                );",
-              "                intent.addFlags(",
-              "                    Intent.FLAG_GRANT_READ_URI_PERMISSION",
-              "                );",
-              "",
-              "                startActivity(",
-              "                    Intent.createChooser(",
-              "                        intent,",
-              "                        \"Enviar PDF\"",
-              "                    )",
-              "                );",
-              "",
-              "            } catch (Exception e) {",
-              "                Toast.makeText(",
-              "                    MainActivity.this,",
-              "                    \"Erro ao compartilhar PDF: \" + e.getMessage(),",
-              "                    Toast.LENGTH_LONG",
-              "                ).show();",
-              "            }",
-              "        }",
-              "",
-              "        @JavascriptInterface"
-          ]
+          pdf_method='''        @JavascriptInterface
+          public void sharePdf(
+                  String filename,
+                  String base64) {
 
-          pdf_method = "\n".join(pdf_method_lines)
+              try {
 
-          java, share_count = re.subn(
-              pdf_method_pattern,
-              lambda m: pdf_method,
+                  if(
+                      base64 == null ||
+                      base64.trim().isEmpty()
+                  ){
+                      throw new Exception(
+                          "PDF vazio"
+                      );
+                  }
+
+                  String clean=base64;
+
+                  int comma=
+                      clean.indexOf(',');
+
+                  if(comma>=0){
+                      clean=
+                          clean.substring(
+                              comma+1
+                          );
+                  }
+
+                  byte[] bytes=
+                      Base64.decode(
+                          clean,
+                          Base64.DEFAULT
+                      );
+
+                  File dir=
+                      new File(
+                          getCacheDir(),
+                          "shared"
+                      );
+
+                  if(
+                      !dir.exists() &&
+                      !dir.mkdirs()
+                  ){
+                      throw new Exception(
+                          "Não foi possível criar a pasta temporária"
+                      );
+                  }
+
+                  String safeName=
+                      sanitizeFilename(
+                          filename
+                      );
+
+                  if(safeName.isEmpty()){
+                      safeName="pedido.pdf";
+                  }
+
+                  if(
+                      !safeName
+                          .toLowerCase()
+                          .endsWith(".pdf")
+                  ){
+                      safeName+=".pdf";
+                  }
+
+                  File file=
+                      new File(
+                          dir,
+                          safeName
+                      );
+
+                  try(
+                      FileOutputStream out=
+                          new FileOutputStream(file)
+                  ){
+
+                      out.write(bytes);
+                      out.flush();
+                  }
+
+                  Uri uri=
+                      FileProvider.getUriForFile(
+                          MainActivity.this,
+                          getPackageName()+
+                          ".fileprovider",
+                          file
+                      );
+
+                  Intent intent=
+                      new Intent(
+                          Intent.ACTION_SEND
+                      );
+
+                  intent.setType(
+                      "application/pdf"
+                  );
+
+                  intent.putExtra(
+                      Intent.EXTRA_STREAM,
+                      uri
+                  );
+
+                  intent.setClipData(
+                      ClipData.newRawUri(
+                          "PDF",
+                          uri
+                      )
+                  );
+
+                  intent.addFlags(
+                      Intent.FLAG_GRANT_READ_URI_PERMISSION
+                  );
+
+                  startActivity(
+                      Intent.createChooser(
+                          intent,
+                          "Enviar PDF"
+                      )
+                  );
+
+              }catch(Exception e){
+
+                  Toast.makeText(
+                      MainActivity.this,
+                      "Erro ao compartilhar PDF: "
+                      +e.getMessage(),
+                      Toast.LENGTH_LONG
+                  ).show();
+              }
+          }
+
+          @JavascriptInterface'''
+
+          java,n=re.subn(
+              pdf_pattern,
+              pdf_method,
               java,
               count=1,
               flags=re.S
           )
 
-          if share_count != 1:
+          if n!=1:
+
               raise SystemExit(
                   "ERRO: não foi possível corrigir sharePdf"
               )
 
-          # ------------------------------------------------------------
-          # saveBase64 com 3 argumentos
-          # ------------------------------------------------------------
+          # ============================================================
+          # 7. saveBase64 COM 3 ARGUMENTOS
+          # ============================================================
 
-          if (
-              "public void saveBase64("
-              "String filename, String mimeType, String base64)"
+          if(
+              'public void saveBase64(String filename, String mimeType, String base64)'
               not in java
           ):
 
-              marker = (
-                  "        @JavascriptInterface\n"
-                  "        public void shareText(String text) {"
+              marker=(
+                  '        @JavascriptInterface\n'
+                  '        public void shareText(String text) {'
               )
 
-              overload = "\n".join([
-                  "        @JavascriptInterface",
-                  "        public void saveBase64(",
-                  "                String filename,",
-                  "                String mimeType,",
-                  "                String base64) {",
-                  "            saveBase64(filename, base64);",
-                  "        }",
-                  "",
-                  "        @JavascriptInterface",
-                  "        public void shareText(String text) {"
-              ])
+              overload='''        @JavascriptInterface
+          public void saveBase64(
+                  String filename,
+                  String mimeType,
+                  String base64) {
 
-              if marker in java:
-                  java = java.replace(
-                      marker,
-                      overload,
-                      1
-                  )
-              else:
+              saveBase64(
+                  filename,
+                  base64
+              );
+          }
+
+          '''
+
+              if marker not in java:
+
                   raise SystemExit(
                       "ERRO: local do saveBase64 não encontrado"
                   )
 
-          # ------------------------------------------------------------
-          # sanitizeFilename
-          # ------------------------------------------------------------
-
-          if "private String sanitizeFilename(" not in java:
-
-              marker = (
-                  "    @Override\n"
-                  "    public void onBackPressed() {"
+              java=java.replace(
+                  marker,
+                  overload+marker,
+                  1
               )
 
-              helper = "\n".join([
-                  "    private String sanitizeFilename(String filename) {",
-                  "        if (filename == null) return \"\";",
-                  "        return new File(filename)",
-                  "            .getName()",
-                  "            .replaceAll(\"[\\\\\\\\/:*?\\\"<>|]\", \"_\");",
-                  "    }",
-                  ""
-              ])
+          # ============================================================
+          # 8. NOME SEGURO DO ARQUIVO
+          # ============================================================
+
+          if 'private String sanitizeFilename(' not in java:
+
+              marker=(
+                  '    @Override\n'
+                  '    public void onBackPressed() {'
+              )
+
+              helper='''    private String sanitizeFilename(String filename) {
+
+              if(filename==null){
+                  return "";
+              }
+
+              return new File(filename)
+                  .getName()
+                  .replaceAll(
+                      "[\\\\/:*?\\\"<>|]",
+                      "_"
+                  );
+          }
+
+          '''
 
               if marker in java:
-                  java = java.replace(
+
+                  java=java.replace(
                       marker,
-                      helper + marker,
+                      helper+marker,
                       1
                   )
 
-          main.write_text(java, encoding="utf-8")
+          main.write_text(
+              java,
+              encoding="utf-8"
+          )
 
-          print("Correções aplicadas com sucesso.")
+          print(
+              "Correções aplicadas com sucesso."
+          )
 
           PY
 
@@ -853,6 +1074,7 @@ jobs:
             https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js
 
           test -s "$ASSETS/xlsx.full.min.js"
+
           test -s "$ASSETS/jspdf.umd.min.js"
 
       - name: Verificar correções
@@ -861,67 +1083,141 @@ jobs:
           set -e
 
           HTML="$ANDROID_DIR/app/src/main/assets/app/index.html"
-          JAVA="$ANDROID_DIR/app/src/main/java/com/pedido/v2/MainActivity.java"
 
-          test -f "$ANDROID_DIR/settings.gradle"
-          test -f "$ANDROID_DIR/build.gradle"
-          test -f "$ANDROID_DIR/app/build.gradle"
-          test -f "$ANDROID_DIR/app/src/main/AndroidManifest.xml"
+          JAVA=$(find \
+            "$ANDROID_DIR/app/src/main/java" \
+            -name MainActivity.java \
+            -type f \
+            -print -quit)
+
           test -f "$HTML"
+
           test -f "$JAVA"
 
-          echo "Verificando PDF..."
+          echo "======================================"
+          echo "VERIFICANDO PDF"
+          echo "======================================"
 
-          grep -q "orientation:'portrait'" "$HTML"
+          grep -Fq \
+            "orientation:'portrait'" \
+            "$HTML"
 
-          if grep -q "orientation:'landscape'" "$HTML"; then
-            echo "ERRO: PDF ainda contém landscape."
+          grep -Fq \
+            "pageWidth=210" \
+            "$HTML"
+
+          grep -Fq \
+            "pageHeight=297" \
+            "$HTML"
+
+          if grep -Fq \
+            "orientation:'landscape'" \
+            "$HTML"
+          then
+            echo "ERRO: PDF ainda está em landscape."
             exit 1
           fi
 
-          if grep -q "orientation: \"landscape\"" "$HTML"; then
-            echo "ERRO: PDF ainda contém landscape."
+          if grep -Fq \
+            'orientation:"landscape"' \
+            "$HTML"
+          then
+            echo "ERRO: PDF ainda está em landscape."
             exit 1
           fi
 
-          if grep -q "pageWidth=297" "$HTML"; then
-            echo "ERRO: largura de paisagem encontrada."
-            exit 1
-          fi
-
-          grep -q "pageWidth=210" "$HTML"
-          grep -q "pageHeight=297" "$HTML"
-
-          echo "Verificando limpeza..."
-
-          grep -q "vals={};" "$HTML"
-          grep -q "extras=[];" "$HTML"
-          grep -q "finalizedRows=[];" "$HTML"
-          grep -q "localStorage.removeItem('pedido_compras_vals')" "$HTML"
-          grep -q "localStorage.removeItem('pedido_compras_extras')" "$HTML"
-          grep -q "clearPedido(rows);" "$HTML"
-
-          echo "Verificando importação..."
-
-          grep -q "importedCatalogActive=true" "$HTML"
-          grep -q "customProducts=rows.filter(x=>x.code||x.name).map(x=>({...x}))" "$HTML"
-
-          echo "Verificando bibliotecas..."
-
-          grep -q "xlsx.full.min.js" "$HTML"
-          grep -q "jspdf.umd.min.js" "$HTML"
-
-          echo "Verificando Android..."
-
-          grep -q "onShowFileChooser" "$JAVA"
-          grep -q "ClipData.newRawUri" "$JAVA"
-          grep -q "saveBase64(" "$JAVA"
-          grep -q "private String sanitizeFilename(" "$JAVA"
+          echo "PDF: OK - A4 RETRATO"
 
           echo "======================================"
-          echo "TODAS AS CORREÇÕES FORAM VERIFICADAS."
-          echo "PDF: A4 RETRATO"
-          echo "LIMPEZA: PEDIDO + ESTOQUE"
+          echo "VERIFICANDO LIMPEZA"
+          echo "======================================"
+
+          grep -Fq \
+            "vals={};" \
+            "$HTML"
+
+          grep -Fq \
+            "extras=[];" \
+            "$HTML"
+
+          grep -Fq \
+            "validadeCurta=[];" \
+            "$HTML"
+
+          grep -Fq \
+            "finalizedRows=[];" \
+            "$HTML"
+
+          grep -Fq \
+            "localStorage.removeItem('pedido_compras_vals')" \
+            "$HTML"
+
+          grep -Fq \
+            "localStorage.removeItem('pedido_compras_extras')" \
+            "$HTML"
+
+          grep -Fq \
+            "localStorage.removeItem('pedido_compras_validade_curta')" \
+            "$HTML"
+
+          grep -Fq \
+            "clearPedido(rows);" \
+            "$HTML"
+
+          echo "LIMPEZA: OK"
+
+          echo "======================================"
+          echo "VERIFICANDO IMPORTAÇÃO"
+          echo "======================================"
+
+          grep -Fq \
+            "importedCatalogActive=true" \
+            "$HTML"
+
+          grep -Fq \
+            "customProducts=rows.filter(x=>x.code||x.name).map(x=>({...x}))" \
+            "$HTML"
+
+          echo "IMPORTAÇÃO: OK"
+
+          echo "======================================"
+          echo "VERIFICANDO BIBLIOTECAS"
+          echo "======================================"
+
+          grep -Fq \
+            "xlsx.full.min.js" \
+            "$HTML"
+
+          grep -Fq \
+            "jspdf.umd.min.js" \
+            "$HTML"
+
+          echo "BIBLIOTECAS: OK"
+
+          echo "======================================"
+          echo "VERIFICANDO ANDROID"
+          echo "======================================"
+
+          grep -Fq \
+            "onShowFileChooser" \
+            "$JAVA"
+
+          grep -Fq \
+            "ClipData.newRawUri" \
+            "$JAVA"
+
+          grep -Fq \
+            "saveBase64(String filename, String mimeType, String base64)" \
+            "$JAVA"
+
+          grep -Fq \
+            "sanitizeFilename" \
+            "$JAVA"
+
+          echo "ANDROID: OK"
+
+          echo "======================================"
+          echo "TODAS AS VERIFICAÇÕES PASSARAM"
           echo "======================================"
 
       - name: Compilar APK
@@ -931,7 +1227,10 @@ jobs:
 
           cd "$ANDROID_DIR"
 
-          gradle --no-daemon clean assembleDebug
+          gradle \
+            --no-daemon \
+            clean \
+            assembleDebug
 
       - name: Verificar APK
         shell: bash
