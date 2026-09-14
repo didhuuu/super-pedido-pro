@@ -53,7 +53,7 @@ jobs:
 
           echo "ANDROID_DIR=$ANDROID_DIR" >> "$GITHUB_ENV"
 
-          echo "Projeto encontrado em:"
+          echo "Projeto encontrado:"
           echo "$ANDROID_DIR"
 
       - name: Configurar AndroidX
@@ -65,127 +65,56 @@ jobs:
 
           touch gradle.properties
 
-          grep -q "android.useAndroidX=true" gradle.properties \
-            || echo "android.useAndroidX=true" >> gradle.properties
+          grep -q "android.useAndroidX=true" gradle.properties || \
+            echo "android.useAndroidX=true" >> gradle.properties
 
-          grep -q "android.enableJetifier=true" gradle.properties \
-            || echo "android.enableJetifier=true" >> gradle.properties
+          grep -q "android.enableJetifier=true" gradle.properties || \
+            echo "android.enableJetifier=true" >> gradle.properties
 
-      - name: Corrigir MainActivity
+      - name: Corrigir sanitizeFilename
         shell: bash
         run: |
           set -e
 
-          python3 - <<'PY'
-          from pathlib import Path
-          import os
-          import re
+          MAIN=$(find "$ANDROID_DIR/app/src/main/java" \
+            -name MainActivity.java \
+            -type f \
+            -print -quit)
 
-          root = Path(os.environ["ANDROID_DIR"])
+          test -n "$MAIN"
 
-          java_dir = root / "app" / "src" / "main" / "java"
+          echo "Corrigindo:"
+          echo "$MAIN"
 
-          files = list(java_dir.rglob("MainActivity.java"))
+          cp "$MAIN" "$MAIN.backup"
 
-          if not files:
-              raise SystemExit(
-                  "ERRO: MainActivity.java não encontrado"
-              )
+          # A correção definitiva:
+          # substitui a chamada problemática pelo próprio nome do arquivo.
+          sed -i \
+            's/sanitizeFilename(filename)/new File(filename).getName()/g' \
+            "$MAIN"
 
-          main = files[0]
+          # Se por acaso existir uma declaração antiga do método,
+          # ela é removida para evitar conflito.
+          sed -i \
+            '/^[[:space:]]*private String sanitizeFilename(String filename)[[:space:]]*{/,/^[[:space:]]*}[[:space:]]*$/d' \
+            "$MAIN"
 
-          print("MainActivity:")
-          print(main)
+          echo ""
+          echo "Verificando chamada problemática..."
 
-          text = main.read_text(
-              encoding="utf-8"
-          )
+          if grep -n "sanitizeFilename(filename)" "$MAIN"; then
+            echo "ERRO: chamada sanitizeFilename ainda existe."
+            cp "$MAIN.backup" "$MAIN"
+            exit 1
+          fi
 
-          # ---------------------------------------------------------
-          # GARANTIR O MÉTODO sanitizeFilename
-          # ---------------------------------------------------------
+          echo ""
+          echo "======================================"
+          echo "SANITIZEFILENAME CORRIGIDO"
+          echo "======================================"
 
-          method = (
-              '    private String sanitizeFilename(String filename) {\\n'
-              '        if (filename == null) {\\n'
-              '            return "";\\n'
-              '        }\\n'
-              '        return new File(filename)\\n'
-              '                .getName()\\n'
-              '                .replaceAll("[\\\\\\\\/:*?\\\"<>|]", "_");\\n'
-              '    }\\n\\n'
-          )
-
-          if "private String sanitizeFilename(" not in text:
-
-              marker = (
-                  "    @Override\n"
-                  "    public void onBackPressed()"
-              )
-
-              if marker not in text:
-
-                  raise SystemExit(
-                      "ERRO: não encontrei local seguro "
-                      "para inserir sanitizeFilename"
-                  )
-
-              text = text.replace(
-                  marker,
-                  method + marker,
-                  1
-              )
-
-              print(
-                  "sanitizeFilename criado."
-              )
-
-          else:
-
-              print(
-                  "sanitizeFilename já existe."
-              )
-
-          # ---------------------------------------------------------
-          # CORRIGIR CHAMADA CASO TENHA SIDO ALTERADA ERRADO
-          # ---------------------------------------------------------
-
-          text = re.sub(
-              r"sanitizeFilename\s*\(\s*filename\s*\)",
-              "sanitizeFilename(filename)",
-              text
-          )
-
-          main.write_text(
-              text,
-              encoding="utf-8"
-          )
-
-          # ---------------------------------------------------------
-          # VERIFICAÇÃO
-          # ---------------------------------------------------------
-
-          final_text = main.read_text(
-              encoding="utf-8"
-          )
-
-          if "private String sanitizeFilename(" not in final_text:
-
-              raise SystemExit(
-                  "ERRO CRÍTICO: sanitizeFilename não existe"
-              )
-
-          if "sanitizeFilename(filename)" not in final_text:
-
-              raise SystemExit(
-                  "ERRO CRÍTICO: chamada sanitizeFilename não encontrada"
-              )
-
-          print("")
-          print("======================================")
-          print("MAINACTIVITY CORRIGIDO")
-          print("sanitizeFilename: OK")
-          print("======================================")
+          grep -n "new File(filename).getName()" "$MAIN" || true
 
       - name: Preparar bibliotecas PDF e Excel
         shell: bash
@@ -205,10 +134,9 @@ jobs:
             "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"
 
           test -s "$ASSETS/xlsx.full.min.js"
-
           test -s "$ASSETS/jspdf.umd.min.js"
 
-          echo "Bibliotecas preparadas."
+          echo "Bibliotecas OK."
 
       - name: Verificar projeto
         shell: bash
@@ -216,30 +144,27 @@ jobs:
           set -e
 
           test -f "$ANDROID_DIR/settings.gradle"
-
           test -f "$ANDROID_DIR/build.gradle"
-
           test -f "$ANDROID_DIR/app/build.gradle"
-
           test -f "$ANDROID_DIR/app/src/main/AndroidManifest.xml"
 
-          MAIN=$(find \
-            "$ANDROID_DIR/app/src/main/java" \
+          MAIN=$(find "$ANDROID_DIR/app/src/main/java" \
             -name MainActivity.java \
             -type f \
             -print -quit)
 
           test -n "$MAIN"
 
-          echo "Arquivo Java:"
+          echo "MainActivity:"
           echo "$MAIN"
 
-          grep -q \
-            "private String sanitizeFilename(" \
-            "$MAIN"
+          if grep -q "sanitizeFilename(filename)" "$MAIN"; then
+            echo "ERRO: sanitizeFilename ainda está sendo chamado."
+            exit 1
+          fi
 
           grep -q \
-            "sanitizeFilename(filename)" \
+            "new File(filename).getName()" \
             "$MAIN"
 
           test -s \
@@ -250,7 +175,7 @@ jobs:
 
           echo ""
           echo "======================================"
-          echo "VERIFICAÇÃO OK"
+          echo "VERIFICAÇÃO PRÉ-BUILD: OK"
           echo "======================================"
 
       - name: Compilar APK
@@ -273,10 +198,7 @@ jobs:
 
           APK="$ANDROID_DIR/app/build/outputs/apk/debug/app-debug.apk"
 
-          if [ ! -f "$APK" ]; then
-            echo "ERRO: APK não foi gerado."
-            exit 1
-          fi
+          test -f "$APK"
 
           echo ""
           echo "======================================"
