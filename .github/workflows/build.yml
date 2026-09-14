@@ -77,8 +77,8 @@ jobs:
 
           python3 - <<'PY'
           from pathlib import Path
-          import re
           import os
+          import re
 
           root = Path(os.environ["ANDROID_DIR"])
 
@@ -88,10 +88,6 @@ jobs:
               raise SystemExit("ERRO: index.html não encontrado")
 
           text = html.read_text(encoding="utf-8")
-
-          # ============================================================
-          # RELATÓRIO NOVO
-          # ============================================================
 
           new_open_pdf = r'''async function openPDF(sendViaWhatsApp=false){
             const rows=finalizedRows.length?finalizedRows:getRows();
@@ -124,12 +120,15 @@ jobs:
               const colCodigo=24;
               const colEstoque=24;
               const colPedido=24;
-              const colProduto=largura-colCodigo-colEstoque-colPedido;
+              const colProduto=
+                largura-colCodigo-colEstoque-colPedido;
 
               let y=15;
 
               function novaPagina(){
+
                 doc.addPage();
+
                 y=15;
               }
 
@@ -142,6 +141,7 @@ jobs:
                 const altura=8;
 
                 doc.setFillColor(35,35,35);
+
                 doc.setDrawColor(35,35,35);
 
                 doc.rect(
@@ -220,8 +220,8 @@ jobs:
 
               doc.setFontSize(8);
 
-              const data=new Date()
-                .toLocaleString('pt-BR');
+              const data=
+                new Date().toLocaleString('pt-BR');
 
               doc.text(
                 data,
@@ -456,7 +456,6 @@ jobs:
                 data.replace(/\//g,'-')+
                 '.pdf';
 
-              # Android
               if(
                 window.AndroidFileBridge &&
                 window.AndroidFileBridge.sharePdf
@@ -474,7 +473,6 @@ jobs:
                 return;
               }
 
-              # Navegador
               const blob=doc.output('blob');
 
               if(
@@ -540,7 +538,7 @@ jobs:
               a.remove();
 
               setTimeout(
-                ()=>{
+                function(){
                   URL.revokeObjectURL(url);
                 },
                 3000
@@ -561,22 +559,6 @@ jobs:
             }
           }'''
 
-          # Corrige os comentários Python que não podem
-          # permanecer dentro do JavaScript.
-          new_open_pdf = new_open_pdf.replace(
-              "              # Android",
-              "              // Android"
-          )
-
-          new_open_pdf = new_open_pdf.replace(
-              "              # Navegador",
-              "              // Navegador"
-          )
-
-          # ============================================================
-          # SUBSTITUI SOMENTE openPDF
-          # ============================================================
-
           pattern = (
               r"async function openPDF"
               r"\(sendViaWhatsApp=false\)"
@@ -596,7 +578,6 @@ jobs:
                   "ERRO: função openPDF não encontrada."
               )
 
-          # Mantém as bibliotecas locais.
           text=text.replace(
               'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js',
               'xlsx.full.min.js'
@@ -606,10 +587,6 @@ jobs:
               'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
               'jspdf.umd.min.js'
           )
-
-          # ============================================================
-          # VERIFICAÇÕES
-          # ============================================================
 
           required=[
               'function repeatLastOrder()',
@@ -629,13 +606,10 @@ jobs:
           for item in required:
 
               if item not in text:
-
                   raise SystemExit(
-                      "ERRO: função/recurso ausente: "
-                      +item
+                      "ERRO: função/recurso ausente: "+item
                   )
 
-          # Segurança: o relatório não pode estar em paisagem.
           if "orientation:'landscape'" in text:
               raise SystemExit(
                   "ERRO: PDF em paisagem encontrado."
@@ -647,23 +621,15 @@ jobs:
           )
 
           print(
-              "OK: somente openPDF foi alterado."
+              "OK: somente o relatório foi alterado."
           )
 
           print(
-              "OK: Admin preservado."
+              "OK: MainActivity não foi alterado."
           )
 
           print(
-              "OK: Repetir pedido preservado."
-          )
-
-          print(
-              "OK: Histórico preservado."
-          )
-
-          print(
-              "OK: Importação preservada."
+              "OK: funções principais preservadas."
           )
 
           PY
@@ -748,7 +714,6 @@ jobs:
           for item in required:
 
               if item not in text:
-
                   raise SystemExit(
                       "ERRO: não encontrado: "+item
                   )
@@ -758,7 +723,6 @@ jobs:
               or
               'orientation:"landscape"' in text
           ):
-
               raise SystemExit(
                   "ERRO: relatório em paisagem."
               )
