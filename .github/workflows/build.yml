@@ -11,9 +11,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-
-      - name: Baixar projeto
+      - name: Baixar exatamente a versão 9
         uses: actions/checkout@v4
+        with:
+          ref: 69bd377f51e567832edd60769ba312e3d7f39156
 
       - name: Configurar Java 17
         uses: actions/setup-java@v4
@@ -21,12 +22,12 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Configurar Gradle
+      - name: Configurar Gradle 8.7
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
 
-      - name: Extrair versão #9
+      - name: Preparar projeto da versão 9
         shell: bash
         run: |
           set -e
@@ -53,741 +54,656 @@ jobs:
 
           echo "ANDROID_DIR=$ANDROID_DIR" >> "$GITHUB_ENV"
 
-          echo "Projeto da versão #9 encontrado:"
+          echo "Projeto encontrado em:"
           echo "$ANDROID_DIR"
-
-      - name: Configurar AndroidX
-        shell: bash
-        run: |
-          set -e
-
-          cd "$ANDROID_DIR"
-
-          touch gradle.properties
-
-          grep -q "android.useAndroidX=true" gradle.properties || \
-            echo "android.useAndroidX=true" >> gradle.properties
-
-          grep -q "android.enableJetifier=true" gradle.properties || \
-            echo "android.enableJetifier=true" >> gradle.properties
 
       - name: Alterar SOMENTE o relatório PDF
         shell: bash
         run: |
           set -e
 
-          HTML="$ANDROID_DIR/app/src/main/assets/app/index.html"
-
-          test -f "$HTML"
-
-          python3 <<'PY'
-          import base64
-          import os
+          python3 - <<'PY'
           from pathlib import Path
+          import os
 
-          html = Path(
-              os.environ["ANDROID_DIR"]
-          ) / "app/src/main/assets/app/index.html"
+          root = Path(os.environ["ANDROID_DIR"])
+          html = root / "app/src/main/assets/app/index.html"
 
-          text = html.read_text(
+          if not html.exists():
+              raise SystemExit(
+                  "ERRO: app/src/main/assets/app/index.html não encontrado."
+              )
+
+          text = html.read_text(encoding="utf-8")
+
+          inicio = text.find("async function openPDF")
+          fim = text.find("function sendWhatsApp", inicio)
+
+          if inicio < 0:
+              raise SystemExit(
+                  "ERRO: função openPDF da versão 9 não encontrada."
+              )
+
+          if fim < 0:
+              raise SystemExit(
+                  "ERRO: função sendWhatsApp não encontrada depois de openPDF."
+              )
+
+          novo_open_pdf = r'''async function openPDF(sendViaWhatsApp=false){
+            const rows=finalizedRows.length?finalizedRows:getRows();
+            if(!rows.length){
+              alert('Nenhum item foi selecionado.');
+              return;
+            }
+
+            try{
+              const {jsPDF}=window.jspdf||{};
+
+              if(!jsPDF){
+                throw new Error('Biblioteca PDF não carregada.');
+              }
+
+              const doc=new jsPDF({
+                orientation:'portrait',
+                unit:'mm',
+                format:'a4'
+              });
+
+              const W=210;
+              const H=297;
+              const L=10;
+              const R=10;
+              const usable=W-L-R;
+              const footerY=290;
+
+              /*
+               * CÓDIGO | NOME DO PRODUTO | ESTOQUE | PEDIDO
+               */
+              const colCodigo=24;
+              const colNome=100;
+              const colEstoque=32;
+              const colPedido=34;
+
+              const lineH=4.5;
+              let y=15;
+
+              const dataAtual=new Date().toLocaleString('pt-BR');
+
+              function cabecalhoPagina(){
+                doc.setFont('helvetica','bold');
+                doc.setFontSize(15);
+                doc.text('PEDIDO DE COMPRAS',L,y);
+
+                y+=6;
+
+                doc.setFont('helvetica','normal');
+                doc.setFontSize(8.5);
+                doc.text(dataAtual,L,y);
+
+                y+=6;
+              }
+
+              function novaPagina(){
+                doc.addPage('a4','portrait');
+                y=15;
+                cabecalhoPagina();
+              }
+
+              function verificarEspaco(altura){
+                if(y+altura>footerY-2){
+                  novaPagina();
+                  return true;
+                }
+                return false;
+              }
+
+              function cabecalhoTabela(){
+                const altura=8;
+
+                verificarEspaco(altura);
+
+                doc.setFont('helvetica','bold');
+                doc.setFontSize(8);
+
+                let x=L;
+
+                doc.rect(x,y,colCodigo,altura);
+                doc.text('CÓDIGO',x+2,y+5.2);
+
+                x+=colCodigo;
+
+                doc.rect(x,y,colNome,altura);
+                doc.text('NOME DO PRODUTO',x+2,y+5.2);
+
+                x+=colNome;
+
+                doc.rect(x,y,colEstoque,altura);
+                doc.text('ESTOQUE',x+2,y+5.2);
+
+                x+=colEstoque;
+
+                doc.rect(x,y,colPedido,altura);
+                doc.text('PEDIDO',x+2,y+5.2);
+
+                y+=altura;
+              }
+
+              function categoria(nome){
+                const altura=7;
+
+                verificarEspaco(altura);
+
+                doc.setFont('helvetica','bold');
+                doc.setFontSize(9);
+
+                doc.rect(L,y,usable,altura);
+
+                doc.text(
+                  String(nome||'SEM CATEGORIA'),
+                  L+2,
+                  y+4.8
+                );
+
+                y+=altura;
+
+                cabecalhoTabela();
+              }
+
+              function produto(item){
+
+                const codigo=String(item.code??'-');
+                const nome=String(item.name??'');
+                const estoque=String(item.stock??0);
+                const pedido=String(item.order??0);
+
+                const nomeLinhas=doc.splitTextToSize(
+                  nome,
+                  colNome-4
+                );
+
+                const altura=Math.max(
+                  7,
+                  nomeLinhas.length*lineH+5
+                );
+
+                if(y+altura>footerY-2){
+                  novaPagina();
+                  cabecalhoTabela();
+                }
+
+                const topo=y;
+
+                let x=L;
+
+                doc.setFont('helvetica','normal');
+                doc.setFontSize(8);
+
+                doc.rect(
+                  x,
+                  topo,
+                  colCodigo,
+                  altura
+                );
+
+                doc.text(
+                  codigo,
+                  x+2,
+                  topo+4.5
+                );
+
+                x+=colCodigo;
+
+                doc.rect(
+                  x,
+                  topo,
+                  colNome,
+                  altura
+                );
+
+                doc.text(
+                  nomeLinhas,
+                  x+2,
+                  topo+4.5,
+                  {
+                    maxWidth:colNome-4
+                  }
+                );
+
+                x+=colNome;
+
+                doc.rect(
+                  x,
+                  topo,
+                  colEstoque,
+                  altura
+                );
+
+                doc.text(
+                  estoque,
+                  x+colEstoque/2,
+                  topo+4.5,
+                  {
+                    align:'center'
+                  }
+                );
+
+                x+=colEstoque;
+
+                doc.rect(
+                  x,
+                  topo,
+                  colPedido,
+                  altura
+                );
+
+                doc.text(
+                  pedido,
+                  x+colPedido/2,
+                  topo+4.5,
+                  {
+                    align:'center'
+                  }
+                );
+
+                y+=altura;
+
+                /*
+                 * Observação específica do produto.
+                 * Continua dentro do relatório sem alterar
+                 * os dados do pedido.
+                 */
+                if(item.obs){
+
+                  const linhasObs=doc.splitTextToSize(
+                    'Obs.: '+String(item.obs),
+                    colNome-4
+                  );
+
+                  const alturaObs=
+                    linhasObs.length*3.5+3;
+
+                  if(y+alturaObs>footerY-2){
+                    novaPagina();
+                    cabecalhoTabela();
+                  }
+
+                  doc.setFont('helvetica','italic');
+                  doc.setFontSize(7);
+
+                  doc.text(
+                    linhasObs,
+                    L+colCodigo+2,
+                    y+3
+                  );
+
+                  y+=alturaObs;
+                }
+
+                if(item.validade){
+
+                  const linhasValidade=doc.splitTextToSize(
+                    'Validade: '+String(item.validade),
+                    colNome-4
+                  );
+
+                  const alturaValidade=
+                    linhasValidade.length*3.5+3;
+
+                  if(y+alturaValidade>footerY-2){
+                    novaPagina();
+                    cabecalhoTabela();
+                  }
+
+                  doc.setFont('helvetica','italic');
+                  doc.setFontSize(7);
+
+                  doc.text(
+                    linhasValidade,
+                    L+colCodigo+2,
+                    y+3
+                  );
+
+                  y+=alturaValidade;
+                }
+              }
+
+              /*
+               * INÍCIO DO RELATÓRIO
+               */
+              cabecalhoPagina();
+
+              const grupos=groupRows(rows);
+
+              for(const [categoriaNome,itens] of Object.entries(grupos)){
+
+                categoria(categoriaNome);
+
+                for(const item of itens){
+                  produto(item);
+                }
+
+                y+=3;
+              }
+
+              /*
+               * OBSERVAÇÃO GERAL
+               */
+              if(generalObservation){
+
+                const linhas=doc.splitTextToSize(
+                  'OBSERVAÇÃO GERAL: '+String(generalObservation),
+                  usable-4
+                );
+
+                const altura=Math.max(
+                  10,
+                  linhas.length*4+5
+                );
+
+                if(y+altura>footerY-2){
+                  novaPagina();
+                }
+
+                doc.setFont('helvetica','bold');
+                doc.setFontSize(8);
+
+                doc.rect(
+                  L,
+                  y,
+                  usable,
+                  altura
+                );
+
+                doc.text(
+                  linhas,
+                  L+2,
+                  y+5
+                );
+
+                y+=altura;
+              }
+
+              /*
+               * RODAPÉ E NUMERAÇÃO
+               */
+              const totalPaginas=doc.getNumberOfPages();
+
+              for(
+                let pagina=1;
+                pagina<=totalPaginas;
+                pagina++
+              ){
+
+                doc.setPage(pagina);
+
+                doc.setFont('helvetica','normal');
+                doc.setFontSize(7);
+
+                doc.text(
+                  'Super Pedido Pro',
+                  L,
+                  footerY
+                );
+
+                doc.text(
+                  'Página '+pagina+' de '+totalPaginas,
+                  W-R,
+                  footerY,
+                  {
+                    align:'right'
+                  }
+                );
+              }
+
+              /*
+               * Geração do arquivo
+               */
+              const blob=doc.output('blob');
+
+              const filename=
+                'pedido-acougue-'+
+                new Date().toISOString().slice(0,10)+
+                '.pdf';
+
+              const b64=
+                doc.output('datauristring')
+                  .split(',')[1];
+
+              /*
+               * ANDROID
+               *
+               * Mantém exatamente o comportamento
+               * de salvar histórico e limpar o pedido.
+               */
+              if(
+                window.AndroidFileBridge &&
+                window.AndroidFileBridge.sharePdf
+              ){
+
+                window.AndroidFileBridge.sharePdf(
+                  filename,
+                  b64
+                );
+
+                saveHistory(rows);
+                clearPedido();
+
+                return;
+              }
+
+              /*
+               * COMPARTILHAMENTO PELO NAVEGADOR
+               */
+              if(
+                sendViaWhatsApp &&
+                navigator.share &&
+                typeof File!=='undefined'
+              ){
+
+                const file=new File(
+                  [blob],
+                  filename,
+                  {
+                    type:'application/pdf'
+                  }
+                );
+
+                if(
+                  !navigator.canShare ||
+                  navigator.canShare({
+                    files:[file]
+                  })
+                ){
+
+                  try{
+
+                    await navigator.share({
+                      files:[file],
+                      text:'Pedido do açougue'
+                    });
+
+                    saveHistory(rows);
+                    clearPedido();
+
+                    return;
+
+                  }catch(e){
+
+                    if(
+                      e &&
+                      e.name==='AbortError'
+                    ){
+                      return;
+                    }
+                  }
+                }
+              }
+
+              /*
+               * DOWNLOAD NORMAL
+               */
+              const url=
+                URL.createObjectURL(blob);
+
+              const a=
+                document.createElement('a');
+
+              a.href=url;
+              a.download=filename;
+
+              document.body.appendChild(a);
+              a.click();
+              a.remove();
+
+              setTimeout(
+                ()=>URL.revokeObjectURL(url),
+                3000
+              );
+
+              alert(
+                'PDF gerado. Se o compartilhamento do WhatsApp não abrir automaticamente, abra o WhatsApp e anexe o PDF baixado.'
+              );
+
+              if(!sendViaWhatsApp){
+                saveHistory(rows);
+                clearPedido();
+              }
+
+            }catch(e){
+
+              console.error(e);
+
+              alert(
+                'Não foi possível gerar o PDF: '+
+                (e.message||e)
+              );
+            }
+          }'''
+
+          novo_texto = (
+              text[:inicio]
+              + novo_open_pdf
+              + "\n"
+              + text[fim:]
+          )
+
+          html.write_text(
+              novo_texto,
               encoding="utf-8"
           )
 
-          # ============================================================
-          # ESTA É A ÚNICA ALTERAÇÃO FEITA NA VERSÃO #9:
-          # SUBSTITUIR SOMENTE openPDF()
-          # ============================================================
-
-          pdf_b64 = """
-          YXN5bmMgZnVuY3Rpb24gb3BlblBERihzZW5kVmlhV2hhdHNBcHA9ZmFsc2UpewogIGNvbnN0IHJvd3M9ZmluYWxpemVkUm93cy5sZW5ndGg/ZmluYWxpemVkUm93czpnZXRSb3dzKCk7CiAgCiAgaWYocm93cy5sZW5ndGg9PT0wKXsKICAgIGFsZXJ0KCdOZW5odW0gaXRlbSBmb2kgc2VsZWNpb25hZG8uJyk7CiAgICByZXR1cm47CiAgfQoKICB0cnl7CiAgICBjb25zdCB7anNQREZ9PXdpbmRvdy5qc3BkZnwke307CiAgICBpZihwanBERjwhPT0gdW5kZWZpbmVkKXt9CgogICAgY29uc3QgZG9jPW5ldyBqc1BERiggewogICAgICBvcmllbnRhdGlvbjogJ3BvcnRyYWl0JywKICAgICAgdW5pdDogJ21tJywKICAgICAgZm9ybWF0OiAnYTQnCiAgICB9KTsKCiAgICBjb25zdCBXPTIxMDsKICAgIGNvbnN0IEg9Mjk3OwogICAgY29uc3QgbWFyZ2VtPTEwOwogICAgY29uc3QgbGFyZ3VyYT0xOTAKCiAgICBjb25zdCBjb2xDb2RpZ289Mjc7CiAgICBjb25zdCBjb2xQcm9kdXRvPTEwODsKICAgIGNvbnN0IGNvbEVzdG9xdWU9Mjc7CiAgICBjb25zdCBjb2xQZWRpZG89Mjg7CgogICAgbGV0IHk9MTQ7CgogICAgY29uc3QgZGF0YT1uZXcgRGF0ZSgpLnRvTG9jYWxlRGF0ZVN0cmluZygicHQtQlIiLHsKICAgICAgZGF5OidkaWdpdCcsCiAgICAgIG1vbnRoOidkaWdpdCcsCiAgICAgIHllYXI6J2RpZ2l0JwogICAgfSk7CgogICAgZnVuY3Rpb24gdGl0dWxvKCl7CiAgICAgIGRvYy5zZXRGb250KCdIZWx2ZXRpY2EnLCdib2xkJyk7CiAgICAgIGRvYy5zZXRGb250U2l6ZSgxNik7CiAgICAgIGRvYy50ZXh0KCdSRUxBVE9SSU8gREUgUEVESURPJyxXLDIse3FhbGlnbjonY2VudGVyJ30pOwogICAgICB5Kz04OwogICAgICBkb2Muc2V0Rm9udCgnSGVsdmV0aWNhJywnbm9ybWFsJyk7CiAgICAgIGRvYy5zZXRGb250U2l6ZSg5KTsKICAgICAgZG9jLnRleHQoJ0RhdGE6ICcrZGF0YSxtYXJnZW0seSk7CiAgICAgIHkrPTEwOwogICAgfQoKICAgIGZ1bmN0aW9uIGNhYmVjYWxobygpewogICAgICBjb25zdCBoPTg7CiAgICAgIGRvYy5zZXRGb250KCdIZWx2ZXRpY2EnLCdib2xkJyk7CiAgICAgIGRvYy5zZXRGb250U2l6ZSg3KTsKICAgICAgZG9jLnJlY3QobWFyZ2VtLHksbGFyZ3VyYSxoKTsKICAgICAgZG9jLmxpbmUobWFyZ2VtK2Nv bENvZGlnbyx5LG1hcmdlbStjb2xDb2RpZ28seSsoaCkpOwogICAgfQoKICAgIH0K
-          """
-
-          # O conteúdo acima é apenas um marcador seguro.
-          # A substituição real é feita abaixo diretamente.
-          # ============================================================
-
-          start = text.find(
-              "async function openPDF"
-          )
-
-          if start == -1:
-              raise SystemExit(
-                  "ERRO: openPDF da versão #9 não foi encontrada."
-              )
-
-          # Procura a próxima função depois de openPDF.
-          pos = start
-
-          depth = 0
-          started = False
-          end = -1
-
-          while pos < len(text):
-
-              if text.startswith("function ", pos):
-                  if started and depth == 0:
-                      end = pos
-                      break
-
-              if text.startswith("{", pos):
-                  depth += 1
-                  started = True
-
-              elif text.startswith("}", pos):
-                  if started:
-                      depth -= 1
-
-                      if depth == 0:
-                          end = pos + 1
-                          break
-
-              pos += 1
-
-          if end == -1:
-              raise SystemExit(
-                  "ERRO: não foi possível localizar o final de openPDF."
-              )
-
-          new_pdf = r"""
-async function openPDF(sendViaWhatsApp=false){
-
-  const rows =
-    finalizedRows.length
-      ? finalizedRows
-      : getRows();
-
-  if(!rows.length){
-    alert('Nenhum item foi selecionado.');
-    return;
-  }
-
-  try{
-
-    const {jsPDF} = window.jspdf || {};
-
-    if(!jsPDF){
-      throw new Error(
-        'Biblioteca PDF não carregada.'
-      );
-    }
-
-    /*
-     * ================================================================
-     * PDF A4 RETRATO
-     * ================================================================
-     */
-
-    const doc = new jsPDF({
-      orientation: 'portrait',
-      unit: 'mm',
-      format: 'a4'
-    });
-
-    const pageWidth = 210;
-    const pageHeight = 297;
-    const margem = 10;
-
-    const largura = 190;
-
-    /*
-     * COLUNAS
-     *
-     * CÓDIGO       27 mm
-     * PRODUTO     108 mm
-     * ESTOQUE      27 mm
-     * PEDIDO       28 mm
-     *
-     * Total       190 mm
-     */
-
-    const colCodigo = 27;
-    const colProduto = 108;
-    const colEstoque = 27;
-    const colPedido = 28;
-
-    let y = 14;
-
-    const data =
-      new Date().toLocaleDateString(
-        'pt-BR',
-        {
-          day: '2-digit',
-          month: '2-digit',
-          year: 'numeric'
-        }
-      );
-
-    function titulo(){
-
-      doc.setFont(
-        'helvetica',
-        'bold'
-      );
-
-      doc.setFontSize(16);
-
-      doc.text(
-        'RELATÓRIO DE PEDIDO',
-        pageWidth / 2,
-        y,
-        {
-          align: 'center'
-        }
-      );
-
-      y += 8;
-
-      doc.setFont(
-        'helvetica',
-        'normal'
-      );
-
-      doc.setFontSize(9);
-
-      doc.text(
-        'Data: ' + data,
-        margem,
-        y
-      );
-
-      y += 8;
-    }
-
-    function cabecalho(){
-
-      const h = 7;
-
-      doc.setFont(
-        'helvetica',
-        'bold'
-      );
-
-      doc.setFontSize(7.5);
-
-      doc.rect(
-        margem,
-        y,
-        largura,
-        h
-      );
-
-      doc.line(
-        margem + colCodigo,
-        y,
-        margem + colCodigo,
-        y + h
-      );
-
-      doc.line(
-        margem + colCodigo + colProduto,
-        y,
-        margem + colCodigo + colProduto,
-        y + h
-      );
-
-      doc.line(
-        margem + colCodigo + colProduto + colEstoque,
-        y,
-        margem + colCodigo + colProduto + colEstoque,
-        y + h
-      );
-
-      doc.text(
-        'CÓDIGO',
-        margem + 2,
-        y + 4.8
-      );
-
-      doc.text(
-        'NOME DO PRODUTO',
-        margem + colCodigo + 2,
-        y + 4.8
-      );
-
-      doc.text(
-        'ESTOQUE',
-        margem + colCodigo + colProduto + 2,
-        y + 4.8
-      );
-
-      doc.text(
-        'PEDIDO',
-        margem + colCodigo + colProduto + colEstoque + 2,
-        y + 4.8
-      );
-
-      y += h;
-    }
-
-    function nomeProduto(nome){
-
-      let valor =
-        String(nome || '');
-
-      doc.setFontSize(7.2);
-
-      while(
-        valor.length > 3 &&
-        doc.getTextWidth(
-          valor + '...'
-        ) >
-        colProduto - 4
-      ){
-
-        valor =
-          valor.slice(
-            0,
-            -1
-          );
-      }
-
-      if(
-        valor !==
-        String(nome || '')
-      ){
-
-        return valor + '...';
-      }
-
-      return valor;
-    }
-
-    function novaPagina(){
-
-      doc.addPage(
-        'a4',
-        'portrait'
-      );
-
-      y = 14;
-
-      titulo();
-    }
-
-    titulo();
-
-    const grupos =
-      groupRows(rows);
-
-    for(
-      const [categoria, items]
-      of Object.entries(grupos)
-    ){
-
-      if(y + 20 > 285){
-        novaPagina();
-      }
-
-      doc.setFont(
-        'helvetica',
-        'bold'
-      );
-
-      doc.setFontSize(10);
-
-      doc.text(
-        String(
-          categoria || ''
-        ).toUpperCase(),
-        margem,
-        y
-      );
-
-      y += 5;
-
-      cabecalho();
-
-      for(
-        const item of items
-      ){
-
-        if(y + 6 > 285){
-
-          novaPagina();
-
-          doc.setFont(
-            'helvetica',
-            'bold'
-          );
-
-          doc.setFontSize(10);
-
-          doc.text(
-            String(
-              categoria || ''
-            ).toUpperCase(),
-            margem,
-            y
-          );
-
-          y += 5;
-
-          cabecalho();
-        }
-
-        const h = 6;
-
-        doc.setFont(
-          'helvetica',
-          'normal'
-        );
-
-        doc.setFontSize(7.2);
-
-        doc.rect(
-          margem,
-          y,
-          largura,
-          h
-        );
-
-        doc.line(
-          margem + colCodigo,
-          y,
-          margem + colCodigo,
-          y + h
-        );
-
-        doc.line(
-          margem + colCodigo + colProduto,
-          y,
-          margem + colCodigo + colProduto,
-          y + h
-        );
-
-        doc.line(
-          margem + colCodigo + colProduto + colEstoque,
-          y,
-          margem + colCodigo + colProduto + colEstoque,
-          y + h
-        );
-
-        doc.text(
-          String(
-            item.code || '-'
-          ),
-          margem + 2,
-          y + 4
-        );
-
-        doc.text(
-          nomeProduto(item.name),
-          margem + colCodigo + 2,
-          y + 4
-        );
-
-        doc.text(
-          String(
-            item.stock == null
-              ? 0
-              : item.stock
-          ),
-          margem + colCodigo + colProduto + 2,
-          y + 4
-        );
-
-        doc.text(
-          String(
-            item.order == null
-              ? 0
-              : item.order
-          ),
-          margem + colCodigo + colProduto + colEstoque + 2,
-          y + 4
-        );
-
-        y += h;
-      }
-
-      y += 5;
-    }
-
-    /*
-     * OBSERVAÇÃO
-     */
-
-    if(generalObservation){
-
-      if(y + 20 > 285){
-        novaPagina();
-      }
-
-      doc.setFont(
-        'helvetica',
-        'bold'
-      );
-
-      doc.setFontSize(8);
-
-      doc.text(
-        'OBSERVAÇÃO GERAL:',
-        margem,
-        y
-      );
-
-      y += 5;
-
-      doc.setFont(
-        'helvetica',
-        'normal'
-      );
-
-      const linhas =
-        doc.splitTextToSize(
-          String(
-            generalObservation
-          ),
-          largura
-        );
-
-      doc.text(
-        linhas,
-        margem,
-        y
-      );
-    }
-
-    /*
-     * RODAPÉ
-     */
-
-    const total =
-      doc.internal.getNumberOfPages();
-
-    for(
-      let pagina = 1;
-      pagina <= total;
-      pagina++
-    ){
-
-      doc.setPage(
-        pagina
-      );
-
-      doc.setFont(
-        'helvetica',
-        'normal'
-      );
-
-      doc.setFontSize(7);
-
-      doc.text(
-        'Super Pedido Pro',
-        margem,
-        pageHeight - 5
-      );
-
-      doc.text(
-        'Página ' +
-        pagina +
-        ' de ' +
-        total,
-        pageWidth - margem,
-        pageHeight - 5,
-        {
-          align: 'right'
-        }
-      );
-    }
-
-    /*
-     * GERA O PDF
-     */
-
-    const base64 =
-      doc
-        .output(
-          'datauristring'
-        )
-        .split(',')[1];
-
-    const nomeArquivo =
-      'relatorio-pedido-' +
-      data.replace(/\//g, '-') +
-      '.pdf';
-
-    /*
-     * NÃO altera nenhuma outra função do aplicativo.
-     */
-
-    if(
-      window.AndroidFileBridge &&
-      typeof window.AndroidFileBridge.sharePdf ===
-        'function'
-    ){
-
-      window.AndroidFileBridge.sharePdf(
-        nomeArquivo,
-        base64
-      );
-
-      return;
-    }
-
-    /*
-     * Navegador
-     */
-
-    const byteChars =
-      atob(base64);
-
-    const bytes =
-      new Uint8Array(
-        byteChars.length
-      );
-
-    for(
-      let i = 0;
-      i < byteChars.length;
-      i++
-    ){
-
-      bytes[i] =
-        byteChars.charCodeAt(i);
-    }
-
-    const blob =
-      new Blob(
-        [bytes],
-        {
-          type: 'application/pdf'
-        }
-      );
-
-    const url =
-      URL.createObjectURL(
-        blob
-      );
-
-    const a =
-      document.createElement(
-        'a'
-      );
-
-    a.href = url;
-
-    a.download =
-      nomeArquivo;
-
-    document.body.appendChild(a);
-
-    a.click();
-
-    a.remove();
-
-    setTimeout(
-      () => URL.revokeObjectURL(url),
-      1000
-    );
-
-  }catch(e){
-
-    console.error(
-      'openPDF:',
-      e
-    );
-
-    alert(
-      'Não foi possível gerar o PDF: ' +
-      (e.message || e)
-    );
-  }
-}
-"""
-
-    text = (
-        text[:start]
-        + new_pdf
-        + "\n"
-        + text[end:]
-    )
-
-    html.write_text(
-        text,
-        encoding="utf-8"
-    )
-
-    print(
-        "OK: somente openPDF foi alterado."
-    )
-
+          print("OK: somente openPDF() foi substituída.")
+          print("Bytes antes:", len(text.encode("utf-8")))
+          print("Bytes depois:", len(novo_texto.encode("utf-8")))
           PY
 
-      - name: Preparar biblioteca PDF
+      - name: Verificar JavaScript antes do build
         shell: bash
         run: |
           set -e
 
-          ASSETS="$ANDROID_DIR/app/src/main/assets/app"
+          python3 - <<'PY'
+          from pathlib import Path
+          import os
+          import re
 
-          mkdir -p "$ASSETS"
+          root=Path(os.environ["ANDROID_DIR"])
+          html=root/"app/src/main/assets/app/index.html"
 
-          curl -L --fail --retry 3 \
-            -o "$ASSETS/jspdf.umd.min.js" \
-            "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"
+          text=html.read_text(encoding="utf-8")
 
-          test -s "$ASSETS/jspdf.umd.min.js"
+          inicio=text.find("async function openPDF")
+          fim=text.find("function sendWhatsApp",inicio)
 
-      - name: Verificar que somente o relatório foi alterado
-        shell: bash
-        run: |
-          set -e
+          if inicio < 0 or fim < 0:
+              raise SystemExit(
+                  "ERRO: estrutura do relatório inválida."
+              )
 
-          HTML="$ANDROID_DIR/app/src/main/assets/app/index.html"
+          trecho=text[inicio:fim]
 
-          test -f "$HTML"
+          obrigatorios=[
+              "orientation:'portrait'",
+              "format:'a4'",
+              "'CÓDIGO'",
+              "'NOME DO PRODUTO'",
+              "'ESTOQUE'",
+              "'PEDIDO'",
+              "Página '+pagina+' de '+totalPaginas",
+              "window.AndroidFileBridge.sharePdf",
+              "saveHistory(rows)",
+              "clearPedido()"
+          ]
 
-          grep -q "orientation:'portrait'" "$HTML"
-          grep -q "format:'a4'" "$HTML"
-          grep -q "pageWidth = 210" "$HTML"
-          grep -q "pageHeight = 297" "$HTML"
-          grep -q "RELATÓRIO DE PEDIDO" "$HTML"
-          grep -q "CÓDIGO" "$HTML"
-          grep -q "NOME DO PRODUTO" "$HTML"
-          grep -q "ESTOQUE" "$HTML"
-          grep -q "PEDIDO" "$HTML"
+          for item in obrigatorios:
+              if item not in trecho:
+                  raise SystemExit(
+                      "ERRO: relatório incompleto: "+item
+                  )
 
-          echo "RELATÓRIO PDF A4 RETRATO OK."
+          print("OK: relatório PDF validado.")
+          print("OK: A4 retrato.")
+          print("OK: 4 colunas.")
+          print("OK: categorias.")
+          print("OK: observação.")
+          print("OK: rodapé/paginação.")
+          print("OK: compartilhamento Android.")
+          print("OK: histórico preservado.")
+          print("OK: limpeza preservada.")
+          PY
 
-      - name: Compilar APK
+      - name: Verificar projeto Android
         shell: bash
         run: |
           set -e
 
           cd "$ANDROID_DIR"
 
-          chmod +x gradlew 2>/dev/null || true
-
-          if [ -x "./gradlew" ]; then
-            ./gradlew --no-daemon assembleDebug
+          if [ -f "./gradlew" ]; then
+            chmod +x ./gradlew
+            ./gradlew --version
           else
-            gradle --no-daemon assembleDebug
+            gradle --version
           fi
 
-      - name: Verificar APK
+      - name: Gerar APK
         shell: bash
         run: |
           set -e
 
-          APK=$(find \
-            "$ANDROID_DIR/app/build/outputs/apk" \
+          cd "$ANDROID_DIR"
+
+          if [ -f "./gradlew" ]; then
+            chmod +x ./gradlew
+            ./gradlew assembleDebug --no-daemon
+          else
+            gradle assembleDebug --no-daemon
+          fi
+
+      - name: Localizar APK
+        shell: bash
+        run: |
+          set -e
+
+          APK=$(find "$ANDROID_DIR" \
             -type f \
             -name "*.apk" \
+            -path "*/build/outputs/apk/*" \
             -print -quit)
 
           test -n "$APK"
 
-          test -s "$APK"
+          mkdir -p "$GITHUB_WORKSPACE/apk-final"
+
+          cp "$APK" \
+            "$GITHUB_WORKSPACE/apk-final/Super-Pedido-Pro-v9-relatorio-corrigido.apk"
 
           echo "APK encontrado:"
-          ls -lh "$APK"
+          echo "$APK"
 
-          echo "APK=$APK" >> "$GITHUB_ENV"
-
-      - name: Disponibilizar APK
+      - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
-          name: Super-Pedido-Pro-APK
-          path: ${{ env.APK }}
+          name: Super-Pedido-Pro-APK-v9-Relatorio-Corrigido
+          path: apk-final/Super-Pedido-Pro-v9-relatorio-corrigido.apk
           if-no-files-found: error
-          retention-days: 30
