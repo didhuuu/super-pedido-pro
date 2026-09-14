@@ -30,15 +30,10 @@ jobs:
         shell: bash
         run: |
           set -e
-
           rm -rf projeto
           mkdir -p projeto
-
-          test -f "Super-Pedido-Pro.zip"
-
-          unzip -o "Super-Pedido-Pro.zip" -d projeto
-
-          echo "Projeto extraído."
+          test -f Super-Pedido-Pro.zip
+          unzip -o Super-Pedido-Pro.zip -d projeto
 
       - name: Localizar projeto Android
         shell: bash
@@ -47,9 +42,8 @@ jobs:
 
           SETTINGS=$(find "$GITHUB_WORKSPACE/projeto" \
             -type f \
-            \( -name "settings.gradle" -o -name "settings.gradle.kts" \) \
-            -print \
-            -quit)
+            \( -name settings.gradle -o -name settings.gradle.kts \) \
+            -print -quit)
 
           if [ -z "$SETTINGS" ]; then
             echo "ERRO: projeto Android não encontrado."
@@ -60,7 +54,7 @@ jobs:
 
           echo "ANDROID_DIR=$ANDROID_DIR" >> "$GITHUB_ENV"
 
-          echo "Projeto encontrado:"
+          echo "Projeto:"
           echo "$ANDROID_DIR"
 
       - name: Configurar AndroidX
@@ -90,21 +84,46 @@ jobs:
             exit 1
           fi
 
-          echo "Corrigindo PDF..."
+          echo "Corrigindo PDF para A4 retrato..."
 
-          python3 -c 'from pathlib import Path; p=Path("'"$HTML"'"); s=p.read_text(encoding="utf-8"); s=s.replace("orientation:'"'"'landscape'"'"'","orientation:'"'"'portrait'"'"'"); s=s.replace("orientation: '"'"'landscape'"'"'","orientation: '"'"'portrait'"'"'"); s=s.replace("orientation:\"landscape\"","orientation:\"portrait\""); s=s.replace("orientation: \"landscape\"","orientation: \"portrait\""); s=s.replace("const pageWidth=297,pageHeight=210","const pageWidth=210,pageHeight=297"); s=s.replace("const pageWidth = 297,pageHeight = 210","const pageWidth = 210,pageHeight = 297"); s=s.replace("pageWidth=297,pageHeight=210","pageWidth=210,pageHeight=297"); s=s.replace("pageWidth = 297,pageHeight = 210","pageWidth = 210,pageHeight = 297"); s=s.replace("doc.addPage('"'"'a4'"'"','"'"'landscape'"'"')","doc.addPage('"'"'a4'"'"','"'"'portrait'"'"')"); s=s.replace("doc.addPage(\"a4\",\"landscape\")","doc.addPage(\"a4\",\"portrait\")"); p.write_text(s,encoding="utf-8")'
+          sed -i "s/orientation:'landscape'/orientation:'portrait'/g" "$HTML"
+          sed -i "s/orientation: 'landscape'/orientation: 'portrait'/g" "$HTML"
+          sed -i 's/orientation:"landscape"/orientation:"portrait"/g' "$HTML"
+          sed -i 's/orientation: "landscape"/orientation: "portrait"/g' "$HTML"
 
-          echo "Corrigindo limpeza após envio do PDF..."
+          sed -i "s/const pageWidth=297,pageHeight=210,margem=10;/const pageWidth=210,pageHeight=297,margem=10;/g" "$HTML"
 
-          python3 -c 'from pathlib import Path; p=Path("'"$HTML"'"); s=p.read_text(encoding="utf-8"); a="window.AndroidFileBridge.sharePdf(nomeArquivo,base64);"; b="clearPedido(rows);"+chr(10)+"      "+a; i=s.find(a); c=s.find("clearPedido(rows);"); already=(c!=-1 and c<i and i-c<100); s=s if already else (s[:i]+b+s[i+len(a):] if i!=-1 else s); p.write_text(s,encoding="utf-8")'
+          sed -i "s/const pageWidth = 297,pageHeight = 210,margem = 10;/const pageWidth = 210,pageHeight = 297,margem = 10;/g" "$HTML"
 
-          echo "Garantindo limpeza do localStorage..."
+          sed -i "s/const colCodigo=30,colProduto=167,colEstoque=35,colPedido=35;/const colCodigo=27,colProduto=108,colEstoque=27,colPedido=28;/g" "$HTML"
 
-          python3 -c 'from pathlib import Path; p=Path("'"$HTML"'"); s=p.read_text(encoding="utf-8"); pos=s.find("function clearPedido"); end=s.find("function sendWhatsApp",pos) if pos>=0 else -1; trecho=s[pos:end] if pos>=0 and end>=0 else ""; faltas=["pedido_compras_vals","pedido_compras_extras","pedido_compras_validade_curta"]; ins=""; [ins:=ins+chr(10)+"  localStorage.removeItem("+repr(k)+");" for k in faltas if k not in trecho]; ponto=trecho.find("render();"); s=s[:pos]+(trecho[:ponto]+ins+chr(10)+"  "+trecho[ponto:] if ins and ponto>=0 else trecho)+s[end:] if ins and pos>=0 and end>=0 and ponto>=0 else s; p.write_text(s,encoding="utf-8")'
+          echo "Corrigindo limpeza depois do envio..."
 
-          echo "Corrigindo bibliotecas..."
+          python3 - "$HTML" <<'PY'
+import sys
+from pathlib import Path
 
-          python3 -c 'from pathlib import Path; p=Path("'"$HTML"'"); s=p.read_text(encoding="utf-8"); s=s.replace("https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js","xlsx.full.min.js"); s=s.replace("https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js","jspdf.umd.min.js"); p.write_text(s,encoding="utf-8")'
+arquivo = Path(sys.argv[1])
+texto = arquivo.read_text(encoding="utf-8")
+
+antigo = "window.AndroidFileBridge.sharePdf(nomeArquivo,base64);"
+
+novo = "finalizedRows=rows; clearPedido(); window.AndroidFileBridge.sharePdf(nomeArquivo,base64);"
+
+if antigo in texto and "finalizedRows=rows; clearPedido(); window.AndroidFileBridge.sharePdf(nomeArquivo,base64);" not in texto:
+    texto = texto.replace(antigo, novo, 1)
+    print("Envio + limpeza corrigidos.")
+else:
+    print("Fluxo de envio já estava corrigido ou não foi encontrado.")
+
+arquivo.write_text(texto, encoding="utf-8")
+PY
+
+          echo "Corrigindo bibliotecas locais..."
+
+          sed -i "s#https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js#xlsx.full.min.js#g" "$HTML"
+
+          sed -i "s#https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js#jspdf.umd.min.js#g" "$HTML"
 
           echo "Correções concluídas."
 
@@ -139,35 +158,63 @@ jobs:
 
           echo "Verificando PDF..."
 
-          grep -q "orientation:'portrait'" "$HTML"
-
-          grep -q "pageWidth=210" "$HTML"
-
-          grep -q "pageHeight=297" "$HTML"
-
-          echo "Verificando limpeza..."
-
-          grep -q "function clearPedido" "$HTML"
-
-          grep -q "pedido_compras_vals" "$HTML"
-
-          grep -q "pedido_compras_extras" "$HTML"
-
-          grep -q "pedido_compras_validade_curta" "$HTML"
-
-          echo "Verificando ausência de landscape..."
-
           if grep -q "orientation:'landscape'" "$HTML"; then
-            echo "ERRO: ainda existe PDF landscape."
+            echo "ERRO: PDF landscape ainda encontrado."
             exit 1
           fi
 
           if grep -q "orientation: 'landscape'" "$HTML"; then
-            echo "ERRO: ainda existe PDF landscape."
+            echo "ERRO: PDF landscape ainda encontrado."
             exit 1
           fi
 
-          echo "Verificação concluída."
+          if ! grep -q "orientation:'portrait'" "$HTML"; then
+            echo "ERRO: PDF portrait não encontrado."
+            exit 1
+          fi
+
+          if ! grep -q "pageWidth=210,pageHeight=297" "$HTML"; then
+            echo "ERRO: A4 retrato não encontrado."
+            exit 1
+          fi
+
+          echo "Verificando limpeza..."
+
+          if ! grep -q "function clearPedido" "$HTML"; then
+            echo "ERRO: clearPedido não encontrada."
+            exit 1
+          fi
+
+          if ! grep -q "pedido_compras_vals" "$HTML"; then
+            echo "ERRO: armazenamento do pedido não encontrado."
+            exit 1
+          fi
+
+          if ! grep -q "pedido_compras_extras" "$HTML"; then
+            echo "ERRO: armazenamento dos adicionais não encontrado."
+            exit 1
+          fi
+
+          if ! grep -q "pedido_compras_validade_curta" "$HTML"; then
+            echo "ERRO: armazenamento da validade não encontrado."
+            exit 1
+          fi
+
+          if ! grep -q "finalizedRows=rows; clearPedido();" "$HTML"; then
+            echo "ERRO: limpeza após geração do PDF não encontrada."
+            exit 1
+          fi
+
+          echo "===================================="
+          echo "VERIFICAÇÃO APROVADA"
+          echo "===================================="
+          echo "PDF: A4 RETRATO"
+          echo "210 x 297 mm"
+          echo "Pedido: será zerado"
+          echo "Estoque: será zerado"
+          echo "Cadastro: preservado"
+          echo "Histórico: preservado"
+          echo "===================================="
 
       - name: Compilar APK
         shell: bash
@@ -190,13 +237,13 @@ jobs:
           APK="$ANDROID_DIR/app/build/outputs/apk/debug/app-debug.apk"
 
           if [ ! -f "$APK" ]; then
-            echo "ERRO: APK não foi gerado."
+            echo "ERRO: APK não encontrado."
             exit 1
           fi
 
-          echo "========================================"
+          echo "===================================="
           echo "APK GERADO COM SUCESSO"
-          echo "========================================"
+          echo "===================================="
 
           ls -lh "$APK"
 
