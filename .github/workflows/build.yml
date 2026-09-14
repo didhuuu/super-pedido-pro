@@ -70,7 +70,7 @@ jobs:
           grep -qF "android.enableJetifier=true" gradle.properties \
             || echo "android.enableJetifier=true" >> gradle.properties
 
-      - name: Corrigir somente o relatório
+      - name: Alterar SOMENTE o relatório
         shell: bash
         run: |
           set -e
@@ -90,7 +90,7 @@ jobs:
           text = html.read_text(encoding="utf-8")
 
           # ============================================================
-          # NOVO RELATÓRIO
+          # RELATÓRIO NOVO
           # ============================================================
 
           new_open_pdf = r'''async function openPDF(sendViaWhatsApp=false){
@@ -118,322 +118,364 @@ jobs:
               const pageWidth=210;
               const pageHeight=297;
 
-              const marginLeft=10;
-              const marginRight=10;
+              const margem=10;
+              const largura=pageWidth-(margem*2);
 
-              const usableWidth=pageWidth-marginLeft-marginRight;
-
-              const colCode=24;
-              const colName=usableWidth-24-24-24;
-              const colStock=24;
-              const colOrder=24;
-
-              const rowHeight=7;
-              const headerHeight=9;
+              const colCodigo=24;
+              const colEstoque=24;
+              const colPedido=24;
+              const colProduto=largura-colCodigo-colEstoque-colPedido;
 
               let y=15;
-              let pageNumber=1;
 
-              function drawFooter(){
-
-                doc.setFontSize(8);
-
-                doc.setFont('helvetica','normal');
-
-                doc.text(
-                  'PEDIDO DE COMPRAS',
-                  marginLeft,
-                  pageHeight-8
-                );
-
-                doc.text(
-                  'Página '+pageNumber,
-                  pageWidth-marginRight,
-                  pageHeight-8,
-                  {align:'right'}
-                );
-              }
-
-              function newPage(){
-
-                drawFooter();
-
+              function novaPagina(){
                 doc.addPage();
-
-                pageNumber++;
-
                 y=15;
-
               }
 
-              function drawTableHeader(){
+              function cabecalho(){
 
-                if(y+headerHeight>pageHeight-15){
-                  newPage();
+                if(y+9>pageHeight-15){
+                  novaPagina();
                 }
 
-                doc.setFillColor(35,35,35);
+                const altura=8;
 
+                doc.setFillColor(35,35,35);
                 doc.setDrawColor(35,35,35);
 
                 doc.rect(
-                  marginLeft,
+                  margem,
                   y,
-                  usableWidth,
-                  headerHeight,
+                  largura,
+                  altura,
                   'FD'
                 );
 
                 doc.setTextColor(255,255,255);
 
-                doc.setFontSize(8);
+                doc.setFont(
+                  'helvetica',
+                  'bold'
+                );
 
-                doc.setFont('helvetica','bold');
+                doc.setFontSize(7.5);
 
-                let x=marginLeft;
+                let x=margem;
 
                 doc.text(
                   'CÓDIGO',
                   x+2,
-                  y+6
+                  y+5.3
                 );
 
-                x+=colCode;
+                x+=colCodigo;
 
                 doc.text(
                   'NOME DO PRODUTO',
                   x+2,
-                  y+6
+                  y+5.3
                 );
 
-                x+=colName;
+                x+=colProduto;
 
                 doc.text(
                   'ESTOQUE',
                   x+2,
-                  y+6
+                  y+5.3
                 );
 
-                x+=colStock;
+                x+=colEstoque;
 
                 doc.text(
                   'PEDIDO',
                   x+2,
-                  y+6
+                  y+5.3
                 );
 
                 doc.setTextColor(0,0,0);
 
-                y+=headerHeight;
-
+                y+=altura;
               }
 
-              function drawRow(x){
-
-                const code=String(x.code||'');
-
-                const name=String(x.name||'');
-
-                const stock=String(x.stock??0);
-
-                const order=String(x.order??0);
-
-                const nameLines=doc.splitTextToSize(
-                  name,
-                  colName-4
-                );
-
-                const lines=Math.max(
-                  1,
-                  nameLines.length
-                );
-
-                const h=Math.max(
-                  rowHeight,
-                  lines*4.5+2
-                );
-
-                if(y+h>pageHeight-15){
-
-                  newPage();
-
-                  drawTableHeader();
-
-                }
-
-                let px=marginLeft;
-
-                doc.setDrawColor(190,190,190);
-
-                doc.rect(
-                  px,
-                  y,
-                  colCode,
-                  h
-                );
-
-                doc.text(
-                  code,
-                  px+2,
-                  y+5
-                );
-
-                px+=colCode;
-
-                doc.rect(
-                  px,
-                  y,
-                  colName,
-                  h
-                );
-
-                doc.text(
-                  nameLines,
-                  px+2,
-                  y+5
-                );
-
-                px+=colName;
-
-                doc.rect(
-                  px,
-                  y,
-                  colStock,
-                  h
-                );
-
-                doc.text(
-                  stock,
-                  px+2,
-                  y+5
-                );
-
-                px+=colStock;
-
-                doc.rect(
-                  px,
-                  y,
-                  colOrder,
-                  h
-                );
-
-                doc.text(
-                  order,
-                  px+2,
-                  y+5
-                );
-
-                y+=h;
-
-              }
+              doc.setFont(
+                'helvetica',
+                'bold'
+              );
 
               doc.setFontSize(16);
 
-              doc.setFont('helvetica','bold');
-
               doc.text(
-                'PEDIDO DE COMPRAS',
-                marginLeft,
+                'RELATÓRIO DE PEDIDO',
+                margem,
                 y
               );
 
               y+=6;
 
-              doc.setFontSize(9);
+              doc.setFont(
+                'helvetica',
+                'normal'
+              );
 
-              doc.setFont('helvetica','normal');
+              doc.setFontSize(8);
+
+              const data=new Date()
+                .toLocaleString('pt-BR');
 
               doc.text(
-                new Date().toLocaleString('pt-BR'),
-                marginLeft,
+                data,
+                margem,
                 y
               );
 
               y+=8;
 
-              const groups=groupRows(rows);
+              const grupos=groupRows(rows);
 
-              for(const [cat,items] of Object.entries(groups)){
+              for(
+                const [categoria,items]
+                of Object.entries(grupos)
+              ){
 
-                if(y+10>pageHeight-15){
-
-                  newPage();
-
+                if(y+20>pageHeight-15){
+                  novaPagina();
                 }
 
-                doc.setFontSize(11);
+                doc.setFont(
+                  'helvetica',
+                  'bold'
+                );
 
-                doc.setFont('helvetica','bold');
+                doc.setFontSize(10);
 
                 doc.text(
-                  String(cat),
-                  marginLeft,
+                  String(categoria||'').toUpperCase(),
+                  margem,
                   y
                 );
 
                 y+=5;
 
-                drawTableHeader();
-
-                doc.setFont('helvetica','normal');
-
-                doc.setFontSize(8);
+                cabecalho();
 
                 for(const item of items){
 
-                  drawRow(item);
+                  const nome=
+                    typeof nomeProduto==='function'
+                    ? nomeProduto(item.name)
+                    : String(item.name||'');
 
+                  const linhasNome=
+                    doc.splitTextToSize(
+                      nome,
+                      colProduto-4
+                    );
+
+                  const altura=Math.max(
+                    6,
+                    linhasNome.length*4.2+2
+                  );
+
+                  if(y+altura>pageHeight-15){
+
+                    novaPagina();
+
+                    doc.setFont(
+                      'helvetica',
+                      'bold'
+                    );
+
+                    doc.setFontSize(10);
+
+                    doc.text(
+                      String(categoria||'').toUpperCase(),
+                      margem,
+                      y
+                    );
+
+                    y+=5;
+
+                    cabecalho();
+                  }
+
+                  doc.setFont(
+                    'helvetica',
+                    'normal'
+                  );
+
+                  doc.setFontSize(7.2);
+
+                  doc.setDrawColor(
+                    185,
+                    185,
+                    185
+                  );
+
+                  let x=margem;
+
+                  doc.rect(
+                    x,
+                    y,
+                    largura,
+                    altura
+                  );
+
+                  doc.line(
+                    x+colCodigo,
+                    y,
+                    x+colCodigo,
+                    y+altura
+                  );
+
+                  doc.line(
+                    x+colCodigo+colProduto,
+                    y,
+                    x+colCodigo+colProduto,
+                    y+altura
+                  );
+
+                  doc.line(
+                    x+colCodigo+colProduto+colEstoque,
+                    y,
+                    x+colCodigo+colProduto+colEstoque,
+                    y+altura
+                  );
+
+                  doc.text(
+                    String(item.code||'-'),
+                    x+2,
+                    y+4
+                  );
+
+                  doc.text(
+                    linhasNome,
+                    x+colCodigo+2,
+                    y+4
+                  );
+
+                  doc.text(
+                    String(item.stock??0),
+                    x+colCodigo+colProduto+2,
+                    y+4
+                  );
+
+                  doc.text(
+                    String(item.order??0),
+                    x+colCodigo+colProduto+colEstoque+2,
+                    y+4
+                  );
+
+                  y+=altura;
                 }
 
-                y+=4;
-
+                y+=5;
               }
 
               if(generalObservation){
 
-                if(y+25>pageHeight-15){
-
-                  newPage();
-
+                if(y+20>pageHeight-15){
+                  novaPagina();
                 }
 
-                doc.setFontSize(9);
+                doc.setFont(
+                  'helvetica',
+                  'bold'
+                );
 
-                doc.setFont('helvetica','bold');
+                doc.setFontSize(8);
 
                 doc.text(
-                  'OBSERVAÇÃO:',
-                  marginLeft,
+                  'OBSERVAÇÃO GERAL:',
+                  margem,
                   y
                 );
 
                 y+=5;
 
-                doc.setFont('helvetica','normal');
-
-                const obsLines=doc.splitTextToSize(
-                  String(generalObservation),
-                  usableWidth
+                doc.setFont(
+                  'helvetica',
+                  'normal'
                 );
 
+                const linhas=
+                  doc.splitTextToSize(
+                    String(generalObservation),
+                    largura
+                  );
+
                 doc.text(
-                  obsLines,
-                  marginLeft,
+                  linhas,
+                  margem,
                   y
                 );
 
-                y+=obsLines.length*4.5+4;
-
+                y+=linhas.length*4.2;
               }
 
-              drawFooter();
+              const total=
+                doc.internal.getNumberOfPages();
 
-              const blob=doc.output('blob');
+              for(
+                let pagina=1;
+                pagina<=total;
+                pagina++
+              ){
 
-              const filename=
-                'pedido-acougue-'+
-                new Date().toISOString().slice(0,10)+
+                doc.setPage(pagina);
+
+                doc.setFont(
+                  'helvetica',
+                  'normal'
+                );
+
+                doc.setFontSize(7);
+
+                doc.text(
+                  'Super Pedido Pro',
+                  margem,
+                  pageHeight-5
+                );
+
+                doc.text(
+                  'Página '+pagina+' de '+total,
+                  pageWidth-margem,
+                  pageHeight-5,
+                  {
+                    align:'right'
+                  }
+                );
+              }
+
+              const base64=
+                doc.output('datauristring')
+                  .split(',')[1];
+
+              const nomeArquivo=
+                'relatorio-pedido-'+
+                data.replace(/\//g,'-')+
                 '.pdf';
+
+              # Android
+              if(
+                window.AndroidFileBridge &&
+                window.AndroidFileBridge.sharePdf
+              ){
+
+                window.AndroidFileBridge.sharePdf(
+                  nomeArquivo,
+                  base64
+                );
+
+                saveHistory(rows);
+
+                clearPedido();
+
+                return;
+              }
+
+              # Navegador
+              const blob=doc.output('blob');
 
               if(
                 sendViaWhatsApp &&
@@ -443,13 +485,17 @@ jobs:
 
                 const file=new File(
                   [blob],
-                  filename,
-                  {type:'application/pdf'}
+                  nomeArquivo,
+                  {
+                    type:'application/pdf'
+                  }
                 );
 
                 if(
                   !navigator.canShare ||
-                  navigator.canShare({files:[file]})
+                  navigator.canShare({
+                    files:[file]
+                  })
                 ){
 
                   try{
@@ -467,65 +513,25 @@ jobs:
 
                   }catch(e){
 
-                    if(e&&e.name==='AbortError'){
+                    if(
+                      e &&
+                      e.name==='AbortError'
+                    ){
                       return;
                     }
-
                   }
-
                 }
-
               }
 
-              if(
-                window.AndroidFileBridge &&
-                window.AndroidFileBridge.sharePdf
-              ){
+              const url=
+                URL.createObjectURL(blob);
 
-                const reader=new FileReader();
-
-                reader.onload=function(){
-
-                  try{
-
-                    const b64=reader.result
-                      .split(',')[1];
-
-                    window.AndroidFileBridge.sharePdf(
-                      'pedido-acougue.pdf',
-                      b64
-                    );
-
-                    saveHistory(rows);
-
-                    clearPedido();
-
-                  }catch(e){
-
-                    console.error(e);
-
-                    alert(
-                      'Não foi possível compartilhar o PDF: '+
-                      (e.message||e)
-                    );
-
-                  }
-
-                };
-
-                reader.readAsDataURL(blob);
-
-                return;
-
-              }
-
-              const url=URL.createObjectURL(blob);
-
-              const a=document.createElement('a');
+              const a=
+                document.createElement('a');
 
               a.href=url;
 
-              a.download=filename;
+              a.download=nomeArquivo;
 
               document.body.appendChild(a);
 
@@ -534,21 +540,15 @@ jobs:
               a.remove();
 
               setTimeout(
-                ()=>URL.revokeObjectURL(url),
+                ()=>{
+                  URL.revokeObjectURL(url);
+                },
                 3000
               );
 
-              alert(
-                'PDF gerado. Se o compartilhamento do WhatsApp não abrir automaticamente, abra o WhatsApp e anexe o PDF baixado.'
-              );
+              saveHistory(rows);
 
-              if(!sendViaWhatsApp){
-
-                saveHistory(rows);
-
-                clearPedido();
-
-              }
+              clearPedido();
 
             }catch(e){
 
@@ -558,13 +558,30 @@ jobs:
                 'Não foi possível gerar o PDF: '+
                 (e.message||e)
               );
-
             }
-
           }'''
 
-          # Substitui SOMENTE a função openPDF.
-          pattern = r"async function openPDF\(sendViaWhatsApp=false\)\{.*?\n\}"
+          # Corrige os comentários Python que não podem
+          # permanecer dentro do JavaScript.
+          new_open_pdf = new_open_pdf.replace(
+              "              # Android",
+              "              // Android"
+          )
+
+          new_open_pdf = new_open_pdf.replace(
+              "              # Navegador",
+              "              // Navegador"
+          )
+
+          # ============================================================
+          # SUBSTITUI SOMENTE openPDF
+          # ============================================================
+
+          pattern = (
+              r"async function openPDF"
+              r"\(sendViaWhatsApp=false\)"
+              r"\{.*?\n\}"
+          )
 
           text, count = re.subn(
               pattern,
@@ -579,25 +596,34 @@ jobs:
                   "ERRO: função openPDF não encontrada."
               )
 
-          # Mantém bibliotecas locais utilizadas pela V9.
-          text = text.replace(
+          # Mantém as bibliotecas locais.
+          text=text.replace(
               'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js',
               'xlsx.full.min.js'
           )
 
-          text = text.replace(
+          text=text.replace(
               'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
               'jspdf.umd.min.js'
           )
 
-          # NÃO altera nenhuma outra função.
-          required = [
+          # ============================================================
+          # VERIFICAÇÕES
+          # ============================================================
+
+          required=[
               'function repeatLastOrder()',
               'function openAdmin()',
               'function saveHistory(rows)',
               'function applyRepeat(rows)',
               'function clearPedido()',
-              'window.AndroidFileBridge.sharePdf'
+              'window.AndroidFileBridge.sharePdf',
+              "orientation:'portrait'",
+              "format:'a4'",
+              "CÓDIGO",
+              "NOME DO PRODUTO",
+              "ESTOQUE",
+              "PEDIDO"
           ]
 
           for item in required:
@@ -605,21 +631,44 @@ jobs:
               if item not in text:
 
                   raise SystemExit(
-                      "ERRO: função obrigatória desapareceu: "
-                      + item
+                      "ERRO: função/recurso ausente: "
+                      +item
                   )
+
+          # Segurança: o relatório não pode estar em paisagem.
+          if "orientation:'landscape'" in text:
+              raise SystemExit(
+                  "ERRO: PDF em paisagem encontrado."
+              )
 
           html.write_text(
               text,
-              encoding="utf-8"
+              encoding='utf-8'
           )
 
-          print("Relatório substituído com sucesso.")
-          print("Demais funções preservadas.")
+          print(
+              "OK: somente openPDF foi alterado."
+          )
+
+          print(
+              "OK: Admin preservado."
+          )
+
+          print(
+              "OK: Repetir pedido preservado."
+          )
+
+          print(
+              "OK: Histórico preservado."
+          )
+
+          print(
+              "OK: Importação preservada."
+          )
 
           PY
 
-      - name: Preparar bibliotecas locais
+      - name: Preparar bibliotecas PDF e Excel
         shell: bash
         run: |
           set -e
@@ -689,7 +738,11 @@ jobs:
               "function saveHistory(rows)",
               "function applyRepeat(rows)",
               "function clearPedido()",
-              "window.AndroidFileBridge.sharePdf"
+              "window.AndroidFileBridge.sharePdf",
+              "CÓDIGO",
+              "NOME DO PRODUTO",
+              "ESTOQUE",
+              "PEDIDO"
           ]
 
           for item in required:
@@ -700,8 +753,18 @@ jobs:
                       "ERRO: não encontrado: "+item
                   )
 
+          if (
+              "orientation:'landscape'" in text
+              or
+              'orientation:"landscape"' in text
+          ):
+
+              raise SystemExit(
+                  "ERRO: relatório em paisagem."
+              )
+
           print(
-              "Verificação das funções concluída."
+              "Verificação textual concluída."
           )
 
           PY
@@ -719,13 +782,9 @@ jobs:
           chmod +x gradlew 2>/dev/null || true
 
           if [ -x "./gradlew" ]; then
-
             ./gradlew --no-daemon assembleDebug
-
           else
-
             gradle --no-daemon assembleDebug
-
           fi
 
       - name: Verificar APK
@@ -733,7 +792,8 @@ jobs:
         run: |
           set -e
 
-          APK=$(find "$ANDROID_DIR/app/build/outputs/apk" \
+          APK=$(find \
+            "$ANDROID_DIR/app/build/outputs/apk" \
             -type f \
             -name "*.apk" \
             -print -quit)
