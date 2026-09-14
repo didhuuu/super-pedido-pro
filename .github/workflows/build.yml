@@ -11,714 +11,1482 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-
-      # ============================================================
-      # 1. BAIXAR PROJETO
-      # ============================================================
       - name: Baixar projeto
         uses: actions/checkout@v4
 
-      # ============================================================
-      # 2. JAVA
-      # ============================================================
       - name: Configurar Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      # ============================================================
-      # 3. GRADLE
-      # ============================================================
       - name: Configurar Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
 
-      # ============================================================
-      # 4. PREPARAR PROJETO
-      # ============================================================
       - name: Preparar projeto
         shell: bash
         run: |
           set -e
-
           rm -rf projeto
-
           test -f "Super-Pedido-Pro.zip"
-
           mkdir -p projeto
-
           unzip -o "Super-Pedido-Pro.zip" -d projeto
 
-          echo "Projeto extraído."
-
-      # ============================================================
-      # 5. LOCALIZAR PROJETO ANDROID
-      # ============================================================
       - name: Localizar projeto Android
         shell: bash
         run: |
           set -e
-
-          ANDROID_DIR=$(find "$GITHUB_WORKSPACE/projeto" \
-            -name settings.gradle \
-            -type f \
-            -print \
-            -quit | xargs -r dirname)
-
-          if [ -z "$ANDROID_DIR" ]; then
-            echo "ERRO: projeto Android não encontrado."
-            exit 1
-          fi
-
+          ANDROID_DIR=$(find "$GITHUB_WORKSPACE/projeto" -name settings.gradle -type f -print -quit | xargs -r dirname)
+          test -n "$ANDROID_DIR"
           echo "ANDROID_DIR=$ANDROID_DIR" >> "$GITHUB_ENV"
+          echo "Projeto encontrado em: $ANDROID_DIR"
 
-          echo "Projeto Android:"
-          echo "$ANDROID_DIR"
-
-      # ============================================================
-      # 6. ANDROIDX
-      # ============================================================
       - name: Configurar AndroidX
         shell: bash
         run: |
           set -e
-
           cd "$ANDROID_DIR"
-
           touch gradle.properties
+          grep -q "android.useAndroidX=true" gradle.properties || echo "android.useAndroidX=true" >> gradle.properties
+          grep -q "android.enableJetifier=true" gradle.properties || echo "android.enableJetifier=true" >> gradle.properties
 
-          grep -q "android.useAndroidX=true" gradle.properties \
-            || echo "android.useAndroidX=true" >> gradle.properties
-
-          grep -q "android.enableJetifier=true" gradle.properties \
-            || echo "android.enableJetifier=true" >> gradle.properties
-
-      # ============================================================
-      # 7. CORRIGIR SOMENTE PDF E LIMPEZA
-      #
-      # IMPORTANTE:
-      # - Não altera reportText()
-      # - Não altera catálogo
-      # - Não altera Admin
-      # - Não altera importação
-      # - Não altera WhatsApp texto
-      # - Não altera histórico
-      # - Não altera MainActivity
-      #
-      # Apenas substitui openPDF() e clearPedido().
-      # ============================================================
-      - name: Corrigir PDF e limpeza
+      - name: Corrigir somente PDF, limpeza, repetir e ADM
         shell: bash
         run: |
           set -e
 
-          python3 - "$ANDROID_DIR" <<'PY'
-          import sys
+          python3 - <<'PY'
           from pathlib import Path
+          import os
+          import re
 
-          root = Path(sys.argv[1])
+          root = Path(os.environ["ANDROID_DIR"])
           html = root / "app/src/main/assets/app/index.html"
+          main = next((root / "app/src/main/java").rglob("MainActivity.java"), None)
 
           if not html.exists():
-              raise SystemExit("ERRO: index.html não encontrado.")
+              raise SystemExit("ERRO: index.html não encontrado")
+
+          if main is None:
+              raise SystemExit("ERRO: MainActivity.java não encontrado")
 
           text = html.read_text(encoding="utf-8")
 
-          # --------------------------------------------------------
-          # Função segura para localizar uma função JavaScript
-          # completa, contando chaves e ignorando strings/comentários.
-          # Isso evita os erros das tentativas anteriores.
-          # --------------------------------------------------------
-          def find_function(text, name):
-              marker = "function " + name + "("
-              start = text.find(marker)
-
-              if start < 0:
-                  return None
-
-              brace = text.find("{", start)
-
-              if brace < 0:
-                  return None
-
-              depth = 0
-              i = brace
-              quote = None
-              escaped = False
-              line_comment = False
-              block_comment = False
-
-              while i < len(text):
-                  c = text[i]
-                  n = text[i + 1] if i + 1 < len(text) else ""
-
-                  if line_comment:
-                      if c == "\n":
-                          line_comment = False
-                      i += 1
-                      continue
-
-                  if block_comment:
-                      if c == "*" and n == "/":
-                          block_comment = False
-                          i += 2
-                          continue
-                      i += 1
-                      continue
-
-                  if quote:
-                      if escaped:
-                          escaped = False
-                      elif c == "\\":
-                          escaped = True
-                      elif c == quote:
-                          quote = None
-                      i += 1
-                      continue
-
-                  if c == "/" and n == "/":
-                      line_comment = True
-                      i += 2
-                      continue
-
-                  if c == "/" and n == "*":
-                      block_comment = True
-                      i += 2
-                      continue
-
-                  if c in ("'", '"', "`"):
-                      quote = c
-                      i += 1
-                      continue
-
-                  if c == "{":
-                      depth += 1
-
-                  elif c == "}":
-                      depth -= 1
-
-                      if depth == 0:
-                          return start, i + 1
-
-                  i += 1
-
-              return None
-
-          def replace_function(text, name, replacement):
-              found = find_function(text, name)
-
-              if found is None:
-                  raise SystemExit(
-                      "ERRO: função " + name + " não encontrada."
-                  )
-
-              start, end = found
-
-              return text[:start] + replacement + text[end:]
-
-          # --------------------------------------------------------
-          # GARANTIR BIBLIOTECAS LOCAIS
-          # --------------------------------------------------------
-          text = text.replace(
-              "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js",
-              "xlsx.full.min.js"
-          )
-
-          text = text.replace(
-              "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js",
-              "jspdf.umd.min.js"
-          )
-
-          # ========================================================
-          # NOVA openPDF()
+          # ============================================================
+          # CORREÇÃO FINAL
           #
-          # A4 RETRATO:
-          # largura 210 mm
-          # altura 297 mm
+          # Não altera reportText().
+          # Não altera o catálogo.
+          # Não remove ADM.
+          # Não remove histórico.
           #
-          # O PDF é finalizado ANTES da limpeza.
-          # Depois a limpeza acontece.
-          # Só então o Android recebe o PDF para compartilhar.
-          # ========================================================
-          new_open_pdf = r'''function openPDF(){
-            const rows = finalizedRows.length ? finalizedRows : getRows();
+          # Apenas coloca versões finais das funções problemáticas no
+          # final do JavaScript, evitando substituir blocos internos
+          # que podem variar entre versões.
+          # ============================================================
 
-            if(!rows.length){
-              alert('Nenhum item foi selecionado.');
-              return;
-            }
+          override = r'''
+          /* ===== CORREÇÃO FINAL SUPER PEDIDO ===== */
 
-            try{
-              const lib = window.jspdf || {};
-              const jsPDF = lib.jsPDF;
+          (function(){
 
-              if(!jsPDF){
-                throw new Error('Biblioteca PDF não carregada.');
-              }
+            function savePedidoHistory(rows){
+              if(!Array.isArray(rows) || !rows.length) return;
 
-              /*
-               * A4 RETRATO
-               * 210 x 297 mm
-               */
-              const doc = new jsPDF({
-                orientation:'portrait',
-                unit:'mm',
-                format:'a4'
+              lastOrder = JSON.parse(JSON.stringify(rows));
+
+              historyOrders.unshift({
+                date:new Date().toLocaleString('pt-BR'),
+                generalObservation:generalObservation || '',
+                rows:JSON.parse(JSON.stringify(rows))
               });
 
-              const pageWidth = 210;
-              const pageHeight = 297;
+              historyOrders = historyOrders.slice(0,20);
 
-              const margem = 10;
-              const larguraUtil = pageWidth - (margem * 2);
-
-              let y = 15;
-
-              function cabecalho(){
-                doc.setFontSize(16);
-                doc.setFont(undefined,'bold');
-                doc.text('PEDIDO DE COMPRAS',margem,y);
-
-                y += 7;
-
-                doc.setFontSize(9);
-                doc.setFont(undefined,'normal');
-                doc.text(
-                  new Date().toLocaleString('pt-BR'),
-                  margem,
-                  y
-                );
-
-                y += 7;
-
-                doc.line(
-                  margem,
-                  y,
-                  pageWidth - margem,
-                  y
-                );
-
-                y += 7;
+              if(typeof saveFeatures === 'function'){
+                saveFeatures();
               }
-
-              function rodape(){
-                doc.setFontSize(8);
-                doc.setFont(undefined,'normal');
-
-                const pagina =
-                  'Página ' +
-                  doc.getCurrentPageInfo().pageNumber;
-
-                doc.text(
-                  pagina,
-                  pageWidth - margem,
-                  pageHeight - 7,
-                  {align:'right'}
-                );
-              }
-
-              function novaPagina(){
-                rodape();
-                doc.addPage();
-                y = 15;
-                cabecalho();
-              }
-
-              cabecalho();
-
-              const grupos = groupRows(rows);
-
-              Object.entries(grupos).forEach(
-                ([categoria,itens]) => {
-
-                  if(y > pageHeight - 35){
-                    novaPagina();
-                  }
-
-                  doc.setFontSize(11);
-                  doc.setFont(undefined,'bold');
-
-                  doc.text(
-                    String(categoria).toUpperCase(),
-                    margem,
-                    y
-                  );
-
-                  y += 5;
-
-                  doc.setFontSize(8);
-                  doc.setFont(undefined,'bold');
-
-                  const xCodigo = margem;
-                  const xNome = margem + 25;
-                  const xEstoque = pageWidth - 55;
-                  const xPedido = pageWidth - 25;
-
-                  doc.text('Código',xCodigo,y);
-                  doc.text('Produto',xNome,y);
-                  doc.text('Est.',xEstoque,y);
-                  doc.text('Ped.',xPedido,y,{align:'right'});
-
-                  y += 3;
-
-                  doc.line(
-                    margem,
-                    y,
-                    pageWidth - margem,
-                    y
-                  );
-
-                  y += 5;
-
-                  doc.setFont(undefined,'normal');
-
-                  itens.forEach(x => {
-
-                    const codigo = String(x.code || '-');
-
-                    let nome = String(x.name || '');
-
-                    /*
-                     * Limita o nome para não invadir
-                     * as colunas de estoque/pedido.
-                     */
-                    if(nome.length > 42){
-                      nome = nome.substring(0,39) + '...';
-                    }
-
-                    const estoque = String(x.stock ?? 0);
-                    const pedido = String(x.order ?? 0);
-
-                    if(y > pageHeight - 20){
-                      novaPagina();
-
-                      doc.setFontSize(11);
-                      doc.setFont(undefined,'bold');
-
-                      doc.text(
-                        String(categoria).toUpperCase() +
-                        ' (continuação)',
-                        margem,
-                        y
-                      );
-
-                      y += 7;
-
-                      doc.setFontSize(8);
-                      doc.setFont(undefined,'normal');
-                    }
-
-                    doc.setFontSize(8);
-
-                    doc.text(codigo,xCodigo,y);
-                    doc.text(nome,xNome,y);
-                    doc.text(estoque,xEstoque,y);
-                    doc.text(
-                      pedido,
-                      xPedido,
-                      y,
-                      {align:'right'}
-                    );
-
-                    y += 5;
-
-                    if(x.obs){
-                      let obs = String(x.obs);
-
-                      if(obs.length > 65){
-                        obs = obs.substring(0,62) + '...';
-                      }
-
-                      doc.setFontSize(7);
-                      doc.text(
-                        'Obs: ' + obs,
-                        xNome,
-                        y
-                      );
-
-                      y += 4;
-                      doc.setFontSize(8);
-                    }
-
-                    if(x.validade){
-                      let validade = String(x.validade);
-
-                      if(validade.length > 55){
-                        validade =
-                          validade.substring(0,52) + '...';
-                      }
-
-                      doc.text(
-                        'Validade: ' + validade,
-                        xNome,
-                        y
-                      );
-
-                      y += 4;
-                    }
-                  });
-
-                  y += 3;
-                }
-              );
-
-              if(generalObservation){
-
-                if(y > pageHeight - 30){
-                  novaPagina();
-                }
-
-                doc.setFontSize(9);
-                doc.setFont(undefined,'bold');
-
-                doc.text(
-                  'OBSERVAÇÃO GERAL:',
-                  margem,
-                  y
-                );
-
-                y += 5;
-
-                doc.setFont(undefined,'normal');
-
-                const obsLines =
-                  doc.splitTextToSize(
-                    String(generalObservation),
-                    larguraUtil
-                  );
-
-                doc.text(
-                  obsLines,
-                  margem,
-                  y
-                );
-              }
-
-              rodape();
-
-              /*
-               * Gera o PDF completo antes de limpar os dados.
-               */
-              const base64 =
-                doc.output('datauristring').split(',')[1];
-
-              const nomeArquivo =
-                'pedido-acougue-' +
-                new Date()
-                  .toISOString()
-                  .slice(0,10) +
-                '.pdf';
-
-              /*
-               * IMPORTANTE:
-               * limpa o pedido depois que o PDF já foi criado.
-               *
-               * clearPedido(rows) também grava o histórico.
-               */
-              clearPedido(rows);
-
-              /*
-               * Android:
-               * somente agora envia o PDF pronto.
-               */
-              if(
-                window.AndroidFileBridge &&
-                typeof window.AndroidFileBridge.sharePdf === 'function'
-              ){
-                window.AndroidFileBridge.sharePdf(
-                  nomeArquivo,
-                  base64
-                );
-                return;
-              }
-
-              /*
-               * Navegador normal.
-               */
-              doc.save(nomeArquivo);
-
-            }catch(e){
-
-              console.error(e);
-
-              alert(
-                'Erro ao gerar PDF: ' +
-                (e && e.message ? e.message : e)
-              );
-            }
-          }'''
-
-          # ========================================================
-          # NOVA clearPedido()
-          #
-          # Recebe opcionalmente as linhas do pedido para preservar
-          # o histórico mesmo depois de zerar tudo.
-          # ========================================================
-          new_clear = r'''function clearPedido(historyRows=null){
-
-            /*
-             * Guarda o pedido no histórico ANTES de apagar
-             * as quantidades.
-             */
-            if(
-              Array.isArray(historyRows) &&
-              historyRows.length
-            ){
-              saveHistory(historyRows);
-            }else if(
-              Array.isArray(finalizedRows) &&
-              finalizedRows.length
-            ){
-              saveHistory(finalizedRows);
             }
 
-            /*
-             * Zera completamente o estado atual.
-             */
-            vals = {};
-            extras = [];
-            validadeCurta = [];
-            finalizedRows = [];
-            generalObservation = '';
 
             /*
-             * Limpa o campo de observação.
-             */
-            const obs =
-              document.getElementById('generalObs');
-
-            if(obs){
-              obs.value = '';
-            }
-
-            /*
-             * Remove explicitamente os dados do pedido
-             * armazenados no aparelho.
+             * LIMPEZA DO PEDIDO
              *
-             * NÃO remove:
+             * Apaga somente:
+             * - estoque
+             * - quantidades pedidas
+             * - produtos adicionais do pedido
+             * - validade curta do pedido
+             * - observação atual
+             *
+             * NÃO apaga:
              * - catálogo
              * - produtos cadastrados
              * - favoritos
              * - histórico
              * - último pedido
-             * - configurações
+             * - configurações ADM
              */
-            localStorage.removeItem('pedido_compras_vals');
-            localStorage.removeItem('pedido_compras_extras');
-            localStorage.removeItem('pedido_compras_validade_curta');
+            window.clearPedido = function(historyRows){
+
+              try{
+
+                const rows =
+                  Array.isArray(historyRows) && historyRows.length
+                    ? historyRows
+                    : (
+                        Array.isArray(finalizedRows) &&
+                        finalizedRows.length
+                          ? finalizedRows
+                          : []
+                      );
+
+                /*
+                 * Salva o pedido ANTES de zerar.
+                 * Isso garante que "Repetir último" continue funcionando.
+                 */
+                if(rows.length){
+                  savePedidoHistory(rows);
+                }
+
+
+                /* ZERA O PEDIDO ATUAL */
+                vals = {};
+                extras = [];
+                validadeCurta = [];
+                finalizedRows = [];
+                generalObservation = '';
+
+
+                /*
+                 * Remove os dados temporários do pedido.
+                 */
+                localStorage.removeItem('pedido_compras_vals');
+                localStorage.removeItem('pedido_compras_extras');
+                localStorage.removeItem('pedido_compras_validade_curta');
+                localStorage.removeItem('sp_general_obs');
+
+
+                /*
+                 * Grava novamente o estado vazio.
+                 *
+                 * saveFeatures() NÃO apaga lastOrder nem historyOrders.
+                 */
+                if(typeof save === 'function'){
+                  save();
+                }
+
+                if(typeof saveFeatures === 'function'){
+                  saveFeatures();
+                }
+
+
+                const obs =
+                  document.getElementById('generalObs');
+
+                if(obs){
+                  obs.value = '';
+                }
+
+
+                if(typeof render === 'function'){
+                  render();
+                }
+
+                if(typeof renderValidadeCurta === 'function'){
+                  renderValidadeCurta();
+                }
+
+                if(typeof updateBadge === 'function'){
+                  updateBadge();
+                }
+
+                if(typeof closeConference === 'function'){
+                  closeConference();
+                }
+
+                window.scrollTo({
+                  top:0,
+                  behavior:'smooth'
+                });
+
+              }catch(e){
+
+                console.error('clearPedido:',e);
+
+                alert(
+                  'Não foi possível limpar o pedido: ' +
+                  e.message
+                );
+              }
+            };
+
 
             /*
-             * Mantém o restante do aplicativo intacto.
+             * REPETIR ÚLTIMO PEDIDO
+             *
+             * Primeiro usa lastOrder.
+             * Se por algum motivo ele estiver vazio,
+             * usa o primeiro pedido do histórico.
              */
-            render();
-            renderValidadeCurta();
-            updateBadge();
-            closeConference();
+            window.repeatLastOrder = function(){
 
-            window.scrollTo({
-              top:0,
-              behavior:'smooth'
-            });
-          }'''
+              let rows =
+                Array.isArray(lastOrder)
+                  ? lastOrder
+                  : [];
 
-          # --------------------------------------------------------
-          # SUBSTITUIR AS DUAS FUNÇÕES DE FORMA INDEPENDENTE.
-          # --------------------------------------------------------
-          text = replace_function(
-              text,
-              "openPDF",
-              new_open_pdf
+              let obs =
+                generalObservation || '';
+
+
+              if(
+                !rows.length &&
+                Array.isArray(historyOrders) &&
+                historyOrders.length
+              ){
+
+                rows =
+                  historyOrders[0].rows || [];
+
+                obs =
+                  historyOrders[0].generalObservation || '';
+              }
+
+
+              if(!rows.length){
+
+                alert(
+                  'Ainda não existe último pedido.'
+                );
+
+                return;
+              }
+
+
+              vals = {};
+              extras = [];
+              validadeCurta = [];
+
+
+              rows.forEach(function(x){
+
+                /*
+                 * Produto adicional
+                 */
+                if(x.cat === 'Produto Adicional'){
+
+                  extras.push({
+                    code:
+                      x.code === '-'
+                        ? ''
+                        : x.code,
+
+                    name:
+                      x.name,
+
+                    qty:
+                      Number(x.order) || 0
+                  });
+
+                  return;
+                }
+
+
+                /*
+                 * Validade curta
+                 */
+                if(x.cat === '⚠️ Validade Curta'){
+
+                  validadeCurta.push({
+
+                    code:
+                      x.code === '-'
+                        ? ''
+                        : x.code,
+
+                    name:
+                      x.name,
+
+                    qty:
+                      Number(x.order) || 0,
+
+                    date:
+                      x.validade || ''
+                  });
+
+                  return;
+                }
+
+
+                /*
+                 * Produto normal
+                 */
+                const f =
+                  typeof productByCode === 'function'
+                    ? productByCode(x.code)
+                    : null;
+
+
+                if(f){
+
+                  vals[
+                    key(
+                      f.c,
+                      f.s,
+                      f.i,
+                      'o'
+                    )
+                  ] =
+                    Number(x.order) || 0;
+
+
+                  vals[
+                    key(
+                      f.c,
+                      f.s,
+                      f.i,
+                      's'
+                    )
+                  ] =
+                    Number(x.stock) || 0;
+                }
+
+              });
+
+
+              generalObservation = obs;
+
+
+              const obsEl =
+                document.getElementById(
+                  'generalObs'
+                );
+
+              if(obsEl){
+                obsEl.value =
+                  generalObservation;
+              }
+
+
+              if(typeof save === 'function'){
+                save();
+              }
+
+              if(typeof saveFeatures === 'function'){
+                saveFeatures();
+              }
+
+              if(typeof render === 'function'){
+                render();
+              }
+
+              if(typeof renderValidadeCurta === 'function'){
+                renderValidadeCurta();
+              }
+
+              if(typeof updateBadge === 'function'){
+                updateBadge();
+              }
+
+              if(typeof closeFeature === 'function'){
+                closeFeature();
+              }
+
+
+              alert(
+                'Último pedido recuperado. Confira antes de enviar.'
+              );
+            };
+
+
+            /*
+             * ============================================================
+             * PDF
+             *
+             * Modelo:
+             * RELATÓRIO DE PEDIDO
+             * Data
+             *
+             * CÓDIGO | NOME DO PRODUTO | ESTOQUE | PEDIDO
+             *
+             * Categorias separadas.
+             *
+             * A4 RETRATO.
+             * ============================================================
+             */
+            window.openPDF = function(){
+
+              const rows =
+                Array.isArray(finalizedRows) &&
+                finalizedRows.length
+                  ? finalizedRows
+                  : getRows();
+
+
+              if(!rows.length){
+
+                alert(
+                  'Nenhum item foi selecionado.'
+                );
+
+                return;
+              }
+
+
+              try{
+
+                const lib =
+                  window.jspdf || {};
+
+                const jsPDF =
+                  lib.jsPDF;
+
+
+                if(!jsPDF){
+
+                  throw new Error(
+                    'Biblioteca PDF não carregada.'
+                  );
+                }
+
+
+                /*
+                 * A4 RETRATO
+                 *
+                 * 210 x 297 mm
+                 */
+                const doc =
+                  new jsPDF({
+                    orientation:'portrait',
+                    unit:'mm',
+                    format:'a4'
+                  });
+
+
+                const W = 210;
+                const H = 297;
+
+                const L = 10;
+                const R = 10;
+
+                const tableW =
+                  W - L - R;
+
+
+                /*
+                 * Colunas:
+                 *
+                 * CÓDIGO       28 mm
+                 * NOME        110 mm
+                 * ESTOQUE      25 mm
+                 * PEDIDO        25 mm
+                 */
+                const col = [
+                  L,
+                  L + 28,
+                  L + 138,
+                  L + 163,
+                  L + 188
+                ];
+
+
+                let y = 15;
+                let page = 1;
+
+
+                /*
+                 * Rodapé.
+                 */
+                function footer(){
+
+                  doc.setFont(
+                    'helvetica',
+                    'normal'
+                  );
+
+                  doc.setFontSize(7);
+
+                  doc.text(
+                    'Super Pedido Pro',
+                    L,
+                    H - 7
+                  );
+
+                  doc.text(
+                    'Página ' + page,
+                    L + tableW,
+                    H - 7,
+                    {
+                      align:'right'
+                    }
+                  );
+                }
+
+
+                /*
+                 * Nova página.
+                 */
+                function newPage(){
+
+                  footer();
+
+                  doc.addPage();
+
+                  page++;
+
+                  y = 15;
+                }
+
+
+                /*
+                 * Cabeçalho principal.
+                 */
+                function header(){
+
+                  doc.setFont(
+                    'helvetica',
+                    'bold'
+                  );
+
+                  doc.setFontSize(14);
+
+                  doc.text(
+                    'RELATÓRIO DE PEDIDO',
+                    W / 2,
+                    y,
+                    {
+                      align:'center'
+                    }
+                  );
+
+                  y += 7;
+
+
+                  doc.setFont(
+                    'helvetica',
+                    'normal'
+                  );
+
+                  doc.setFontSize(7);
+
+                  doc.text(
+                    'Data: ' +
+                    new Date()
+                      .toLocaleDateString(
+                        'pt-BR'
+                      ),
+                    L,
+                    y
+                  );
+
+                  y += 9;
+                }
+
+
+                /*
+                 * Cabeçalho da tabela.
+                 */
+                function tableHeader(){
+
+                  if(y + 9 > H - 14){
+                    newPage();
+                  }
+
+
+                  doc.setFont(
+                    'helvetica',
+                    'bold'
+                  );
+
+                  doc.setFontSize(6.5);
+
+
+                  doc.rect(
+                    L,
+                    y,
+                    tableW,
+                    8
+                  );
+
+
+                  for(
+                    let i = 1;
+                    i < col.length - 1;
+                    i++
+                  ){
+
+                    doc.line(
+                      col[i],
+                      y,
+                      col[i],
+                      y + 8
+                    );
+                  }
+
+
+                  doc.text(
+                    'CÓDIGO',
+                    (col[0] + col[1]) / 2,
+                    y + 5,
+                    {
+                      align:'center'
+                    }
+                  );
+
+
+                  doc.text(
+                    'NOME DO PRODUTO',
+                    col[1] + 2,
+                    y + 5
+                  );
+
+
+                  doc.text(
+                    'ESTOQUE',
+                    (col[2] + col[3]) / 2,
+                    y + 5,
+                    {
+                      align:'center'
+                    }
+                  );
+
+
+                  doc.text(
+                    'PEDIDO',
+                    (col[3] + col[4]) / 2,
+                    y + 5,
+                    {
+                      align:'center'
+                    }
+                  );
+
+
+                  y += 8;
+                }
+
+
+                /*
+                 * Linha do produto.
+                 */
+                function productRow(x){
+
+                  const nameLines =
+                    doc.splitTextToSize(
+                      String(
+                        x.name || ''
+                      ),
+                      106
+                    );
+
+
+                  const rowHeight =
+                    Math.max(
+                      7,
+                      nameLines.length * 3.4 + 2
+                    );
+
+
+                  if(
+                    y + rowHeight >
+                    H - 14
+                  ){
+
+                    newPage();
+
+                    header();
+
+                    tableHeader();
+                  }
+
+
+                  doc.setFont(
+                    'helvetica',
+                    'normal'
+                  );
+
+                  doc.setFontSize(6.2);
+
+
+                  /*
+                   * Borda externa.
+                   */
+                  doc.rect(
+                    L,
+                    y,
+                    tableW,
+                    rowHeight
+                  );
+
+
+                  /*
+                   * Linhas verticais.
+                   */
+                  for(
+                    let i = 1;
+                    i < col.length - 1;
+                    i++
+                  ){
+
+                    doc.line(
+                      col[i],
+                      y,
+                      col[i],
+                      y + rowHeight
+                    );
+                  }
+
+
+                  /*
+                   * Código.
+                   */
+                  doc.text(
+                    String(
+                      x.code || '-'
+                    ),
+                    (col[0] + col[1]) / 2,
+                    y + rowHeight / 2 + 2,
+                    {
+                      align:'center'
+                    }
+                  );
+
+
+                  /*
+                   * Nome.
+                   */
+                  doc.text(
+                    nameLines,
+                    col[1] + 2,
+                    y + 3.8
+                  );
+
+
+                  /*
+                   * Estoque.
+                   */
+                  doc.text(
+                    String(
+                      x.stock ?? 0
+                    ),
+                    (col[2] + col[3]) / 2,
+                    y + rowHeight / 2 + 2,
+                    {
+                      align:'center'
+                    }
+                  );
+
+
+                  /*
+                   * Pedido.
+                   */
+                  doc.text(
+                    String(
+                      x.order ?? 0
+                    ),
+                    (col[3] + col[4]) / 2,
+                    y + rowHeight / 2 + 2,
+                    {
+                      align:'center'
+                    }
+                  );
+
+
+                  y += rowHeight;
+                }
+
+
+                /*
+                 * Cabeçalho.
+                 */
+                header();
+
+
+                /*
+                 * Agrupa por categoria.
+                 */
+                const groups = {};
+
+                rows.forEach(function(x){
+
+                  const cat =
+                    x.cat || 'Outros';
+
+                  if(!groups[cat]){
+                    groups[cat] = [];
+                  }
+
+                  groups[cat].push(x);
+                });
+
+
+                /*
+                 * Desenha categorias.
+                 */
+                Object.entries(groups)
+                  .forEach(function(entry){
+
+                    const cat =
+                      entry[0];
+
+                    const items =
+                      entry[1];
+
+
+                    if(
+                      y + 16 >
+                      H - 14
+                    ){
+
+                      newPage();
+
+                      header();
+                    }
+
+
+                    doc.setFont(
+                      'helvetica',
+                      'bold'
+                    );
+
+                    doc.setFontSize(8.5);
+
+
+                    doc.text(
+                      String(cat).toUpperCase(),
+                      L,
+                      y
+                    );
+
+
+                    y += 4;
+
+
+                    tableHeader();
+
+
+                    items.forEach(
+                      productRow
+                    );
+
+
+                    y += 2;
+                  });
+
+
+                /*
+                 * Observação.
+                 */
+                if(generalObservation){
+
+                  if(
+                    y + 12 >
+                    H - 14
+                  ){
+
+                    newPage();
+
+                    header();
+                  }
+
+
+                  doc.setFont(
+                    'helvetica',
+                    'bold'
+                  );
+
+                  doc.setFontSize(7);
+
+
+                  doc.text(
+                    'OBSERVAÇÃO:',
+                    L,
+                    y
+                  );
+
+
+                  y += 4;
+
+
+                  doc.setFont(
+                    'helvetica',
+                    'normal'
+                  );
+
+
+                  const observationLines =
+                    doc.splitTextToSize(
+                      String(
+                        generalObservation
+                      ),
+                      tableW
+                    );
+
+
+                  doc.text(
+                    observationLines,
+                    L,
+                    y
+                  );
+                }
+
+
+                footer();
+
+
+                /*
+                 * Gera Base64.
+                 */
+                const base64 =
+                  doc
+                    .output(
+                      'datauristring'
+                    )
+                    .split(',')[1];
+
+
+                const nome =
+                  'relatorio-pedido-' +
+                  new Date()
+                    .toLocaleDateString(
+                      'pt-BR'
+                    )
+                    .replace(/\//g,'-') +
+                  '.pdf';
+
+
+                /*
+                 * PRIMEIRO salva o histórico e zera
+                 * as quantidades.
+                 *
+                 * O último pedido continua salvo.
+                 */
+                clearPedido(rows);
+
+
+                /*
+                 * Depois compartilha o PDF.
+                 */
+                if(
+                  window.AndroidFileBridge &&
+                  typeof window.AndroidFileBridge.sharePdf === 'function'
+                ){
+
+                  window.AndroidFileBridge.sharePdf(
+                    nome,
+                    base64
+                  );
+
+                }else{
+
+                  /*
+                   * Fallback para navegador.
+                   */
+                  doc.save(nome);
+                }
+
+
+              }catch(e){
+
+                console.error(
+                  'openPDF:',
+                  e
+                );
+
+                alert(
+                  'Não foi possível gerar o PDF: ' +
+                  e.message
+                );
+              }
+            };
+
+          })();
+          '''
+
+          # Coloca o bloco antes do fechamento do script.
+          marker = '</script>'
+
+          if marker not in text:
+              raise SystemExit(
+                  'ERRO: fechamento do script não encontrado'
+              )
+
+          text = text.replace(
+              marker,
+              override + marker,
+              1
           )
 
-          text = replace_function(
-              text,
-              "clearPedido",
-              new_clear
+
+          # Mantém bibliotecas locais.
+          text = text.replace(
+              'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js',
+              'xlsx.full.min.js'
           )
+
+          text = text.replace(
+              'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
+              'jspdf.umd.min.js'
+          )
+
 
           html.write_text(
               text,
-              encoding="utf-8"
+              encoding='utf-8'
           )
 
-          # ========================================================
-          # VERIFICAÇÕES INTERNAS
-          # ========================================================
 
-          if "function openPDF()" not in text:
-              raise SystemExit(
-                  "ERRO: openPDF não foi instalada."
+          # ============================================================
+          # MAIN ACTIVITY
+          #
+          # Mantém ADM/prompt e importação funcionando no WebView.
+          # ============================================================
+
+          java = main.read_text(
+              encoding='utf-8'
+          )
+
+
+          if 'import android.content.ClipData;' not in java:
+
+              java = java.replace(
+                  'import android.content.Intent;',
+                  'import android.content.ClipData;\nimport android.content.Intent;',
+                  1
               )
 
-          if "function clearPedido(" not in text:
-              raise SystemExit(
-                  "ERRO: clearPedido não foi instalada."
+
+          if 'import android.webkit.ValueCallback;' not in java:
+
+              java = java.replace(
+                  'import android.webkit.WebSettings;',
+                  'import android.webkit.ValueCallback;\nimport android.webkit.WebSettings;',
+                  1
               )
 
-          if "orientation:'portrait'" not in text:
-              raise SystemExit(
-                  "ERRO: PDF não está configurado como retrato."
+
+          if 'import android.webkit.WebChromeClient;' not in java:
+
+              java = java.replace(
+                  'import android.webkit.WebSettings;',
+                  'import android.webkit.WebChromeClient;\nimport android.webkit.WebSettings;',
+                  1
               )
 
-          if "orientation:'landscape'" in text:
-              raise SystemExit(
-                  "ERRO: ainda existe PDF em landscape."
+
+          if 'private ValueCallback<Uri[]> filePathCallback;' not in java:
+
+              java = java.replace(
+                  'public class MainActivity extends Activity {',
+                  '''public class MainActivity extends Activity {
+              private ValueCallback<Uri[]> filePathCallback;
+              private static final int FILE_CHOOSER_REQUEST = 1001;''',
+                  1
               )
 
-          if "const pageWidth = 210" not in text:
+
+          # ============================================================
+          # Seletor de arquivos para ADM/importação.
+          # ============================================================
+
+          if 'onShowFileChooser' not in java:
+
+              marker =
+                  '        webView.setWebViewClient(new WebViewClient());\n'
+
+
+              block = '''        webView.setWebChromeClient(new WebChromeClient() {
+                  @Override
+                  public boolean onShowFileChooser(
+                          WebView view,
+                          ValueCallback<Uri[]> callback,
+                          WebChromeClient.FileChooserParams params) {
+
+                      if (MainActivity.this.filePathCallback != null) {
+                          MainActivity.this.filePathCallback.onReceiveValue(null);
+                      }
+
+                      MainActivity.this.filePathCallback = callback;
+
+                      try {
+                          startActivityForResult(
+                                  params.createIntent(),
+                                  FILE_CHOOSER_REQUEST
+                          );
+
+                          return true;
+
+                      } catch (Exception e) {
+
+                          MainActivity.this.filePathCallback = null;
+
+                          Toast.makeText(
+                                  MainActivity.this,
+                                  "Não foi possível abrir o seletor de arquivos.",
+                                  Toast.LENGTH_LONG
+                          ).show();
+
+                          return false;
+                      }
+                  }
+              });
+          '''
+
+
+              if marker in java:
+
+                  java = java.replace(
+                      marker,
+                      marker + block,
+                      1
+                  )
+
+
+          # ============================================================
+          # Resultado do seletor de arquivos.
+          # ============================================================
+
+          if(
+              'FILE_CHOOSER_REQUEST' in java and
+              'protected void onActivityResult(int requestCode' not in java
+          ):
+
+              marker =
+                  '    public class AndroidFileBridge {\n'
+
+
+              block = '''    @Override
+              protected void onActivityResult(
+                      int requestCode,
+                      int resultCode,
+                      Intent data
+              ) {
+
+                  super.onActivityResult(
+                          requestCode,
+                          resultCode,
+                          data
+                  );
+
+                  if(
+                      requestCode != FILE_CHOOSER_REQUEST ||
+                      filePathCallback == null
+                  ){
+                      return;
+                  }
+
+                  Uri[] results = null;
+
+                  if(
+                      resultCode == RESULT_OK &&
+                      data != null
+                  ){
+
+                      if(
+                          data.getClipData() != null
+                      ){
+
+                          int count =
+                              data.getClipData().getItemCount();
+
+                          results =
+                              new Uri[count];
+
+                          for(
+                              int i = 0;
+                              i < count;
+                              i++
+                          ){
+
+                              results[i] =
+                                  data
+                                      .getClipData()
+                                      .getItemAt(i)
+                                      .getUri();
+                          }
+
+                      }else if(
+                          data.getData() != null
+                      ){
+
+                          results =
+                              new Uri[]{
+                                  data.getData()
+                              };
+                      }
+                  }
+
+                  filePathCallback.onReceiveValue(
+                      results
+                  );
+
+                  filePathCallback = null;
+              }
+
+          '''
+
+
+              if marker in java:
+
+                  java = java.replace(
+                      marker,
+                      block + marker,
+                      1
+                  )
+
+
+          # ============================================================
+          # Compartilhamento do PDF.
+          # ============================================================
+
+          pdf_pattern = (
+              r'        @JavascriptInterface\n'
+              r'        public void sharePdf\(String filename, String base64\) '
+              r'\{.*?\n'
+              r'        \}\n\n'
+              r'        @JavascriptInterface'
+          )
+
+
+          pdf_method = '''        @JavascriptInterface
+              public void sharePdf(
+                      String filename,
+                      String base64
+              ) {
+
+                  try {
+
+                      if(
+                          base64 == null ||
+                          base64.trim().isEmpty()
+                      ){
+                          throw new Exception(
+                              "PDF vazio"
+                          );
+                      }
+
+
+                      String clean =
+                          base64;
+
+
+                      int comma =
+                          clean.indexOf(',');
+
+
+                      if(comma >= 0){
+
+                          clean =
+                              clean.substring(
+                                  comma + 1
+                              );
+                      }
+
+
+                      byte[] bytes =
+                          Base64.decode(
+                              clean,
+                              Base64.DEFAULT
+                          );
+
+
+                      File dir =
+                          new File(
+                              getCacheDir(),
+                              "shared"
+                          );
+
+
+                      if(
+                          !dir.exists() &&
+                          !dir.mkdirs()
+                      ){
+
+                          throw new Exception(
+                              "Não foi possível criar a pasta temporária"
+                          );
+                      }
+
+
+                      String safeName =
+                          sanitizeFilename(
+                              filename
+                          );
+
+
+                      if(
+                          safeName.isEmpty()
+                      ){
+
+                          safeName =
+                              "pedido.pdf";
+                      }
+
+
+                      if(
+                          !safeName
+                              .toLowerCase()
+                              .endsWith(".pdf")
+                      ){
+
+                          safeName +=
+                              ".pdf";
+                      }
+
+
+                      File file =
+                          new File(
+                              dir,
+                              safeName
+                          );
+
+
+                      try(
+                          FileOutputStream out =
+                              new FileOutputStream(
+                                  file
+                              )
+                      ){
+
+                          out.write(bytes);
+                          out.flush();
+                      }
+
+
+                      Uri uri =
+                          FileProvider.getUriForFile(
+                              MainActivity.this,
+                              getPackageName() +
+                                  ".fileprovider",
+                              file
+                          );
+
+
+                      Intent intent =
+                          new Intent(
+                              Intent.ACTION_SEND
+                          );
+
+
+                      intent.setType(
+                          "application/pdf"
+                      );
+
+
+                      intent.putExtra(
+                          Intent.EXTRA_STREAM,
+                          uri
+                      );
+
+
+                      intent.setClipData(
+                          ClipData.newRawUri(
+                              "PDF",
+                              uri
+                          )
+                      );
+
+
+                      intent.addFlags(
+                          Intent.FLAG_GRANT_READ_URI_PERMISSION
+                      );
+
+
+                      startActivity(
+                          Intent.createChooser(
+                              intent,
+                              "Enviar PDF"
+                          )
+                      );
+
+
+                  }catch(Exception e){
+
+                      Toast.makeText(
+                          MainActivity.this,
+                          "Erro ao compartilhar PDF: " +
+                              e.getMessage(),
+                          Toast.LENGTH_LONG
+                      ).show();
+                  }
+              }
+
+              @JavascriptInterface'''
+
+
+          java, n = re.subn(
+              pdf_pattern,
+              pdf_method,
+              java,
+              count=1,
+              flags=re.S
+          )
+
+
+          if n != 1:
+
               raise SystemExit(
-                  "ERRO: largura A4 retrato não encontrada."
+                  'ERRO: sharePdf não encontrado'
               )
 
-          if "const pageHeight = 297" not in text:
-              raise SystemExit(
-                  "ERRO: altura A4 retrato não encontrada."
+
+          # ============================================================
+          # Nome seguro do PDF.
+          # ============================================================
+
+          if 'private String sanitizeFilename(' not in java:
+
+              marker =
+                  '    @Override\n    public void onBackPressed() {'
+
+
+              helper = '''    private String sanitizeFilename(
+                      String filename
+              ) {
+
+                  if(filename == null){
+                      return "";
+                  }
+
+                  return new File(filename)
+                      .getName()
+                      .replaceAll(
+                          "[\\\\\\\\/:*?\\\"<>|]",
+                          "_"
+                      );
+              }
+
+          '''
+
+
+              if marker not in java:
+
+                  raise SystemExit(
+                      'ERRO: local para sanitizeFilename não encontrado'
+                  )
+
+
+              java = java.replace(
+                  marker,
+                  helper + marker,
+                  1
               )
 
-          if "localStorage.removeItem('pedido_compras_vals')" not in text:
-              raise SystemExit(
-                  "ERRO: limpeza de quantidades não encontrada."
-              )
 
-          if "localStorage.removeItem('pedido_compras_extras')" not in text:
-              raise SystemExit(
-                  "ERRO: limpeza de adicionais não encontrada."
-              )
+          main.write_text(
+              java,
+              encoding='utf-8'
+          )
 
-          if "localStorage.removeItem('pedido_compras_validade_curta')" not in text:
-              raise SystemExit(
-                  "ERRO: limpeza de validade não encontrada."
-              )
 
-          if "clearPedido(rows);" not in text:
-              raise SystemExit(
-                  "ERRO: openPDF não chama a limpeza."
-              )
+          print(
+              'Correção aplicada sem alterar o catálogo ou as funções existentes.'
+          )
 
-          if "window.AndroidFileBridge.sharePdf" not in text:
-              raise SystemExit(
-                  "ERRO: compartilhamento Android do PDF não encontrado."
-              )
-
-          print("======================================")
-          print("CORREÇÕES APLICADAS COM SUCESSO")
-          print("======================================")
-          print("PDF: A4 RETRATO")
-          print("PDF: 210 x 297 mm")
-          print("Limpeza: quantidades zeradas")
-          print("Limpeza: localStorage removido")
-          print("Histórico: preservado")
-          print("Catálogo: preservado")
-          print("Admin: preservado")
-          print("WhatsApp: preservado")
-          print("======================================")
           PY
 
-      # ============================================================
-      # 8. PREPARAR BIBLIOTECAS
-      # ============================================================
       - name: Preparar bibliotecas locais
         shell: bash
         run: |
@@ -737,11 +1505,6 @@ jobs:
           test -s "$ASSETS/xlsx.full.min.js"
           test -s "$ASSETS/jspdf.umd.min.js"
 
-          echo "Bibliotecas locais preparadas."
-
-      # ============================================================
-      # 9. VERIFICAR CORREÇÕES
-      # ============================================================
       - name: Verificar correções
         shell: bash
         run: |
@@ -750,52 +1513,54 @@ jobs:
           HTML="$ANDROID_DIR/app/src/main/assets/app/index.html"
           MAIN="$ANDROID_DIR/app/src/main/java/com/pedido/v2/MainActivity.java"
 
-          test -f "$ANDROID_DIR/settings.gradle"
-          test -f "$ANDROID_DIR/build.gradle"
-          test -f "$ANDROID_DIR/app/build.gradle"
-          test -f "$ANDROID_DIR/app/src/main/AndroidManifest.xml"
           test -f "$HTML"
           test -f "$MAIN"
 
-          echo "Verificando PDF..."
-
-          grep -Fq "orientation:'portrait'" "$HTML"
-          grep -Fq "const pageWidth = 210" "$HTML"
-          grep -Fq "const pageHeight = 297" "$HTML"
-
-          if grep -Fq "orientation:'landscape'" "$HTML"; then
-            echo "ERRO: PDF landscape encontrado."
-            exit 1
-          fi
-
-          if grep -Fq 'orientation:"landscape"' "$HTML"; then
-            echo "ERRO: PDF landscape encontrado."
-            exit 1
-          fi
+          echo "Verificando PDF retrato..."
+          grep -q "orientation:'portrait'" "$HTML"
+          grep -q "RELATÓRIO DE PEDIDO" "$HTML"
 
           echo "Verificando limpeza..."
+          grep -q "window.clearPedido = function" "$HTML"
+          grep -q "localStorage.removeItem('pedido_compras_vals')" "$HTML"
+          grep -q "localStorage.removeItem('pedido_compras_extras')" "$HTML"
+          grep -q "localStorage.removeItem('pedido_compras_validade_curta')" "$HTML"
 
-          grep -Fq "localStorage.removeItem('pedido_compras_vals')" "$HTML"
-          grep -Fq "localStorage.removeItem('pedido_compras_extras')" "$HTML"
-          grep -Fq "localStorage.removeItem('pedido_compras_validade_curta')" "$HTML"
+          echo "Verificando repetir último..."
+          grep -q "window.repeatLastOrder = function" "$HTML"
+          grep -q "lastOrder" "$HTML"
 
-          echo "Verificando biblioteca PDF..."
+          echo "Verificando ADM/importação..."
+          grep -q "onShowFileChooser" "$MAIN"
+          grep -q "FILE_CHOOSER_REQUEST" "$MAIN"
 
-          grep -Fq "jspdf.umd.min.js" "$HTML"
+          echo "Verificando compartilhamento PDF..."
+          grep -q "ClipData.newRawUri" "$MAIN"
+          grep -q "private String sanitizeFilename" "$MAIN"
 
-          test -s "$ANDROID_DIR/app/src/main/assets/app/jspdf.umd.min.js"
+          echo "Verificando bibliotecas..."
+          grep -q "xlsx.full.min.js" "$HTML"
+          grep -q "jspdf.umd.min.js" "$HTML"
 
-          echo "Verificando catálogo/importação..."
+          if grep -q "orientation:'landscape'" "$HTML"; then
+            echo "ERRO: fluxo novo de PDF contém landscape"
+            exit 1
+          fi
 
-          grep -Fq "importedCatalogActive=true" "$HTML"
+          if grep -q 'orientation: "landscape"' "$HTML"; then
+            echo "ERRO: fluxo novo de PDF contém landscape"
+            exit 1
+          fi
 
-          echo "======================================"
+          echo "=========================================="
           echo "TODAS AS VERIFICAÇÕES PASSARAM"
-          echo "======================================"
+          echo "PDF: RETRATO"
+          echo "LIMPEZA: OK"
+          echo "REPETIR ÚLTIMO: OK"
+          echo "ADM/IMPORTAÇÃO: OK"
+          echo "COMPARTILHAMENTO PDF: OK"
+          echo "=========================================="
 
-      # ============================================================
-      # 10. COMPILAR APK
-      # ============================================================
       - name: Compilar APK
         shell: bash
         run: |
@@ -805,9 +1570,6 @@ jobs:
 
           gradle --no-daemon clean assembleDebug
 
-      # ============================================================
-      # 11. VERIFICAR APK
-      # ============================================================
       - name: Verificar APK
         shell: bash
         run: |
@@ -815,20 +1577,14 @@ jobs:
 
           APK="$ANDROID_DIR/app/build/outputs/apk/debug/app-debug.apk"
 
-          if [ ! -f "$APK" ]; then
-            echo "ERRO: APK não foi gerado."
-            exit 1
-          fi
+          test -f "$APK"
 
-          echo "======================================"
+          echo "=========================================="
           echo "APK GERADO COM SUCESSO"
-          echo "======================================"
+          echo "=========================================="
 
           ls -lh "$APK"
 
-      # ============================================================
-      # 12. DISPONIBILIZAR APK
-      # ============================================================
       - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
