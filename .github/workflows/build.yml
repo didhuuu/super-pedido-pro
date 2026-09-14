@@ -70,7 +70,7 @@ jobs:
           grep -q "android.enableJetifier=true" gradle.properties \
             || echo "android.enableJetifier=true" >> gradle.properties
 
-      - name: Corrigir aplicativo
+      - name: Corrigir aplicativo - PDF e limpeza
         shell: bash
         run: |
           set -e
@@ -98,33 +98,42 @@ jobs:
           text = html.read_text(encoding="utf-8")
 
           # ============================================================
-          # 1. CORRIGIR PDF
+          # PDF
           #
-          # A única alteração funcional é:
-          # PDF sempre A4 RETRATO.
+          # Localiza tanto:
+          #   function openPDF()
           #
-          # O conteúdo do relatório continua usando reportText(),
-          # sem alterar essa função.
+          # quanto:
+          #   async function openPDF()
+          #
+          # Isso evita o erro que aconteceu na tentativa anterior.
           # ============================================================
 
-          pdf_start = text.find("function openPDF(){")
-
-          pdf_end = text.find(
-              "function clearPedido",
-              pdf_start
+          pdf_match = re.search(
+              r'(?:async\s+)?function\s+openPDF\s*\(',
+              text
           )
 
-          if pdf_start == -1:
+          if not pdf_match:
               raise SystemExit(
-                  "ERRO: função openPDF não encontrada"
+                  "ERRO: função openPDF não encontrada no index.html"
               )
 
-          if pdf_end == -1:
+          pdf_start = pdf_match.start()
+
+          clear_match = re.search(
+              r'function\s+clearPedido\s*\(',
+              text[pdf_start:]
+          )
+
+          if not clear_match:
               raise SystemExit(
-                  "ERRO: função clearPedido não encontrada"
+                  "ERRO: função clearPedido não encontrada depois de openPDF"
               )
 
-          new_pdf = """function openPDF(){
+          pdf_end = pdf_start + clear_match.start()
+
+          new_pdf = r"""function openPDF(){
             const rows=finalizedRows.length?finalizedRows:getRows();
 
             if(!rows.length){
@@ -141,6 +150,10 @@ jobs:
                 );
               }
 
+              /*
+               * A4 RETRATO.
+               * Não usar landscape em nenhum ponto.
+               */
               const doc=new jsPDF({
                 orientation:'portrait',
                 unit:'mm',
@@ -368,8 +381,7 @@ jobs:
                       doc.setFontSize(7);
 
                       doc.text(
-                        'Validade: '+
-                        String(x.validade),
+                        'Validade: '+String(x.validade),
                         margin+28,
                         y
                       );
@@ -433,6 +445,9 @@ jobs:
 
               footer();
 
+              /*
+               * Primeiro gera o PDF inteiro.
+               */
               const base64=
                 doc.output(
                   'datauristring'
@@ -446,8 +461,13 @@ jobs:
                 '.pdf';
 
               /*
-               * Limpa somente depois que o PDF
-               * já foi completamente criado.
+               * IMPORTANTE:
+               *
+               * O histórico é salvo e as quantidades
+               * são zeradas ANTES do compartilhamento.
+               *
+               * O PDF já está pronto na variável base64,
+               * portanto não existe risco de perder o conteúdo.
                */
               clearPedido(rows);
 
@@ -456,6 +476,7 @@ jobs:
                 typeof window.AndroidFileBridge.sharePdf===
                 'function'
               ){
+
                 window.AndroidFileBridge.sharePdf(
                   filename,
                   base64
@@ -464,6 +485,9 @@ jobs:
                 return;
               }
 
+              /*
+               * Fallback para navegador.
+               */
               doc.save(filename);
 
             }catch(e){
@@ -479,52 +503,47 @@ jobs:
               );
             }
           }
+
           """
 
           text = (
               text[:pdf_start]
               + new_pdf
-              + "\n"
               + text[pdf_end:]
           )
 
           # ============================================================
-          # 2. CORRIGIR LIMPEZA
+          # LIMPEZA
           #
-          # Depois do envio:
-          # - zera estoque
-          # - zera pedido
-          # - zera adicionais
-          # - zera validade curta
-          #
-          # NÃO apaga:
-          # - cadastro
-          # - produtos
-          # - favoritos
-          # - histórico
-          # - último pedido
+          # Mantém cadastro, favoritos, histórico etc.
+          # Remove somente os dados do pedido atual.
           # ============================================================
 
-          clear_start = text.find(
-              "function clearPedido("
+          clear_match = re.search(
+              r'function\s+clearPedido\s*\(',
+              text
           )
 
-          clear_end = text.find(
-              "function sendWhatsApp",
-              clear_start
-          )
-
-          if clear_start == -1:
+          if not clear_match:
               raise SystemExit(
                   "ERRO: clearPedido não encontrada"
               )
 
-          if clear_end == -1:
+          clear_start = clear_match.start()
+
+          send_match = re.search(
+              r'function\s+sendWhatsApp\s*\(',
+              text[clear_start:]
+          )
+
+          if not send_match:
               raise SystemExit(
                   "ERRO: sendWhatsApp não encontrada"
               )
 
-          new_clear = """function clearPedido(historyRows=null){
+          clear_end = clear_start + send_match.start()
+
+          new_clear = r"""function clearPedido(historyRows=null){
 
             const historico=
               Array.isArray(historyRows) &&
@@ -536,6 +555,9 @@ jobs:
               saveHistory(historico);
             }
 
+            /*
+             * Zera completamente o pedido atual.
+             */
             vals={};
 
             extras=[];
@@ -546,6 +568,9 @@ jobs:
 
             generalObservation='';
 
+            /*
+             * Remove os dados persistidos do pedido.
+             */
             localStorage.removeItem(
               'pedido_compras_vals'
             );
@@ -558,6 +583,9 @@ jobs:
               'pedido_compras_validade_curta'
             );
 
+            /*
+             * Limpa observação visual.
+             */
             const obs=
               document.getElementById(
                 'generalObs'
@@ -567,8 +595,14 @@ jobs:
               obs.value='';
             }
 
+            /*
+             * Salva o estado limpo.
+             */
             save();
 
+            /*
+             * Atualiza a tela.
+             */
             render();
 
             renderValidadeCurta();
@@ -584,34 +618,34 @@ jobs:
               behavior:'smooth'
             });
           }
+
           """
 
           text = (
               text[:clear_start]
               + new_clear
-              + "\n"
               + text[clear_end:]
           )
 
           # ============================================================
-          # 3. BIBLIOTECAS LOCAIS
+          # BIBLIOTECAS LOCAIS
           # ============================================================
 
-          text = text.replace(
+          text=text.replace(
               'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js',
               'xlsx.full.min.js'
           )
 
-          text = text.replace(
+          text=text.replace(
               'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
               'jspdf.umd.min.js'
           )
 
           # ============================================================
-          # 4. PRESERVAR CORREÇÃO DO CATÁLOGO IMPORTADO
+          # PRESERVAR IMPORTAÇÃO DO CATÁLOGO
           # ============================================================
 
-          required = [
+          required=[
               'importedCatalogActive=true',
               'customProducts=rows.filter(x=>x.code||x.name).map(x=>({...x}))',
               "localStorage.setItem('sp_imported_catalog_active'"
@@ -628,17 +662,15 @@ jobs:
 
           html.write_text(
               text,
-              encoding="utf-8"
+              encoding='utf-8'
           )
 
           # ============================================================
-          # 5. MAINACTIVITY
-          #
-          # Mantém as correções que já funcionavam.
+          # MAINACTIVITY
           # ============================================================
 
           java=main.read_text(
-              encoding="utf-8"
+              encoding='utf-8'
           )
 
           if 'import android.content.ClipData;' not in java:
@@ -678,6 +710,10 @@ jobs:
                   1
               )
 
+          # ============================================================
+          # SELETOR DE ARQUIVOS
+          # ============================================================
+
           if 'onShowFileChooser' not in java:
 
               marker=(
@@ -699,7 +735,8 @@ jobs:
                   MainActivity.this.filePathCallback = callback;
 
                   try {
-                      Intent intent = params.createIntent();
+
+                      Intent intent=params.createIntent();
 
                       startActivityForResult(
                               intent,
@@ -708,9 +745,9 @@ jobs:
 
                       return true;
 
-                  } catch (Exception e) {
+                  }catch(Exception e){
 
-                      MainActivity.this.filePathCallback = null;
+                      MainActivity.this.filePathCallback=null;
 
                       Toast.makeText(
                               MainActivity.this,
@@ -731,6 +768,10 @@ jobs:
                       marker+block,
                       1
                   )
+
+          # ============================================================
+          # RESULTADO DO SELETOR
+          # ============================================================
 
           if 'protected void onActivityResult(' not in java:
 
@@ -788,10 +829,9 @@ jobs:
                       data.getData()!=null
                   ){
 
-                      results=
-                          new Uri[]{
-                              data.getData()
-                          };
+                      results=new Uri[]{
+                          data.getData()
+                      };
                   }
               }
 
@@ -813,15 +853,16 @@ jobs:
                   )
 
           # ============================================================
-          # 6. SHARE PDF ANDROID
+          # SHARE PDF
           # ============================================================
 
           pdf_pattern=(
-              r'        @JavascriptInterface\n'
-              r'        public void sharePdf\(String filename, String base64\) \{'
+              r'        @JavascriptInterface\s+'
+              r'public void sharePdf\s*'
+              r'\(String filename, String base64\)\s*\{'
               r'.*?'
-              r'\n        \}\n\n'
-              r'        @JavascriptInterface'
+              r'\n        \}\s+'
+              r'@JavascriptInterface'
           )
 
           pdf_method='''        @JavascriptInterface
@@ -835,21 +876,15 @@ jobs:
                       base64 == null ||
                       base64.trim().isEmpty()
                   ){
-                      throw new Exception(
-                          "PDF vazio"
-                      );
+                      throw new Exception("PDF vazio");
                   }
 
                   String clean=base64;
 
-                  int comma=
-                      clean.indexOf(',');
+                  int comma=clean.indexOf(',');
 
                   if(comma>=0){
-                      clean=
-                          clean.substring(
-                              comma+1
-                          );
+                      clean=clean.substring(comma+1);
                   }
 
                   byte[] bytes=
@@ -874,9 +909,7 @@ jobs:
                   }
 
                   String safeName=
-                      sanitizeFilename(
-                          filename
-                      );
+                      sanitizeFilename(filename);
 
                   if(safeName.isEmpty()){
                       safeName="pedido.pdf";
@@ -908,8 +941,7 @@ jobs:
                   Uri uri=
                       FileProvider.getUriForFile(
                           MainActivity.this,
-                          getPackageName()+
-                          ".fileprovider",
+                          getPackageName()+".fileprovider",
                           file
                       );
 
@@ -973,7 +1005,7 @@ jobs:
               )
 
           # ============================================================
-          # 7. saveBase64 COM 3 ARGUMENTOS
+          # saveBase64 COM 3 ARGUMENTOS
           # ============================================================
 
           if(
@@ -1013,7 +1045,7 @@ jobs:
               )
 
           # ============================================================
-          # 8. NOME SEGURO DO ARQUIVO
+          # SANITIZAÇÃO DO NOME
           # ============================================================
 
           if 'private String sanitizeFilename(' not in java:
@@ -1049,7 +1081,7 @@ jobs:
 
           main.write_text(
               java,
-              encoding="utf-8"
+              encoding='utf-8'
           )
 
           print(
@@ -1098,31 +1130,19 @@ jobs:
           echo "VERIFICANDO PDF"
           echo "======================================"
 
-          grep -Fq \
-            "orientation:'portrait'" \
-            "$HTML"
+          grep -Fq "orientation:'portrait'" "$HTML"
 
-          grep -Fq \
-            "pageWidth=210" \
-            "$HTML"
+          grep -Fq "pageWidth=210" "$HTML"
 
-          grep -Fq \
-            "pageHeight=297" \
-            "$HTML"
+          grep -Fq "pageHeight=297" "$HTML"
 
-          if grep -Fq \
-            "orientation:'landscape'" \
-            "$HTML"
-          then
-            echo "ERRO: PDF ainda está em landscape."
+          if grep -Fq "orientation:'landscape'" "$HTML"; then
+            echo "ERRO: PDF ainda contém landscape."
             exit 1
           fi
 
-          if grep -Fq \
-            'orientation:"landscape"' \
-            "$HTML"
-          then
-            echo "ERRO: PDF ainda está em landscape."
+          if grep -Fq 'orientation:"landscape"' "$HTML"; then
+            echo "ERRO: PDF ainda contém landscape."
             exit 1
           fi
 
@@ -1132,21 +1152,13 @@ jobs:
           echo "VERIFICANDO LIMPEZA"
           echo "======================================"
 
-          grep -Fq \
-            "vals={};" \
-            "$HTML"
+          grep -Fq "vals={};" "$HTML"
 
-          grep -Fq \
-            "extras=[];" \
-            "$HTML"
+          grep -Fq "extras=[];" "$HTML"
 
-          grep -Fq \
-            "validadeCurta=[];" \
-            "$HTML"
+          grep -Fq "validadeCurta=[];" "$HTML"
 
-          grep -Fq \
-            "finalizedRows=[];" \
-            "$HTML"
+          grep -Fq "finalizedRows=[];" "$HTML"
 
           grep -Fq \
             "localStorage.removeItem('pedido_compras_vals')" \
@@ -1160,9 +1172,7 @@ jobs:
             "localStorage.removeItem('pedido_compras_validade_curta')" \
             "$HTML"
 
-          grep -Fq \
-            "clearPedido(rows);" \
-            "$HTML"
+          grep -Fq "clearPedido(rows);" "$HTML"
 
           echo "LIMPEZA: OK"
 
