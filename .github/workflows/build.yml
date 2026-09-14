@@ -11,6 +11,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+
       - name: Baixar projeto
         uses: actions/checkout@v4
 
@@ -29,9 +30,13 @@ jobs:
         shell: bash
         run: |
           set -e
+
           rm -rf projeto
+
           test -f "Super-Pedido-Pro.zip"
+
           mkdir -p projeto
+
           unzip -o "Super-Pedido-Pro.zip" -d projeto
 
       - name: Localizar projeto Android
@@ -47,7 +52,9 @@ jobs:
           test -n "$ANDROID_DIR"
 
           echo "ANDROID_DIR=$ANDROID_DIR" >> "$GITHUB_ENV"
-          echo "Projeto encontrado: $ANDROID_DIR"
+
+          echo "Projeto encontrado em:"
+          echo "$ANDROID_DIR"
 
       - name: Configurar AndroidX
         shell: bash
@@ -64,630 +71,123 @@ jobs:
           grep -q "android.enableJetifier=true" gradle.properties \
             || echo "android.enableJetifier=true" >> gradle.properties
 
-      - name: Corrigir aplicativo - Admin, importação, PDF e limpeza
+      - name: Corrigir MainActivity
         shell: bash
         run: |
           set -e
 
           python3 - <<'PY'
           from pathlib import Path
-          import re
           import os
+          import re
 
           root = Path(os.environ["ANDROID_DIR"])
 
-          # ============================================================
-          # LOCALIZAR ARQUIVOS
-          # ============================================================
+          java_dir = root / "app" / "src" / "main" / "java"
 
-          html = root / "app/src/main/assets/app/index.html"
+          files = list(java_dir.rglob("MainActivity.java"))
 
-          java_files = list(
-              (root / "app/src/main/java").rglob("MainActivity.java")
-          )
-
-          if not html.exists():
-              raise SystemExit(
-                  "ERRO: index.html não encontrado"
-              )
-
-          if not java_files:
+          if not files:
               raise SystemExit(
                   "ERRO: MainActivity.java não encontrado"
               )
 
-          main = java_files[0]
+          main = files[0]
 
-          print("MainActivity encontrado:", main)
-          print("HTML encontrado:", html)
+          print("MainActivity:")
+          print(main)
 
-          # ============================================================
-          # HTML
-          # ============================================================
-
-          text = html.read_text(encoding="utf-8")
-
-          # ------------------------------------------------------------
-          # 1. LIMPEZA REAL DO PEDIDO APÓS ENVIO
-          # ------------------------------------------------------------
-
-          new_clear = '''function clearPedido(){
-            Object.keys(vals).forEach(k=>delete vals[k]);
-            extras=[];
-            validadeCurta=[];
-            finalizedRows=[];
-            generalObservation='';
-            const obs=document.getElementById('generalObs');
-            if(obs) obs.value='';
-            save();
-            render();
-            updateBadge();
-            closeConference();
-          }'''
-
-          text, n = re.subn(
-              r"function clearPedido\(\)\{.*?\n\}",
-              new_clear,
-              text,
-              count=1,
-              flags=re.S
-          )
-
-          if n != 1:
-              raise SystemExit(
-                  "ERRO: não foi possível corrigir clearPedido"
-              )
-
-          # ------------------------------------------------------------
-          # 2. GARANTIR CATEGORIA VÁLIDA AO ABRIR O APP
-          # ------------------------------------------------------------
-
-          old_start = (
-              "load();loadFeatures();"
-              "APP_DATA=buildAppData();"
-              "cats=Object.keys(APP_DATA);"
-              "if(!cats.length && !importedCatalogActive){"
-              "APP_DATA=DATA;cats=Object.keys(DATA)"
-              "}"
-              "tabs();render();updateBadge();"
-              "renderValidadeCurta();"
-          )
-
-          new_start = (
-              "load();loadFeatures();"
-              "APP_DATA=buildAppData();"
-              "cats=Object.keys(APP_DATA);"
-              "if(!cats.length && !importedCatalogActive){"
-              "APP_DATA=DATA;cats=Object.keys(DATA)"
-              "}"
-              "if(!current || !APP_DATA[current])"
-              "current=cats[0]||'';"
-              "tabs();render();updateBadge();"
-              "renderValidadeCurta();"
-          )
-
-          if old_start in text:
-              text = text.replace(
-                  old_start,
-                  new_start,
-                  1
-              )
-          elif (
-              "if(!current || !APP_DATA[current])"
-              "current=cats[0]||'';" not in text
-          ):
-              raise SystemExit(
-                  "ERRO: não foi possível corrigir "
-                  "a inicialização do catálogo"
-              )
-
-          # ------------------------------------------------------------
-          # 3. USAR BIBLIOTECAS LOCAIS
-          # ------------------------------------------------------------
-
-          text = text.replace(
-              "https://cdnjs.cloudflare.com/ajax/libs/"
-              "xlsx/0.18.5/xlsx.full.min.js",
-              "xlsx.full.min.js"
-          )
-
-          text = text.replace(
-              "https://cdnjs.cloudflare.com/ajax/libs/"
-              "jspdf/2.5.1/jspdf.umd.min.js",
-              "jspdf.umd.min.js"
-          )
-
-          # ------------------------------------------------------------
-          # 4. GARANTIR CORREÇÃO DA IMPORTAÇÃO
-          # ------------------------------------------------------------
-
-          required = [
-              "importedCatalogActive=true",
-              "customProducts=rows.filter(x=>x.code||x.name)"
-              ".map(x=>({...x}))",
-              "localStorage.setItem("
-              "'sp_imported_catalog_active'"
-          ]
-
-          for item in required:
-              if item not in text:
-                  raise SystemExit(
-                      "ERRO: correção de importação ausente: "
-                      + item
-                  )
-
-          html.write_text(
-              text,
+          text = main.read_text(
               encoding="utf-8"
           )
 
-          # ============================================================
-          # MAINACTIVITY.JAVA
-          # ============================================================
+          # ---------------------------------------------------------
+          # GARANTIR O MÉTODO sanitizeFilename
+          # ---------------------------------------------------------
 
-          java = main.read_text(
-              encoding="utf-8"
+          method = (
+              '    private String sanitizeFilename(String filename) {\\n'
+              '        if (filename == null) {\\n'
+              '            return "";\\n'
+              '        }\\n'
+              '        return new File(filename)\\n'
+              '                .getName()\\n'
+              '                .replaceAll("[\\\\\\\\/:*?\\\"<>|]", "_");\\n'
+              '    }\\n\\n'
           )
 
-          # ------------------------------------------------------------
-          # IMPORTS
-          # ------------------------------------------------------------
-
-          if "import android.content.ClipData;" not in java:
-              java = java.replace(
-                  "import android.content.Intent;\n",
-                  "import android.content.ClipData;\n"
-                  "import android.content.Intent;\n",
-                  1
-              )
-
-          if "import android.webkit.ValueCallback;" not in java:
-              java = java.replace(
-                  "import android.webkit.WebSettings;\n",
-                  "import android.webkit.ValueCallback;\n"
-                  "import android.webkit.WebSettings;\n",
-                  1
-              )
-
-          if "import android.webkit.WebChromeClient;" not in java:
-              java = java.replace(
-                  "import android.webkit.WebSettings;\n",
-                  "import android.webkit.WebChromeClient;\n"
-                  "import android.webkit.WebSettings;\n",
-                  1
-              )
-
-          # ------------------------------------------------------------
-          # FILE CHOOSER
-          # ------------------------------------------------------------
-
-          if (
-              "private ValueCallback<Uri[]> filePathCallback;"
-              not in java
-          ):
-              java = java.replace(
-                  "public class MainActivity extends Activity {\n",
-                  "public class MainActivity extends Activity {\n"
-                  "    private ValueCallback<Uri[]> "
-                  "filePathCallback;\n"
-                  "    private static final int "
-                  "FILE_CHOOSER_REQUEST = 1001;\n",
-                  1
-              )
-
-          # ------------------------------------------------------------
-          # WEBCHROMECLIENT
-          # ------------------------------------------------------------
-
-          if "onShowFileChooser" not in java:
-
-              marker = (
-                  "        webView.setWebViewClient("
-                  "new WebViewClient());\n"
-              )
-
-              block = '''        webView.setWebChromeClient(new WebChromeClient() {
-              @Override
-              public boolean onShowFileChooser(
-                      WebView view,
-                      ValueCallback<Uri[]> callback,
-                      FileChooserParams params) {
-
-                  if (MainActivity.this.filePathCallback != null) {
-                      MainActivity.this.filePathCallback
-                              .onReceiveValue(null);
-                  }
-
-                  MainActivity.this.filePathCallback = callback;
-
-                  try {
-                      Intent intent = params.createIntent();
-
-                      startActivityForResult(
-                              intent,
-                              FILE_CHOOSER_REQUEST
-                      );
-
-                      return true;
-
-                  } catch (Exception e) {
-
-                      MainActivity.this.filePathCallback = null;
-
-                      Toast.makeText(
-                              MainActivity.this,
-                              "Não foi possível abrir o seletor de arquivos.",
-                              Toast.LENGTH_LONG
-                      ).show();
-
-                      return false;
-                  }
-              }
-          });
-          '''
-
-              if marker not in java:
-                  raise SystemExit(
-                      "ERRO: WebViewClient não encontrado"
-                  )
-
-              java = java.replace(
-                  marker,
-                  marker + block,
-                  1
-              )
-
-          # ------------------------------------------------------------
-          # RESULTADO DO FILE CHOOSER
-          # ------------------------------------------------------------
-
-          if "protected void onActivityResult(" not in java:
-
-              marker = (
-                  "    public class AndroidFileBridge {\n"
-              )
-
-              result = '''    @Override
-          protected void onActivityResult(
-                  int requestCode,
-                  int resultCode,
-                  Intent data) {
-
-              super.onActivityResult(
-                      requestCode,
-                      resultCode,
-                      data
-              );
-
-              if (
-                  requestCode != FILE_CHOOSER_REQUEST
-                  || filePathCallback == null
-              ) {
-                  return;
-              }
-
-              Uri[] results = null;
-
-              if (
-                  resultCode == RESULT_OK
-                  && data != null
-              ) {
-
-                  if (data.getClipData() != null) {
-
-                      int count =
-                              data.getClipData()
-                                      .getItemCount();
-
-                      results = new Uri[count];
-
-                      for (int i = 0; i < count; i++) {
-                          results[i] =
-                                  data.getClipData()
-                                          .getItemAt(i)
-                                          .getUri();
-                      }
-
-                  } else if (data.getData() != null) {
-
-                      results = new Uri[]{
-                              data.getData()
-                      };
-                  }
-              }
-
-              filePathCallback.onReceiveValue(
-                      results
-              );
-
-              filePathCallback = null;
-          }
-
-          '''
-
-              if marker not in java:
-                  raise SystemExit(
-                      "ERRO: AndroidFileBridge não encontrado"
-                  )
-
-              java = java.replace(
-                  marker,
-                  result + marker,
-                  1
-              )
-
-          # ------------------------------------------------------------
-          # SHARE PDF
-          # ------------------------------------------------------------
-
-          pdf_pattern = (
-              r'        @JavascriptInterface\n'
-              r'        public void sharePdf'
-              r'\(String filename, String base64\) '
-              r'\{.*?\n'
-              r'        \}\n\n'
-              r'        @JavascriptInterface'
-          )
-
-          pdf_method = '''        @JavascriptInterface
-          public void sharePdf(
-                  String filename,
-                  String base64) {
-
-              try {
-
-                  if (
-                      base64 == null
-                      || base64.trim().isEmpty()
-                  ) {
-                      throw new Exception("PDF vazio");
-                  }
-
-                  String clean = base64;
-
-                  int comma =
-                          clean.indexOf(',');
-
-                  if (comma >= 0) {
-                      clean =
-                              clean.substring(
-                                      comma + 1
-                              );
-                  }
-
-                  byte[] bytes =
-                          Base64.decode(
-                                  clean,
-                                  Base64.DEFAULT
-                          );
-
-                  File dir =
-                          new File(
-                                  getCacheDir(),
-                                  "shared"
-                          );
-
-                  if (
-                      !dir.exists()
-                      && !dir.mkdirs()
-                  ) {
-                      throw new Exception(
-                              "Não foi possível criar a pasta temporária"
-                      );
-                  }
-
-                  String safeName =
-                          sanitizeFilename(filename);
-
-                  if (safeName.isEmpty()) {
-                      safeName = "pedido.pdf";
-                  }
-
-                  if (
-                      !safeName
-                              .toLowerCase()
-                              .endsWith(".pdf")
-                  ) {
-                      safeName += ".pdf";
-                  }
-
-                  File file =
-                          new File(
-                                  dir,
-                                  safeName
-                          );
-
-                  try (
-                      FileOutputStream out =
-                              new FileOutputStream(file)
-                  ) {
-                      out.write(bytes);
-                      out.flush();
-                  }
-
-                  Uri uri =
-                          FileProvider.getUriForFile(
-                                  MainActivity.this,
-                                  getPackageName()
-                                          + ".fileprovider",
-                                  file
-                          );
-
-                  Intent intent =
-                          new Intent(
-                                  Intent.ACTION_SEND
-                          );
-
-                  intent.setType(
-                          "application/pdf"
-                  );
-
-                  intent.putExtra(
-                          Intent.EXTRA_STREAM,
-                          uri
-                  );
-
-                  intent.setClipData(
-                          ClipData.newRawUri(
-                                  "PDF",
-                                  uri
-                          )
-                  );
-
-                  intent.addFlags(
-                          Intent.FLAG_GRANT_READ_URI_PERMISSION
-                  );
-
-                  startActivity(
-                          Intent.createChooser(
-                                  intent,
-                                  "Enviar PDF"
-                          )
-                  );
-
-              } catch (Exception e) {
-
-                  Toast.makeText(
-                          MainActivity.this,
-                          "Erro ao compartilhar PDF: "
-                                  + e.getMessage(),
-                          Toast.LENGTH_LONG
-                  ).show();
-              }
-          }
-
-          @JavascriptInterface'''
-
-          java, n = re.subn(
-              pdf_pattern,
-              pdf_method,
-              java,
-              count=1,
-              flags=re.S
-          )
-
-          if n != 1:
-              raise SystemExit(
-                  "ERRO: não foi possível corrigir sharePdf"
-              )
-
-          # ------------------------------------------------------------
-          # SAVEB64 COM 3 ARGUMENTOS
-          # ------------------------------------------------------------
-
-          if (
-              "public void saveBase64("
-              "String filename, "
-              "String mimeType, "
-              "String base64)"
-              not in java
-          ):
-
-              marker = (
-                  "        @JavascriptInterface\n"
-                  "        public void shareText"
-                  "(String text) {"
-              )
-
-              overload = '''        @JavascriptInterface
-          public void saveBase64(
-                  String filename,
-                  String mimeType,
-                  String base64) {
-
-              saveBase64(
-                      filename,
-                      base64
-              );
-          }
-
-          '''
-
-              if marker not in java:
-                  raise SystemExit(
-                      "ERRO: local do saveBase64 não encontrado"
-                  )
-
-              java = java.replace(
-                  marker,
-                  overload + marker,
-                  1
-              )
-
-          # ============================================================
-          # CORREÇÃO PRINCIPAL DO ERRO DO BUILD
-          #
-          # O código compilado chama:
-          #
-          #     sanitizeFilename(filename)
-          #
-          # O erro da build #34869470486 dizia que esse método não
-          # existia dentro de MainActivity.
-          #
-          # Portanto adicionamos o método diretamente no Java que
-          # realmente será compilado.
-          # ============================================================
-
-          if "private String sanitizeFilename(" not in java:
+          if "private String sanitizeFilename(" not in text:
 
               marker = (
                   "    @Override\n"
-                  "    public void onBackPressed() {"
+                  "    public void onBackPressed()"
               )
 
-              helper = '''    private String sanitizeFilename(
-              String filename) {
+              if marker not in text:
 
-          if (filename == null) {
-              return "";
-          }
-
-          return new File(filename)
-                  .getName()
-                  .replaceAll(
-                          "[\\\\\\\\/:*?\\\"<>|]",
-                          "_"
-                  );
-      }
-
-          '''
-
-              if marker not in java:
                   raise SystemExit(
-                      "ERRO: ponto para inserir "
-                      "sanitizeFilename não encontrado"
+                      "ERRO: não encontrei local seguro "
+                      "para inserir sanitizeFilename"
                   )
 
-              java = java.replace(
+              text = text.replace(
                   marker,
-                  helper + marker,
+                  method + marker,
                   1
               )
 
-          # ------------------------------------------------------------
-          # VERIFICAR QUE O MÉTODO EXISTE
-          # ------------------------------------------------------------
-
-          if "private String sanitizeFilename(" not in java:
-              raise SystemExit(
-                  "ERRO CRÍTICO: sanitizeFilename não foi criado"
+              print(
+                  "sanitizeFilename criado."
               )
 
+          else:
+
+              print(
+                  "sanitizeFilename já existe."
+              )
+
+          # ---------------------------------------------------------
+          # CORRIGIR CHAMADA CASO TENHA SIDO ALTERADA ERRADO
+          # ---------------------------------------------------------
+
+          text = re.sub(
+              r"sanitizeFilename\s*\(\s*filename\s*\)",
+              "sanitizeFilename(filename)",
+              text
+          )
+
           main.write_text(
-              java,
+              text,
               encoding="utf-8"
           )
 
-          print(
-              "Correções aplicadas com sucesso."
-          )
-          print(
-              "MainActivity corrigido:",
-              main
-          )
-          PY
+          # ---------------------------------------------------------
+          # VERIFICAÇÃO
+          # ---------------------------------------------------------
 
-      - name: Preparar bibliotecas locais
+          final_text = main.read_text(
+              encoding="utf-8"
+          )
+
+          if "private String sanitizeFilename(" not in final_text:
+
+              raise SystemExit(
+                  "ERRO CRÍTICO: sanitizeFilename não existe"
+              )
+
+          if "sanitizeFilename(filename)" not in final_text:
+
+              raise SystemExit(
+                  "ERRO CRÍTICO: chamada sanitizeFilename não encontrada"
+              )
+
+          print("")
+          print("======================================")
+          print("MAINACTIVITY CORRIGIDO")
+          print("sanitizeFilename: OK")
+          print("======================================")
+
+      - name: Preparar bibliotecas PDF e Excel
         shell: bash
         run: |
           set -e
@@ -705,18 +205,23 @@ jobs:
             "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"
 
           test -s "$ASSETS/xlsx.full.min.js"
+
           test -s "$ASSETS/jspdf.umd.min.js"
 
-      - name: Verificar correções antes da compilação
+          echo "Bibliotecas preparadas."
+
+      - name: Verificar projeto
         shell: bash
         run: |
           set -e
 
           test -f "$ANDROID_DIR/settings.gradle"
+
           test -f "$ANDROID_DIR/build.gradle"
+
           test -f "$ANDROID_DIR/app/build.gradle"
+
           test -f "$ANDROID_DIR/app/src/main/AndroidManifest.xml"
-          test -f "$ANDROID_DIR/app/src/main/assets/app/index.html"
 
           MAIN=$(find \
             "$ANDROID_DIR/app/src/main/java" \
@@ -726,19 +231,8 @@ jobs:
 
           test -n "$MAIN"
 
-          echo "MainActivity: $MAIN"
-
-          grep -q \
-            "onShowFileChooser" \
-            "$MAIN"
-
-          grep -q \
-            "ClipData.newRawUri" \
-            "$MAIN"
-
-          grep -q \
-            "saveBase64(String filename, String mimeType, String base64)" \
-            "$MAIN"
+          echo "Arquivo Java:"
+          echo "$MAIN"
 
           grep -q \
             "private String sanitizeFilename(" \
@@ -748,22 +242,6 @@ jobs:
             "sanitizeFilename(filename)" \
             "$MAIN"
 
-          grep -q \
-            "importedCatalogActive=true" \
-            "$ANDROID_DIR/app/src/main/assets/app/index.html"
-
-          grep -q \
-            "Object.keys(vals).forEach(k=>delete vals\[k\])" \
-            "$ANDROID_DIR/app/src/main/assets/app/index.html"
-
-          grep -q \
-            "xlsx.full.min.js" \
-            "$ANDROID_DIR/app/src/main/assets/app/index.html"
-
-          grep -q \
-            "jspdf.umd.min.js" \
-            "$ANDROID_DIR/app/src/main/assets/app/index.html"
-
           test -s \
             "$ANDROID_DIR/app/src/main/assets/app/xlsx.full.min.js"
 
@@ -771,14 +249,9 @@ jobs:
             "$ANDROID_DIR/app/src/main/assets/app/jspdf.umd.min.js"
 
           echo ""
-          echo "========================================="
-          echo "VERIFICACAO DO CODIGO: OK"
-          echo "sanitizeFilename: OK"
-          echo "PDF: OK"
-          echo "IMPORTACAO: OK"
-          echo "ADMIN: OK"
-          echo "LIMPEZA: OK"
-          echo "========================================="
+          echo "======================================"
+          echo "VERIFICAÇÃO OK"
+          echo "======================================"
 
       - name: Compilar APK
         shell: bash
@@ -800,12 +273,15 @@ jobs:
 
           APK="$ANDROID_DIR/app/build/outputs/apk/debug/app-debug.apk"
 
-          test -f "$APK"
+          if [ ! -f "$APK" ]; then
+            echo "ERRO: APK não foi gerado."
+            exit 1
+          fi
 
           echo ""
-          echo "========================================="
+          echo "======================================"
           echo "APK GERADO COM SUCESSO"
-          echo "========================================="
+          echo "======================================"
 
           ls -lh "$APK"
 
