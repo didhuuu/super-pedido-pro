@@ -32,14 +32,13 @@ jobs:
           set -e
 
           rm -rf projeto
-
           mkdir -p projeto
 
           test -f "Super-Pedido-Pro.zip"
 
           unzip -o "Super-Pedido-Pro.zip" -d projeto
 
-          echo "ZIP da V9 extraído."
+          echo "Projeto extraído."
 
       - name: Localizar projeto Android
         shell: bash
@@ -53,7 +52,7 @@ jobs:
             -quit)
 
           if [ -z "$SETTINGS" ]; then
-            echo "ERRO: settings.gradle não encontrado."
+            echo "ERRO: projeto Android não encontrado."
             exit 1
           fi
 
@@ -61,7 +60,7 @@ jobs:
 
           echo "ANDROID_DIR=$ANDROID_DIR" >> "$GITHUB_ENV"
 
-          echo "Projeto Android:"
+          echo "Projeto encontrado:"
           echo "$ANDROID_DIR"
 
       - name: Configurar AndroidX
@@ -84,280 +83,30 @@ jobs:
         run: |
           set -e
 
-          python3 <<'PY'
-          from pathlib import Path
-          import os
+          HTML="$ANDROID_DIR/app/src/main/assets/app/index.html"
 
-          root = Path(os.environ["ANDROID_DIR"])
+          if [ ! -f "$HTML" ]; then
+            echo "ERRO: index.html não encontrado."
+            exit 1
+          fi
 
-          html = root / "app" / "src" / "main" / "assets" / "app" / "index.html"
+          echo "Corrigindo PDF..."
 
-          if not html.exists():
-              raise SystemExit("ERRO: index.html não encontrado.")
+          python3 -c 'from pathlib import Path; p=Path("'"$HTML"'"); s=p.read_text(encoding="utf-8"); s=s.replace("orientation:'"'"'landscape'"'"'","orientation:'"'"'portrait'"'"'"); s=s.replace("orientation: '"'"'landscape'"'"'","orientation: '"'"'portrait'"'"'"); s=s.replace("orientation:\"landscape\"","orientation:\"portrait\""); s=s.replace("orientation: \"landscape\"","orientation: \"portrait\""); s=s.replace("const pageWidth=297,pageHeight=210","const pageWidth=210,pageHeight=297"); s=s.replace("const pageWidth = 297,pageHeight = 210","const pageWidth = 210,pageHeight = 297"); s=s.replace("pageWidth=297,pageHeight=210","pageWidth=210,pageHeight=297"); s=s.replace("pageWidth = 297,pageHeight = 210","pageWidth = 210,pageHeight = 297"); s=s.replace("doc.addPage('"'"'a4'"'"','"'"'landscape'"'"')","doc.addPage('"'"'a4'"'"','"'"'portrait'"'"')"); s=s.replace("doc.addPage(\"a4\",\"landscape\")","doc.addPage(\"a4\",\"portrait\")"); p.write_text(s,encoding="utf-8")'
 
-          text = html.read_text(encoding="utf-8")
+          echo "Corrigindo limpeza após envio do PDF..."
 
-          print("HTML encontrado.")
-          print("Aplicando correções da V9...")
+          python3 -c 'from pathlib import Path; p=Path("'"$HTML"'"); s=p.read_text(encoding="utf-8"); a="window.AndroidFileBridge.sharePdf(nomeArquivo,base64);"; b="clearPedido(rows);"+chr(10)+"      "+a; i=s.find(a); c=s.find("clearPedido(rows);"); already=(c!=-1 and c<i and i-c<100); s=s if already else (s[:i]+b+s[i+len(a):] if i!=-1 else s); p.write_text(s,encoding="utf-8")'
 
-          # =====================================================
-          # 1. PDF: LANDSCAPE -> PORTRAIT
-          # =====================================================
+          echo "Garantindo limpeza do localStorage..."
 
-          old = "orientation:'landscape'"
-          new = "orientation:'portrait'"
+          python3 -c 'from pathlib import Path; p=Path("'"$HTML"'"); s=p.read_text(encoding="utf-8"); pos=s.find("function clearPedido"); end=s.find("function sendWhatsApp",pos) if pos>=0 else -1; trecho=s[pos:end] if pos>=0 and end>=0 else ""; faltas=["pedido_compras_vals","pedido_compras_extras","pedido_compras_validade_curta"]; ins=""; [ins:=ins+chr(10)+"  localStorage.removeItem("+repr(k)+");" for k in faltas if k not in trecho]; ponto=trecho.find("render();"); s=s[:pos]+(trecho[:ponto]+ins+chr(10)+"  "+trecho[ponto:] if ins and ponto>=0 else trecho)+s[end:] if ins and pos>=0 and end>=0 and ponto>=0 else s; p.write_text(s,encoding="utf-8")'
 
-          if old in text:
-              text = text.replace(old, new)
-              print("PDF landscape corrigido.")
+          echo "Corrigindo bibliotecas..."
 
-          old = "orientation: 'landscape'"
-          new = "orientation: 'portrait'"
+          python3 -c 'from pathlib import Path; p=Path("'"$HTML"'"); s=p.read_text(encoding="utf-8"); s=s.replace("https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js","xlsx.full.min.js"); s=s.replace("https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js","jspdf.umd.min.js"); p.write_text(s,encoding="utf-8")'
 
-          if old in text:
-              text = text.replace(old, new)
-              print("PDF landscape corrigido.")
-
-          # =====================================================
-          # 2. TAMANHO A4 RETRATO
-          # =====================================================
-
-          text = text.replace(
-              "const pageWidth=297,pageHeight=210",
-              "const pageWidth=210,pageHeight=297"
-          )
-
-          text = text.replace(
-              "const pageWidth = 297,pageHeight = 210",
-              "const pageWidth = 210,pageHeight = 297"
-          )
-
-          text = text.replace(
-              "pageWidth=297,pageHeight=210",
-              "pageWidth=210,pageHeight=297"
-          )
-
-          # =====================================================
-          # 3. GARANTIR QUE O PDF NÃO USE LANDSCAPE
-          # =====================================================
-
-          text = text.replace(
-              "doc.addPage('a4','landscape')",
-              "doc.addPage('a4','portrait')"
-          )
-
-          text = text.replace(
-              "doc.addPage(\"a4\",\"landscape\")",
-              "doc.addPage(\"a4\",\"portrait\")"
-          )
-
-          # =====================================================
-          # 4. CORRIGIR ENVIO DO PDF
-          #
-          # O problema da V9 era:
-          #
-          # sharePdf(...)
-          # return
-          #
-          # sem executar clearPedido().
-          #
-          # Agora:
-          #
-          # clearPedido(...)
-          # sharePdf(...)
-          # return
-          # =====================================================
-
-          alvo = """window.AndroidFileBridge.sharePdf(nomeArquivo,base64);
-      return;"""
-
-          substituto = """clearPedido(rows);
-      window.AndroidFileBridge.sharePdf(nomeArquivo,base64);
-      return;"""
-
-          if alvo in text:
-
-              text = text.replace(
-                  alvo,
-                  substituto,
-                  1
-              )
-
-              print("Limpeza após PDF corrigida.")
-
-          else:
-
-              alvo2 = """window.AndroidFileBridge.sharePdf(nomeArquivo,base64);
-        return;"""
-
-              substituto2 = """clearPedido(rows);
-        window.AndroidFileBridge.sharePdf(nomeArquivo,base64);
-        return;"""
-
-              if alvo2 in text:
-
-                  text = text.replace(
-                      alvo2,
-                      substituto2,
-                      1
-                  )
-
-                  print("Limpeza após PDF corrigida.")
-
-              else:
-
-                  print(
-                      "AVISO: chamada sharePdf específica não encontrada."
-                  )
-
-          # =====================================================
-          # 5. GARANTIR QUE A FUNÇÃO clearPedido LIMPE O STORAGE
-          # =====================================================
-
-          # Não substituímos a função inteira.
-          # Apenas garantimos que as três chaves do pedido
-          # sejam removidas quando clearPedido for executado.
-
-          marcador = "function clearPedido"
-
-          pos = text.find(marcador)
-
-          if pos == -1:
-
-              print(
-                  "AVISO: clearPedido não encontrado."
-              )
-
-          else:
-
-              print(
-                  "clearPedido encontrado."
-              )
-
-              # =================================================
-              # Se a versão já possui removeItem, preservamos.
-              # Caso não possua, inserimos antes de render().
-              # =================================================
-
-              chaves = [
-                  "pedido_compras_vals",
-                  "pedido_compras_extras",
-                  "pedido_compras_validade_curta"
-              ]
-
-              falta = [
-                  chave
-                  for chave in chaves
-                  if chave not in text[pos:]
-              ]
-
-              if falta:
-
-                  fim_funcao = text.find(
-                      "function sendWhatsApp",
-                      pos
-                  )
-
-                  if fim_funcao == -1:
-                      fim_funcao = len(text)
-
-                  trecho = text[pos:fim_funcao]
-
-                  insercao = ""
-
-                  for chave in falta:
-
-                      insercao += (
-                          "\n  localStorage.removeItem("
-                          + repr(chave)
-                          + ");"
-                      )
-
-                  ponto = trecho.find("render();")
-
-                  if ponto != -1:
-
-                      trecho = (
-                          trecho[:ponto]
-                          + insercao
-                          + "\n  "
-                          + trecho[ponto:]
-                      )
-
-                      text = (
-                          text[:pos]
-                          + trecho
-                          + text[fim_funcao:]
-                      )
-
-                      print(
-                          "Limpeza localStorage reforçada."
-                      )
-
-          # =====================================================
-          # 6. BIBLIOTECAS LOCAIS
-          # =====================================================
-
-          text = text.replace(
-              "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js",
-              "xlsx.full.min.js"
-          )
-
-          text = text.replace(
-              "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js",
-              "jspdf.umd.min.js"
-          )
-
-          # =====================================================
-          # 7. GRAVAR
-          # =====================================================
-
-          html.write_text(
-              text,
-              encoding="utf-8"
-          )
-
-          # =====================================================
-          # 8. VERIFICAÇÃO
-          # =====================================================
-
-          if "orientation:'landscape'" in text:
-              raise SystemExit(
-                  "ERRO: landscape ainda existe no HTML."
-              )
-
-          if "orientation: 'landscape'" in text:
-              raise SystemExit(
-                  "ERRO: landscape ainda existe no HTML."
-              )
-
-          if "orientation:'portrait'" not in text:
-              raise SystemExit(
-                  "ERRO: configuração portrait não encontrada."
-              )
-
-          if "pageWidth=210" not in text:
-              print(
-                  "AVISO: pageWidth=210 não localizado."
-              )
-
-          if "pageHeight=297" not in text:
-              print(
-                  "AVISO: pageHeight=297 não localizado."
-              )
-
-          print("========================================")
-          print("CORREÇÃO CONCLUÍDA")
-          print("PDF: A4 RETRATO")
-          print("210 x 297 mm")
-          print("Quantidade: limpeza ativada")
-          print("Estoque: limpeza ativada")
-          print("Cadastro: preservado")
-          print("Histórico: preservado")
-          print("MainActivity: não alterada")
-          print("========================================")
-
-          PY
+          echo "Correções concluídas."
 
       - name: Preparar bibliotecas locais
         shell: bash
@@ -368,20 +117,15 @@ jobs:
 
           mkdir -p "$ASSETS"
 
-          curl -L \
-            --fail \
-            --retry 3 \
+          curl -L --fail --retry 3 \
             -o "$ASSETS/xlsx.full.min.js" \
             "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"
 
-          curl -L \
-            --fail \
-            --retry 3 \
+          curl -L --fail --retry 3 \
             -o "$ASSETS/jspdf.umd.min.js" \
             "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"
 
           test -s "$ASSETS/xlsx.full.min.js"
-
           test -s "$ASSETS/jspdf.umd.min.js"
 
           echo "Bibliotecas OK."
@@ -393,13 +137,7 @@ jobs:
 
           HTML="$ANDROID_DIR/app/src/main/assets/app/index.html"
 
-          echo "Verificando correções..."
-
-          test -f "$HTML"
-
-          grep -q "async function openPDF" "$HTML"
-
-          grep -q "function clearPedido" "$HTML"
+          echo "Verificando PDF..."
 
           grep -q "orientation:'portrait'" "$HTML"
 
@@ -407,25 +145,29 @@ jobs:
 
           grep -q "pageHeight=297" "$HTML"
 
+          echo "Verificando limpeza..."
+
+          grep -q "function clearPedido" "$HTML"
+
           grep -q "pedido_compras_vals" "$HTML"
 
           grep -q "pedido_compras_extras" "$HTML"
 
           grep -q "pedido_compras_validade_curta" "$HTML"
 
+          echo "Verificando ausência de landscape..."
+
           if grep -q "orientation:'landscape'" "$HTML"; then
-            echo "ERRO: landscape encontrado."
+            echo "ERRO: ainda existe PDF landscape."
             exit 1
           fi
 
           if grep -q "orientation: 'landscape'" "$HTML"; then
-            echo "ERRO: landscape encontrado."
+            echo "ERRO: ainda existe PDF landscape."
             exit 1
           fi
 
-          echo "========================================"
-          echo "VERIFICAÇÃO APROVADA"
-          echo "========================================"
+          echo "Verificação concluída."
 
       - name: Compilar APK
         shell: bash
@@ -448,7 +190,7 @@ jobs:
           APK="$ANDROID_DIR/app/build/outputs/apk/debug/app-debug.apk"
 
           if [ ! -f "$APK" ]; then
-            echo "ERRO: APK não encontrado."
+            echo "ERRO: APK não foi gerado."
             exit 1
           fi
 
