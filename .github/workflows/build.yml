@@ -11,6 +11,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+
       - name: Baixar projeto
         uses: actions/checkout@v4
 
@@ -29,9 +30,13 @@ jobs:
         shell: bash
         run: |
           set -e
+
           rm -rf projeto
+
           test -f "Super-Pedido-Pro.zip"
+
           mkdir -p projeto
+
           unzip -o "Super-Pedido-Pro.zip" -d projeto
 
       - name: Localizar projeto Android
@@ -45,11 +50,14 @@ jobs:
             -print \
             -quit | xargs -r dirname)
 
-          test -n "$ANDROID_DIR"
+          if [ -z "$ANDROID_DIR" ]; then
+            echo "ERRO: projeto Android não encontrado."
+            exit 1
+          fi
 
           echo "ANDROID_DIR=$ANDROID_DIR" >> "$GITHUB_ENV"
 
-          echo "Projeto encontrado em:"
+          echo "Projeto encontrado:"
           echo "$ANDROID_DIR"
 
       - name: Configurar AndroidX
@@ -72,498 +80,17 @@ jobs:
         run: |
           set -e
 
-          cat > /tmp/super_pedido_pdf.js <<'JSCODE'
-          async function openPDF(){
-
-            const rows =
-              finalizedRows.length
-                ? finalizedRows
-                : getRows();
-
-            if(!rows.length){
-              alert('Nenhum item foi selecionado.');
-              return;
-            }
-
-            try{
-
-              const jsPDF =
-                window.jspdf &&
-                window.jspdf.jsPDF;
-
-              if(!jsPDF){
-                throw new Error(
-                  'Biblioteca PDF não carregada.'
-                );
-              }
-
-              const doc =
-                new jsPDF({
-                  orientation:'landscape',
-                  unit:'mm',
-                  format:'a4'
-                });
-
-              const pageWidth = 297;
-              const pageHeight = 210;
-              const margem = 10;
-
-              const colCodigo = 30;
-              const colProduto = 167;
-              const colEstoque = 35;
-              const colPedido = 35;
-
-              const xCodigo = margem;
-              const xProduto =
-                xCodigo + colCodigo;
-
-              const xEstoque =
-                xProduto + colProduto;
-
-              const xPedido =
-                xEstoque + colEstoque;
-
-              const tabelaLargura =
-                colCodigo +
-                colProduto +
-                colEstoque +
-                colPedido;
-
-              const alturaCabecalho = 8;
-              const alturaLinha = 7;
-
-              let y = 12;
-
-              const data =
-                new Date().toLocaleDateString(
-                  'pt-BR',
-                  {
-                    day:'2-digit',
-                    month:'2-digit',
-                    year:'numeric'
-                  }
-                );
-
-              function cabecalhoPagina(){
-
-                doc.setFont(
-                  'helvetica',
-                  'bold'
-                );
-
-                doc.setFontSize(16);
-
-                doc.text(
-                  'RELATÓRIO DE PEDIDO',
-                  pageWidth / 2,
-                  y,
-                  {align:'center'}
-                );
-
-                y += 8;
-
-                doc.setFont(
-                  'helvetica',
-                  'normal'
-                );
-
-                doc.setFontSize(9);
-
-                doc.text(
-                  'Data: ' + data,
-                  margem,
-                  y
-                );
-
-                y += 7;
-              }
-
-              function novaPagina(){
-
-                doc.addPage();
-
-                y = 12;
-
-                cabecalhoPagina();
-              }
-
-              function desenharCabecalho(){
-
-                if(
-                  y + alturaCabecalho >
-                  pageHeight - 10
-                ){
-                  novaPagina();
-                }
-
-                doc.setFont(
-                  'helvetica',
-                  'bold'
-                );
-
-                doc.setFontSize(8);
-
-                doc.rect(
-                  xCodigo,
-                  y,
-                  colCodigo,
-                  alturaCabecalho
-                );
-
-                doc.rect(
-                  xProduto,
-                  y,
-                  colProduto,
-                  alturaCabecalho
-                );
-
-                doc.rect(
-                  xEstoque,
-                  y,
-                  colEstoque,
-                  alturaCabecalho
-                );
-
-                doc.rect(
-                  xPedido,
-                  y,
-                  colPedido,
-                  alturaCabecalho
-                );
-
-                doc.text(
-                  'CÓDIGO',
-                  xCodigo + colCodigo / 2,
-                  y + 5.2,
-                  {align:'center'}
-                );
-
-                doc.text(
-                  'NOME DO PRODUTO',
-                  xProduto + 3,
-                  y + 5.2
-                );
-
-                doc.text(
-                  'ESTOQUE',
-                  xEstoque + colEstoque / 2,
-                  y + 5.2,
-                  {align:'center'}
-                );
-
-                doc.text(
-                  'PEDIDO',
-                  xPedido + colPedido / 2,
-                  y + 5.2,
-                  {align:'center'}
-                );
-
-                y += alturaCabecalho;
-              }
-
-              function nomeProduto(nome){
-
-                const original =
-                  String(nome || '');
-
-                let valor = original;
-
-                while(
-                  doc.getTextWidth(valor) >
-                    colProduto - 6 &&
-                  valor.length > 3
-                ){
-                  valor =
-                    valor.substring(
-                      0,
-                      valor.length - 1
-                    );
-                }
-
-                if(valor !== original){
-
-                  valor =
-                    valor.substring(
-                      0,
-                      Math.max(
-                        1,
-                        valor.length - 3
-                      )
-                    ) + '...';
-                }
-
-                return valor;
-              }
-
-              function desenharLinha(item){
-
-                if(
-                  y + alturaLinha >
-                  pageHeight - 10
-                ){
-
-                  novaPagina();
-
-                  desenharCabecalho();
-                }
-
-                doc.setFont(
-                  'helvetica',
-                  'normal'
-                );
-
-                doc.setFontSize(8);
-
-                doc.rect(
-                  xCodigo,
-                  y,
-                  colCodigo,
-                  alturaLinha
-                );
-
-                doc.rect(
-                  xProduto,
-                  y,
-                  colProduto,
-                  alturaLinha
-                );
-
-                doc.rect(
-                  xEstoque,
-                  y,
-                  colEstoque,
-                  alturaLinha
-                );
-
-                doc.rect(
-                  xPedido,
-                  y,
-                  colPedido,
-                  alturaLinha
-                );
-
-                doc.text(
-                  String(item.code || '-'),
-                  xCodigo + 3,
-                  y + 4.8
-                );
-
-                doc.text(
-                  nomeProduto(item.name),
-                  xProduto + 3,
-                  y + 4.8
-                );
-
-                doc.text(
-                  String(item.stock ?? 0),
-                  xEstoque + colEstoque / 2,
-                  y + 4.8,
-                  {align:'center'}
-                );
-
-                doc.text(
-                  String(item.order ?? 0),
-                  xPedido + colPedido / 2,
-                  y + 4.8,
-                  {align:'center'}
-                );
-
-                y += alturaLinha;
-              }
-
-              cabecalhoPagina();
-
-              const grupos =
-                groupRows(rows);
-
-              for(
-                const [categoria,items]
-                of Object.entries(grupos)
-              ){
-
-                if(
-                  y + 25 >
-                  pageHeight - 10
-                ){
-                  novaPagina();
-                }
-
-                y += 5;
-
-                doc.setFont(
-                  'helvetica',
-                  'bold'
-                );
-
-                doc.setFontSize(12);
-
-                doc.text(
-                  String(
-                    categoria || ''
-                  ).toUpperCase(),
-                  margem,
-                  y
-                );
-
-                y += 4;
-
-                desenharCabecalho();
-
-                for(
-                  const item of items
-                ){
-                  desenharLinha(item);
-                }
-              }
-
-              if(
-                typeof generalObservation !==
-                  'undefined' &&
-                generalObservation
-              ){
-
-                if(
-                  y + 20 >
-                  pageHeight - 10
-                ){
-                  novaPagina();
-                }
-
-                y += 7;
-
-                doc.setFont(
-                  'helvetica',
-                  'bold'
-                );
-
-                doc.setFontSize(9);
-
-                doc.text(
-                  'OBSERVAÇÃO GERAL:',
-                  margem,
-                  y
-                );
-
-                y += 5;
-
-                doc.setFont(
-                  'helvetica',
-                  'normal'
-                );
-
-                doc.setFontSize(8);
-
-                const linhas =
-                  doc.splitTextToSize(
-                    String(
-                      generalObservation
-                    ),
-                    tabelaLargura
-                  );
-
-                doc.text(
-                  linhas,
-                  margem,
-                  y
-                );
-              }
-
-              const totalPaginas =
-                doc.getNumberOfPages();
-
-              for(
-                let pagina = 1;
-                pagina <= totalPaginas;
-                pagina++
-              ){
-
-                doc.setPage(pagina);
-
-                doc.setFont(
-                  'helvetica',
-                  'normal'
-                );
-
-                doc.setFontSize(7);
-
-                doc.text(
-                  'Super Pedido Pro',
-                  margem,
-                  pageHeight - 5
-                );
-
-                doc.text(
-                  'Página ' +
-                    pagina +
-                    ' de ' +
-                    totalPaginas,
-                  pageWidth - margem,
-                  pageHeight - 5,
-                  {align:'right'}
-                );
-              }
-
-              const base64 =
-                doc
-                  .output('datauristring')
-                  .split(',')[1];
-
-              const nomeArquivo =
-                'relatorio-pedido-' +
-                data.replace(/\//g,'-') +
-                '.pdf';
-
-              if(
-                window.AndroidFileBridge &&
-                typeof
-                  window.AndroidFileBridge.sharePdf ===
-                    'function'
-              ){
-
-                window.AndroidFileBridge.sharePdf(
-                  nomeArquivo,
-                  base64
-                );
-
-                return;
-              }
-
-              doc.save(nomeArquivo);
-
-            }catch(error){
-
-              console.error(
-                'Erro ao gerar PDF:',
-                error
-              );
-
-              alert(
-                'Não foi possível gerar o PDF: ' +
-                error.message
-              );
-            }
-          }
-          JSCODE
-
           python3 - <<'PY'
           from pathlib import Path
-          import re
           import os
+          import re
 
-          root = Path(
-              os.environ["ANDROID_DIR"]
-          )
+          root = Path(os.environ["ANDROID_DIR"])
 
-          html = (
-              root /
-              "app/src/main/assets/app/index.html"
-          )
+          html = root / "app/src/main/assets/app/index.html"
 
           main = next(
-              (
-                  root /
-                  "app/src/main/java"
-              ).rglob("MainActivity.java"),
+              (root / "app/src/main/java").rglob("MainActivity.java"),
               None
           )
 
@@ -581,7 +108,9 @@ jobs:
               encoding="utf-8"
           )
 
-          # Limpeza do pedido.
+          # ============================================================
+          # 1. LIMPAR PEDIDO APÓS ENVIO
+          # ============================================================
 
           new_clear = '''function clearPedido(){
             Object.keys(vals).forEach(k=>delete vals[k]);
@@ -597,7 +126,7 @@ jobs:
             closeConference();
           }'''
 
-          text,n = re.subn(
+          text, n = re.subn(
               r"function clearPedido\(\)\{.*?\n\}",
               new_clear,
               text,
@@ -610,15 +139,16 @@ jobs:
                   "ERRO: clearPedido não encontrado"
               )
 
-          # Categoria inicial.
+          # ============================================================
+          # 2. SELECIONAR PRIMEIRA CATEGORIA
+          # ============================================================
 
           old_start = (
               "load();loadFeatures();"
               "APP_DATA=buildAppData();"
               "cats=Object.keys(APP_DATA);"
-              "if(!cats.length && !importedCatalogActive){"
-              "APP_DATA=DATA;"
-              "cats=Object.keys(DATA)}"
+              "if(!cats.length && !importedCatalogActive)"
+              "{APP_DATA=DATA;cats=Object.keys(DATA)}"
               "tabs();render();updateBadge();"
               "renderValidadeCurta();"
           )
@@ -627,9 +157,8 @@ jobs:
               "load();loadFeatures();"
               "APP_DATA=buildAppData();"
               "cats=Object.keys(APP_DATA);"
-              "if(!cats.length && !importedCatalogActive){"
-              "APP_DATA=DATA;"
-              "cats=Object.keys(DATA)}"
+              "if(!cats.length && !importedCatalogActive)"
+              "{APP_DATA=DATA;cats=Object.keys(DATA)}"
               "if(!current || !APP_DATA[current])"
               "current=cats[0]||'';"
               "tabs();render();updateBadge();"
@@ -637,14 +166,15 @@ jobs:
           )
 
           if old_start in text:
-
               text = text.replace(
                   old_start,
                   new_start,
                   1
               )
 
-          # Bibliotecas locais.
+          # ============================================================
+          # 3. BIBLIOTECAS LOCAIS
+          # ============================================================
 
           text = text.replace(
               "https://cdnjs.cloudflare.com/ajax/libs/"
@@ -658,44 +188,533 @@ jobs:
               "jspdf.umd.min.js"
           )
 
-          # PDF.
+          # ============================================================
+          # 4. NOVO PDF
+          #
+          # Não substituímos a função antiga por regex.
+          # Adicionamos uma nova versão no final do HTML.
+          # Isso evita quebrar o JavaScript existente.
+          # ============================================================
 
-          pdf_code = Path(
-              "/tmp/super_pedido_pdf.js"
-          ).read_text(
-              encoding="utf-8"
-          ).strip()
+          pdf_code = r'''
+          <script>
+          (function(){
 
-          pdf_pattern = (
-              r"(?:async\s+)?function\s+openPDF"
-              r"\s*\([^)]*\)\s*\{.*?\}\s*"
-              r"(?=function\s+sendWhatsApp\()"
-          )
+            window.openPDF = async function(){
 
-          text,pdf_n = re.subn(
-              pdf_pattern,
-              pdf_code + "\n",
-              text,
-              count=1,
-              flags=re.S
-          )
+              const rows =
+                finalizedRows.length
+                  ? finalizedRows
+                  : getRows();
 
-          if pdf_n != 1:
-              raise SystemExit(
-                  "ERRO: função openPDF não encontrada"
+              if(!rows.length){
+                alert('Nenhum item foi selecionado.');
+                return;
+              }
+
+              try{
+
+                if(
+                  !window.jspdf ||
+                  !window.jspdf.jsPDF
+                ){
+                  throw new Error(
+                    'Biblioteca PDF não carregada.'
+                  );
+                }
+
+                const jsPDF =
+                  window.jspdf.jsPDF;
+
+                const doc =
+                  new jsPDF({
+                    orientation:'landscape',
+                    unit:'mm',
+                    format:'a4'
+                  });
+
+                const pageWidth = 297;
+                const pageHeight = 210;
+                const margem = 10;
+
+                const colCodigo = 30;
+                const colProduto = 167;
+                const colEstoque = 35;
+                const colPedido = 35;
+
+                const xCodigo = margem;
+                const xProduto =
+                  xCodigo + colCodigo;
+
+                const xEstoque =
+                  xProduto + colProduto;
+
+                const xPedido =
+                  xEstoque + colEstoque;
+
+                const alturaCabecalho = 8;
+                const alturaLinha = 7;
+
+                let y = 12;
+
+                const data =
+                  new Date().toLocaleDateString(
+                    'pt-BR',
+                    {
+                      day:'2-digit',
+                      month:'2-digit',
+                      year:'numeric'
+                    }
+                  );
+
+                function tituloPagina(){
+
+                  doc.setFont(
+                    'helvetica',
+                    'bold'
+                  );
+
+                  doc.setFontSize(16);
+
+                  doc.text(
+                    'RELATÓRIO DE PEDIDO',
+                    pageWidth / 2,
+                    y,
+                    {
+                      align:'center'
+                    }
+                  );
+
+                  y += 8;
+
+                  doc.setFont(
+                    'helvetica',
+                    'normal'
+                  );
+
+                  doc.setFontSize(9);
+
+                  doc.text(
+                    'Data: ' + data,
+                    margem,
+                    y
+                  );
+
+                  y += 7;
+                }
+
+                function novaPagina(){
+
+                  doc.addPage();
+
+                  y = 12;
+
+                  tituloPagina();
+                }
+
+                function cabecalho(){
+
+                  if(
+                    y + alturaCabecalho >
+                    pageHeight - 10
+                  ){
+                    novaPagina();
+                  }
+
+                  doc.setFont(
+                    'helvetica',
+                    'bold'
+                  );
+
+                  doc.setFontSize(8);
+
+                  doc.rect(
+                    xCodigo,
+                    y,
+                    colCodigo,
+                    alturaCabecalho
+                  );
+
+                  doc.rect(
+                    xProduto,
+                    y,
+                    colProduto,
+                    alturaCabecalho
+                  );
+
+                  doc.rect(
+                    xEstoque,
+                    y,
+                    colEstoque,
+                    alturaCabecalho
+                  );
+
+                  doc.rect(
+                    xPedido,
+                    y,
+                    colPedido,
+                    alturaCabecalho
+                  );
+
+                  doc.text(
+                    'CÓDIGO',
+                    xCodigo + colCodigo / 2,
+                    y + 5.2,
+                    {
+                      align:'center'
+                    }
+                  );
+
+                  doc.text(
+                    'NOME DO PRODUTO',
+                    xProduto + 3,
+                    y + 5.2
+                  );
+
+                  doc.text(
+                    'ESTOQUE',
+                    xEstoque + colEstoque / 2,
+                    y + 5.2,
+                    {
+                      align:'center'
+                    }
+                  );
+
+                  doc.text(
+                    'PEDIDO',
+                    xPedido + colPedido / 2,
+                    y + 5.2,
+                    {
+                      align:'center'
+                    }
+                  );
+
+                  y += alturaCabecalho;
+                }
+
+                function nomeProduto(nome){
+
+                  const original =
+                    String(nome || '');
+
+                  let valor = original;
+
+                  while(
+                    doc.getTextWidth(valor) >
+                      colProduto - 6 &&
+                    valor.length > 3
+                  ){
+                    valor =
+                      valor.substring(
+                        0,
+                        valor.length - 1
+                      );
+                  }
+
+                  if(
+                    valor !== original
+                  ){
+                    valor =
+                      valor.substring(
+                        0,
+                        Math.max(
+                          1,
+                          valor.length - 3
+                        )
+                      ) + '...';
+                  }
+
+                  return valor;
+                }
+
+                function linha(item){
+
+                  if(
+                    y + alturaLinha >
+                    pageHeight - 10
+                  ){
+
+                    novaPagina();
+
+                    cabecalho();
+                  }
+
+                  doc.setFont(
+                    'helvetica',
+                    'normal'
+                  );
+
+                  doc.setFontSize(8);
+
+                  doc.rect(
+                    xCodigo,
+                    y,
+                    colCodigo,
+                    alturaLinha
+                  );
+
+                  doc.rect(
+                    xProduto,
+                    y,
+                    colProduto,
+                    alturaLinha
+                  );
+
+                  doc.rect(
+                    xEstoque,
+                    y,
+                    colEstoque,
+                    alturaLinha
+                  );
+
+                  doc.rect(
+                    xPedido,
+                    y,
+                    colPedido,
+                    alturaLinha
+                  );
+
+                  doc.text(
+                    String(item.code || '-'),
+                    xCodigo + 3,
+                    y + 4.8
+                  );
+
+                  doc.text(
+                    nomeProduto(item.name),
+                    xProduto + 3,
+                    y + 4.8
+                  );
+
+                  doc.text(
+                    String(item.stock ?? 0),
+                    xEstoque + colEstoque / 2,
+                    y + 4.8,
+                    {
+                      align:'center'
+                    }
+                  );
+
+                  doc.text(
+                    String(item.order ?? 0),
+                    xPedido + colPedido / 2,
+                    y + 4.8,
+                    {
+                      align:'center'
+                    }
+                  );
+
+                  y += alturaLinha;
+                }
+
+                tituloPagina();
+
+                const grupos =
+                  groupRows(rows);
+
+                for(
+                  const [categoria,items]
+                  of Object.entries(grupos)
+                ){
+
+                  if(
+                    y + 25 >
+                    pageHeight - 10
+                  ){
+                    novaPagina();
+                  }
+
+                  y += 5;
+
+                  doc.setFont(
+                    'helvetica',
+                    'bold'
+                  );
+
+                  doc.setFontSize(12);
+
+                  doc.text(
+                    String(
+                      categoria || ''
+                    ).toUpperCase(),
+                    margem,
+                    y
+                  );
+
+                  y += 4;
+
+                  cabecalho();
+
+                  for(
+                    const item of items
+                  ){
+                    linha(item);
+                  }
+                }
+
+                if(
+                  typeof generalObservation !==
+                    'undefined' &&
+                  generalObservation
+                ){
+
+                  if(
+                    y + 20 >
+                    pageHeight - 10
+                  ){
+                    novaPagina();
+                  }
+
+                  y += 7;
+
+                  doc.setFont(
+                    'helvetica',
+                    'bold'
+                  );
+
+                  doc.setFontSize(9);
+
+                  doc.text(
+                    'OBSERVAÇÃO GERAL:',
+                    margem,
+                    y
+                  );
+
+                  y += 5;
+
+                  doc.setFont(
+                    'helvetica',
+                    'normal'
+                  );
+
+                  doc.setFontSize(8);
+
+                  const linhas =
+                    doc.splitTextToSize(
+                      String(
+                        generalObservation
+                      ),
+                      267
+                    );
+
+                  doc.text(
+                    linhas,
+                    margem,
+                    y
+                  );
+                }
+
+                const total =
+                  doc.getNumberOfPages();
+
+                for(
+                  let pagina = 1;
+                  pagina <= total;
+                  pagina++
+                ){
+
+                  doc.setPage(pagina);
+
+                  doc.setFont(
+                    'helvetica',
+                    'normal'
+                  );
+
+                  doc.setFontSize(7);
+
+                  doc.text(
+                    'Super Pedido Pro',
+                    margem,
+                    pageHeight - 5
+                  );
+
+                  doc.text(
+                    'Página ' +
+                      pagina +
+                      ' de ' +
+                      total,
+                    pageWidth - margem,
+                    pageHeight - 5,
+                    {
+                      align:'right'
+                    }
+                  );
+                }
+
+                const base64 =
+                  doc
+                    .output('datauristring')
+                    .split(',')[1];
+
+                const nomeArquivo =
+                  'relatorio-pedido-' +
+                  data.replace(/\//g,'-') +
+                  '.pdf';
+
+                if(
+                  window.AndroidFileBridge &&
+                  typeof
+                    window.AndroidFileBridge.sharePdf ===
+                      'function'
+                ){
+
+                  window.AndroidFileBridge.sharePdf(
+                    nomeArquivo,
+                    base64
+                  );
+
+                }else{
+
+                  doc.save(
+                    nomeArquivo
+                  );
+                }
+
+              }catch(error){
+
+                console.error(
+                  'Erro ao gerar PDF:',
+                  error
+                );
+
+                alert(
+                  'Não foi possível gerar o PDF: ' +
+                  error.message
+                );
+              }
+            };
+
+            const botao =
+              document.getElementById(
+                'btnWhatsPdf'
+              );
+
+            if(botao){
+              botao.onclick =
+                window.openPDF;
+            }
+
+          })();
+          </script>
+          '''
+
+          if "</body>" in text:
+              text = text.replace(
+                  "</body>",
+                  pdf_code + "\n</body>",
+                  1
               )
-
-          text = text.replace(
-              "document.getElementById('btnWhatsPdf').onclick=()=>openPDF(true);",
-              "document.getElementById('btnWhatsPdf').onclick=openPDF;"
-          )
+          else:
+              text += "\n" + pdf_code
 
           html.write_text(
               text,
               encoding="utf-8"
           )
 
-          # MainActivity.
+          # ============================================================
+          # 5. MAIN ACTIVITY
+          # ============================================================
 
           java = main.read_text(
               encoding="utf-8"
@@ -705,7 +724,6 @@ jobs:
               "import android.content.ClipData;"
               not in java
           ):
-
               java = java.replace(
                   "import android.content.Intent;\n",
                   "import android.content.ClipData;\n"
@@ -717,7 +735,6 @@ jobs:
               "import android.webkit.ValueCallback;"
               not in java
           ):
-
               java = java.replace(
                   "import android.webkit.WebView;\n",
                   "import android.webkit.ValueCallback;\n"
@@ -729,7 +746,6 @@ jobs:
               "import android.webkit.WebChromeClient;"
               not in java
           ):
-
               java = java.replace(
                   "import android.webkit.WebView;\n",
                   "import android.webkit.WebChromeClient;\n"
@@ -749,8 +765,6 @@ jobs:
                   "    private static final int FILE_CHOOSER_REQUEST = 1001;\n",
                   1
               )
-
-          # Seletor de arquivos.
 
           if "onShowFileChooser" not in java:
 
@@ -796,7 +810,7 @@ jobs:
 
                       Toast.makeText(
                           MainActivity.this,
-                          "Não foi possível abrir o seletor de arquivos.",
+                          "Não foi possível abrir os arquivos.",
                           Toast.LENGTH_LONG
                       ).show();
 
@@ -813,9 +827,10 @@ jobs:
                       1
                   )
 
-          # Resultado do seletor.
-
-          if "protected void onActivityResult(" not in java:
+          if (
+              "protected void onActivityResult("
+              not in java
+          ):
 
               marker = (
                   "    public class AndroidFileBridge {\n"
@@ -894,9 +909,11 @@ jobs:
                   1
               )
 
-          # PDF Android.
+          # ============================================================
+          # 6. COMPARTILHAMENTO DO PDF
+          # ============================================================
 
-          pdf_pattern_java = (
+          pdf_pattern = (
               r"        @JavascriptInterface\n"
               r"        public void sharePdf"
               r"\(String filename, String base64\)"
@@ -1026,7 +1043,7 @@ jobs:
                   startActivity(
                       Intent.createChooser(
                           intent,
-                          "Enviar PDF"
+                          "Enviar pedido em PDF"
                       )
                   );
 
@@ -1044,7 +1061,7 @@ jobs:
           @JavascriptInterface'''
 
           java,n = re.subn(
-              pdf_pattern_java,
+              pdf_pattern,
               pdf_method,
               java,
               count=1,
@@ -1053,80 +1070,8 @@ jobs:
 
           if n != 1:
               raise SystemExit(
-                  "ERRO: sharePdf não encontrado"
+                  "ERRO: função sharePdf não encontrada"
               )
-
-          # Compatibilidade saveBase64.
-
-          if (
-              "public void saveBase64("
-              "String filename, "
-              "String mimeType, "
-              "String base64)"
-              not in java
-          ):
-
-              marker = (
-                  "        @JavascriptInterface\n"
-                  "        public void shareText(String text) {"
-              )
-
-              overload = '''        @JavascriptInterface
-          public void saveBase64(
-                  String filename,
-                  String mimeType,
-                  String base64) {
-
-              saveBase64(
-                  filename,
-                  base64
-              );
-          }
-
-          '''
-
-              if marker in java:
-
-                  java = java.replace(
-                      marker,
-                      overload + marker,
-                      1
-                  )
-
-          # Sanitização.
-
-          if "private String sanitizeFilename(" not in java:
-
-              marker = (
-                  "    @Override\n"
-                  "    public void onBackPressed() {"
-              )
-
-              helper = '''    private String sanitizeFilename(
-              String filename
-          ){
-
-              if(filename == null){
-                  return "";
-              }
-
-              return new File(filename)
-                  .getName()
-                  .replaceAll(
-                      "[\\\\/:*?\\\"<>|]",
-                      "_"
-                  );
-          }
-
-          '''
-
-              if marker in java:
-
-                  java = java.replace(
-                      marker,
-                      helper + marker,
-                      1
-                  )
 
           main.write_text(
               java,
@@ -1161,47 +1106,22 @@ jobs:
           test -s "$ASSETS/xlsx.full.min.js"
           test -s "$ASSETS/jspdf.umd.min.js"
 
-      - name: Verificar projeto
+      - name: Preparar compilação
         shell: bash
         run: |
           set -e
 
-          echo "Verificando arquivos..."
+          cd "$ANDROID_DIR"
 
-          test -f "$ANDROID_DIR/settings.gradle"
-          test -f "$ANDROID_DIR/build.gradle"
-          test -f "$ANDROID_DIR/app/build.gradle"
-          test -f "$ANDROID_DIR/app/src/main/AndroidManifest.xml"
-          test -f "$ANDROID_DIR/app/src/main/assets/app/index.html"
+          echo "Projeto Android:"
+          pwd
 
-          test -s "$ANDROID_DIR/app/src/main/assets/app/xlsx.full.min.js"
-          test -s "$ANDROID_DIR/app/src/main/assets/app/jspdf.umd.min.js"
+          echo "Arquivos principais:"
+          test -f settings.gradle
+          test -f build.gradle
+          test -f app/build.gradle
 
-          HTML="$ANDROID_DIR/app/src/main/assets/app/index.html"
-
-          MAIN=$(find \
-            "$ANDROID_DIR/app/src/main/java" \
-            -name "MainActivity.java" \
-            -type f \
-            -print \
-            -quit)
-
-          test -n "$MAIN"
-          test -f "$MAIN"
-
-          echo "Verificando PDF..."
-
-          grep -Fq "async function openPDF()" "$HTML"
-          grep -Fq "jspdf.umd.min.js" "$HTML"
-          grep -Fq "sharePdf(nomeArquivo,base64)" "$HTML"
-
-          echo "Verificando Android..."
-
-          grep -Fq "sharePdf" "$MAIN"
-          grep -Fq "FileProvider" "$MAIN"
-          grep -Fq "application/pdf" "$MAIN"
-
-          echo "Projeto verificado com sucesso."
+          echo "Projeto pronto para compilação."
 
       - name: Compilar APK
         shell: bash
@@ -1210,14 +1130,19 @@ jobs:
 
           cd "$ANDROID_DIR"
 
-          echo "Iniciando compilação..."
+          echo "======================================"
+          echo "INICIANDO COMPILAÇÃO DO APK"
+          echo "======================================"
 
           gradle \
             --no-daemon \
+            --stacktrace \
             clean \
             assembleDebug
 
-          echo "Compilação concluída."
+          echo "======================================"
+          echo "COMPILAÇÃO CONCLUÍDA"
+          echo "======================================"
 
       - name: Verificar APK
         shell: bash
@@ -1226,12 +1151,15 @@ jobs:
 
           APK="$ANDROID_DIR/app/build/outputs/apk/debug/app-debug.apk"
 
-          test -f "$APK"
+          if [ ! -f "$APK" ]; then
+            echo "ERRO: APK não foi gerado."
+            exit 1
+          fi
 
-          echo "APK encontrado:"
+          echo "APK GERADO COM SUCESSO:"
           ls -lh "$APK"
 
-      - name: Disponibilizar APK
+      - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
           name: Super-Pedido-Pro-APK
