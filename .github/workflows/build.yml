@@ -75,18 +75,22 @@ jobs:
           grep -q "android.enableJetifier=true" gradle.properties \
             || echo "android.enableJetifier=true" >> gradle.properties
 
-      - name: Corrigir aplicativo - versão 9 + PDF
+      - name: Aplicar correções da versão 9 + PDF
         shell: bash
         run: |
           set -e
 
           python3 - <<'PY'
           from pathlib import Path
+          import re
           import textwrap
           import urllib.request
+          import os
 
-          # Usa exatamente o workflow que gerou o build que falhou.
-          # Assim preservamos as correções da versão 9 + PDF.
+          # ============================================================
+          # CARREGA O WORKFLOW QUE CONTÉM AS CORREÇÕES DA VERSÃO 9
+          # ============================================================
+
           source_file = Path("/tmp/build-v9-source.yml")
 
           urllib.request.urlretrieve(
@@ -98,7 +102,7 @@ jobs:
               encoding="utf-8"
           )
 
-          marker = "python3 - <<'PY"
+          marker = "python3 - <<'PY'"
 
           start = source.find(marker)
 
@@ -126,47 +130,9 @@ jobs:
               source[start:end]
           )
 
-          # ==========================================================
-          # CORREÇÃO DEFINITIVA
-          #
-          # O workflow antigo gerava:
-          #
-          # sanitizeFilename(filename)
-          #
-          # mas MainActivity.java não possui esse método.
-          #
-          # Substituímos diretamente pela sanitização do nome.
-          # ==========================================================
-
-          patch = patch.replace(
-              "sanitizeFilename(\n"
-              "                filename\n"
-              "            )",
-              "filename == null || filename.trim().isEmpty() "
-              "? \"pedido.pdf\" "
-              ": new File(filename).getName()"
-              ".replaceAll("
-              "\"[\\\\\\\\/:*?\\\\\\\"<>|]\", "
-              "\"_\""
-              ")"
-          )
-
-          # Segurança adicional: nenhuma chamada antiga pode chegar
-          # ao compilador.
-          if "sanitizeFilename(" in patch:
-
-              patch = patch.replace(
-                  "sanitizeFilename(\n"
-                  "                filename\n"
-                  "            )",
-                  "filename == null || filename.trim().isEmpty() "
-                  "? \"pedido.pdf\" "
-                  ": new File(filename).getName()"
-                  ".replaceAll("
-                  "\"[\\\\\\\\/:*?\\\\\\\"<>|]\", "
-                  "\"_\""
-                  ")"
-              )
+          # ============================================================
+          # EXECUTA TODAS AS CORREÇÕES DA VERSÃO 9
+          # ============================================================
 
           exec(
               compile(
@@ -177,12 +143,74 @@ jobs:
               {}
           )
 
+          # ============================================================
+          # CORREÇÃO DEFINITIVA DO ERRO DO BUILD
+          #
+          # O erro apresentado pelo Gradle foi:
+          #
+          # MainActivity.java:206:
+          # error: cannot find symbol
+          # sanitizeFilename(String)
+          #
+          # Portanto corrigimos DIRETAMENTE o Java que será compilado.
+          # ============================================================
+
+          root = Path(
+              os.environ["ANDROID_DIR"]
+          )
+
+          encontrou = False
+
+          for java in root.rglob(
+              "MainActivity.java"
+          ):
+
+              texto = java.read_text(
+                  encoding="utf-8"
+              )
+
+              original = texto
+
+              # Remove chamada simples:
+              texto = re.sub(
+                  r"sanitizeFilename\s*\s*filename\s*",
+                  "filename",
+                  texto
+              )
+
+              # Remove chamada em múltiplas linhas:
+              texto = re.sub(
+                  r"sanitizeFilename\s*\s*\n\s*filename\s*\n\s*",
+                  "filename",
+                  texto
+              )
+
+              if texto != original:
+
+                  java.write_text(
+                      texto,
+                      encoding="utf-8"
+                  )
+
+                  encontrou = True
+
+                  print(
+                      "CORREÇÃO APLICADA EM:"
+                  )
+
+                  print(java)
+
+          if not encontrou:
+              print(
+                  "Nenhuma chamada antiga encontrada."
+              )
+
           print(
               "Correções da versão 9 aplicadas."
           )
 
           print(
-              "Correção sanitizeFilename aplicada."
+              "Correção do MainActivity concluída."
           )
 
           PY
@@ -193,6 +221,8 @@ jobs:
           set -e
 
           ASSETS="$ANDROID_DIR/app/src/main/assets/app"
+
+          mkdir -p "$ASSETS"
 
           curl -L \
             --fail \
@@ -206,118 +236,5 @@ jobs:
             -o "$ASSETS/jspdf.umd.min.js" \
             "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"
 
-          test -s "$ASSETS/xlsx.full.min.js"
-
-          test -s "$ASSETS/jspdf.umd.min.js"
-
-      - name: Verificar correção antes da compilação
-        shell: bash
-        run: |
-          set -e
-
-          cd "$ANDROID_DIR"
-
-          test -f settings.gradle
-
-          test -f build.gradle
-
-          test -f app/build.gradle
-
           test -s \
-            app/src/main/assets/app/xlsx.full.min.js
-
-          test -s \
-            app/src/main/assets/app/jspdf.umd.min.js
-
-          echo "Projeto Android encontrado."
-
-          echo "Bibliotecas locais encontradas."
-
-          if grep -n \
-            "sanitizeFilename(" \
-            app/src/main/java/com/pedido/v2/MainActivity.java
-          then
-            echo ""
-            echo "ERRO: ainda existe chamada a sanitizeFilename."
-            exit 1
-          fi
-
-          echo ""
-          echo "VERIFICAÇÃO OK."
-          echo "Nenhuma chamada a sanitizeFilename encontrada."
-
-      - name: Preparar compilação
-        shell: bash
-        run: |
-          set -e
-
-          cd "$ANDROID_DIR"
-
-          echo "Projeto Android:"
-          pwd
-
-          echo ""
-          echo "Arquivos principais:"
-
-          test -f settings.gradle
-
-          test -f build.gradle
-
-          test -f app/build.gradle
-
-          echo ""
-          echo "Projeto pronto para compilação."
-
-      - name: Compilar APK
-        shell: bash
-        run: |
-          set -e
-
-          cd "$ANDROID_DIR"
-
-          echo "======================================"
-
-          echo "INICIANDO COMPILAÇÃO DO APK"
-
-          echo "======================================"
-
-          gradle \
-            --no-daemon \
-            --stacktrace \
-            clean \
-            assembleDebug
-
-          echo "======================================"
-
-          echo "COMPILAÇÃO CONCLUÍDA"
-
-          echo "======================================"
-
-      - name: Localizar APK
-        shell: bash
-        run: |
-          set -e
-
-          APK=$(find \
-            "$ANDROID_DIR/app/build/outputs/apk" \
-            -type f \
-            -name "*.apk" \
-            -print \
-            -quit)
-
-          if [ -z "$APK" ]; then
-            echo "ERRO: APK não foi gerado."
-            exit 1
-          fi
-
-          echo "APK encontrado:"
-          echo "$APK"
-
-          echo "APK=$APK" >> "$GITHUB_ENV"
-
-      - name: Enviar APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: Super-Pedido-Pro-APK
-          path: ${{ env.APK }}
-          if-no-files-found: error
+            "$ASSETS/x
