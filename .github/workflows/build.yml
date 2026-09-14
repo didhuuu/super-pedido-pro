@@ -30,9 +30,13 @@ jobs:
         shell: bash
         run: |
           set -e
+
           rm -rf projeto
+
           test -f "Super-Pedido-Pro.zip"
+
           mkdir -p projeto
+
           unzip -o "Super-Pedido-Pro.zip" -d projeto
 
       - name: Localizar projeto Android
@@ -74,7 +78,6 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           import os
-          import re
 
           root = Path(os.environ["ANDROID_DIR"])
 
@@ -100,36 +103,58 @@ jobs:
           )
 
           # ==========================================================
-          # 1. CORRIGIR OPENPDF
+          # OPEN PDF
           #
-          # A versão 9 original usa:
+          # NÃO usa regex.
+          # Localiza diretamente:
           #
-          # async function openPDF(){
+          # async function openPDF()
           #
-          # A substituição abaixo procura exatamente essa estrutura,
-          # sem depender de openPDF estar antes/depois de clearPedido.
+          # até:
           #
-          # O relatório passa a ser A4 RETRATO.
+          # function clearPedido()
+          #
+          # Isso evita o erro que ocorreu na tentativa anterior.
           # ==========================================================
 
-          pdf_pattern = (
-              r"(?:async\s+)?function\s+openPDF\s*\(\s*\)\s*\{"
-              r".*?"
-              r"\n\}\s*"
-              r"function\s+clearPedido\s*\("
+          open_marker = "async function openPDF()"
+          clear_marker = "function clearPedido("
+
+          open_start = text.find(open_marker)
+
+          if open_start == -1:
+              raise SystemExit(
+                  "ERRO: função openPDF não encontrada"
+              )
+
+          clear_start = text.find(
+              clear_marker,
+              open_start
           )
 
-          new_pdf_and_marker = r"""function openPDF(){
-            const rows=finalizedRows.length?finalizedRows:getRows();
+          if clear_start == -1:
+              raise SystemExit(
+                  "ERRO: função clearPedido não encontrada"
+              )
+
+          new_open_pdf = r"""async function openPDF(){
+
+            const rows=
+              finalizedRows.length
+              ? finalizedRows
+              : getRows();
 
             if(!rows.length){
-              alert('Nenhum item foi selecionado.');
+              alert(
+                'Nenhum item foi selecionado.'
+              );
               return;
             }
 
             try{
 
-              const {jsPDF}=window.jspdf||{};
+              const {jsPDF}=
+                window.jspdf||{};
 
               if(!jsPDF){
                 throw new Error(
@@ -155,6 +180,7 @@ jobs:
               const colCodigo=30;
               const colEstoque=25;
               const colPedido=25;
+
               const colProduto=
                 pageWidth-
                 (margem*2)-
@@ -199,11 +225,17 @@ jobs:
                 y+=8;
               }
 
-              function cabecalhoTabela(){
+              function cabecalho(){
 
-                if(y+12>pageHeight-10){
+                if(
+                  y+8 >
+                  pageHeight-10
+                ){
+
                   doc.addPage();
+
                   y=15;
+
                   titulo();
                 }
 
@@ -255,9 +287,12 @@ jobs:
 
                 doc.text(
                   'CÓDIGO',
-                  xCodigo+colCodigo/2,
+                  xCodigo+
+                  colCodigo/2,
                   y+4.8,
-                  {align:'center'}
+                  {
+                    align:'center'
+                  }
                 );
 
                 doc.text(
@@ -268,43 +303,54 @@ jobs:
 
                 doc.text(
                   'ESTOQUE',
-                  xEstoque+colEstoque/2,
+                  xEstoque+
+                  colEstoque/2,
                   y+4.8,
-                  {align:'center'}
+                  {
+                    align:'center'
+                  }
                 );
 
                 doc.text(
                   'PEDIDO',
-                  xPedido+colPedido/2,
+                  xPedido+
+                  colPedido/2,
                   y+4.8,
-                  {align:'center'}
+                  {
+                    align:'center'
+                  }
                 );
 
                 y+=7;
               }
 
-              function nomeProduto(nome){
+              function produtoNome(nome){
 
-                const valor=
+                let s=
                   String(nome||'');
 
-                const limite=58;
-
-                if(
-                  valor.length<=limite
-                ){
-                  return valor;
+                /*
+                 * Evita texto enorme
+                 * estourando a tabela.
+                 */
+                if(s.length>58){
+                  s=
+                    s.substring(
+                      0,
+                      55
+                    )+
+                    '...';
                 }
 
-                return valor.substring(
-                  0,
-                  limite-3
-                )+'...';
+                return s;
               }
 
-              function linhaProduto(item){
+              function linha(item){
 
-                if(y+7>pageHeight-10){
+                if(
+                  y+7 >
+                  pageHeight-10
+                ){
 
                   doc.addPage();
 
@@ -312,7 +358,7 @@ jobs:
 
                   titulo();
 
-                  cabecalhoTabela();
+                  cabecalho();
                 }
 
                 doc.setFont(
@@ -362,29 +408,43 @@ jobs:
                 );
 
                 doc.text(
-                  String(item.code||'-'),
+                  String(
+                    item.code||'-'
+                  ),
                   xCodigo+3,
                   y+4.8
                 );
 
                 doc.text(
-                  nomeProduto(item.name),
+                  produtoNome(
+                    item.name
+                  ),
                   xProduto+3,
                   y+4.8
                 );
 
                 doc.text(
-                  String(item.stock??0),
-                  xEstoque+colEstoque/2,
+                  String(
+                    item.stock??0
+                  ),
+                  xEstoque+
+                  colEstoque/2,
                   y+4.8,
-                  {align:'center'}
+                  {
+                    align:'center'
+                  }
                 );
 
                 doc.text(
-                  String(item.order??0),
-                  xPedido+colPedido/2,
+                  String(
+                    item.order??0
+                  ),
+                  xPedido+
+                  colPedido/2,
                   y+4.8,
-                  {align:'center'}
+                  {
+                    align:'center'
+                  }
                 );
 
                 y+=7;
@@ -392,14 +452,18 @@ jobs:
 
               titulo();
 
-              const grupos=groupRows(rows);
+              const grupos=
+                groupRows(rows);
 
               for(
                 const [categoria,items]
                 of Object.entries(grupos)
               ){
 
-                if(y+22>pageHeight-10){
+                if(
+                  y+20 >
+                  pageHeight-10
+                ){
 
                   doc.addPage();
 
@@ -408,7 +472,7 @@ jobs:
                   titulo();
                 }
 
-                y+=4;
+                y+=3;
 
                 doc.setFont(
                   'helvetica',
@@ -427,21 +491,24 @@ jobs:
 
                 y+=5;
 
-                cabecalhoTabela();
+                cabecalho();
 
                 for(
                   const item of items
                 ){
-                  linhaProduto(item);
+                  linha(item);
                 }
               }
 
               /*
-               * Observação geral
+               * Observação geral.
                */
               if(generalObservation){
 
-                if(y+20>pageHeight-10){
+                if(
+                  y+20 >
+                  pageHeight-10
+                ){
 
                   doc.addPage();
 
@@ -474,34 +541,37 @@ jobs:
 
                 doc.setFontSize(8);
 
-                const observacao=
+                const obs=
                   doc.splitTextToSize(
                     String(
                       generalObservation
                     ),
-                    pageWidth-(margem*2)
+                    pageWidth-
+                    margem*2
                   );
 
                 doc.text(
-                  observacao,
+                  obs,
                   margem,
                   y
                 );
               }
 
               /*
-               * Rodapé em todas as páginas.
+               * Rodapé.
                */
-              const totalPaginas=
+              const paginas=
                 doc.getNumberOfPages();
 
               for(
                 let pagina=1;
-                pagina<=totalPaginas;
+                pagina<=paginas;
                 pagina++
               ){
 
-                doc.setPage(pagina);
+                doc.setPage(
+                  pagina
+                );
 
                 doc.setFont(
                   'helvetica',
@@ -517,17 +587,21 @@ jobs:
                 );
 
                 doc.text(
-                  'Página '+pagina+
+                  'Página '+
+                  pagina+
                   ' de '+
-                  totalPaginas,
+                  paginas,
                   pageWidth-margem,
                   pageHeight-5,
-                  {align:'right'}
+                  {
+                    align:'right'
+                  }
                 );
               }
 
               /*
-               * Gera o PDF ANTES de limpar o pedido.
+               * Gera o arquivo enquanto
+               * os dados ainda existem.
                */
               const base64=
                 doc.output(
@@ -535,22 +609,27 @@ jobs:
                 ).split(',')[1];
 
               const nomeArquivo=
-                'relatorio-pedido-'+
+                'relatorio-pedido-' +
                 new Date()
                   .toISOString()
-                  .slice(0,10)+
+                  .slice(0,10) +
                 '.pdf';
 
               /*
-               * Salva no histórico e zera
-               * o pedido ANTES de abrir o
-               * compartilhamento.
+               * IMPORTANTE:
+               *
+               * Limpa o pedido antes de abrir
+               * o compartilhamento.
+               *
+               * clearPedido(rows) também salva
+               * o histórico uma única vez.
                */
               clearPedido(rows);
 
               if(
                 window.AndroidFileBridge &&
-                typeof window.AndroidFileBridge.sharePdf===
+                typeof
+                window.AndroidFileBridge.sharePdf===
                 'function'
               ){
 
@@ -562,15 +641,16 @@ jobs:
                 return;
               }
 
+              /*
+               * Fallback para navegador.
+               */
               doc.save(
                 nomeArquivo
               );
 
             }catch(e){
 
-              console.error(
-                e
-              );
+              console.error(e);
 
               alert(
                 'Não foi possível gerar o PDF: '+
@@ -579,44 +659,47 @@ jobs:
             }
           }
 
-          function clearPedido"""
+          """
 
-          text,n=re.subn(
-              pdf_pattern,
-              new_pdf_and_marker,
-              text,
-              count=1,
-              flags=re.S
+          text=(
+              text[:open_start] +
+              new_open_pdf +
+              text[clear_start:]
           )
 
-          if n!=1:
+          # ==========================================================
+          # CLEAR PEDIDO
+          #
+          # Localiza por nome, sem regex.
+          # ==========================================================
+
+          clear_start=text.find(
+              "function clearPedido("
+          )
+
+          if clear_start==-1:
               raise SystemExit(
-                  "ERRO: não foi possível substituir o bloco PDF."
+                  "ERRO: clearPedido não encontrada após correção PDF"
               )
 
-          # ==========================================================
-          # 2. CORRIGIR CLEARPEDIDO
-          #
-          # Recebe opcionalmente as linhas do pedido.
-          #
-          # Isso permite:
-          #
-          # PDF -> clearPedido(rows)
-          # WhatsApp -> clearPedido()
-          #
-          # E evita duplicação no histórico.
-          # ==========================================================
-
-          clear_pattern = (
-              r"function\s+clearPedido\s*\(\s*"
-              r"historyRows\s*=\s*null\s*\)\s*\{"
-              r".*?"
-              r"\n\}\s*"
-              r"function\s+sendWhatsApp\s*\("
+          send_start=text.find(
+              "function sendWhatsApp(",
+              clear_start
           )
 
-          new_clear_and_marker = r"""function clearPedido(historyRows=null){
+          if send_start==-1:
+              raise SystemExit(
+                  "ERRO: sendWhatsApp não encontrada"
+              )
 
+          new_clear = r"""function clearPedido(historyRows=null){
+
+            /*
+             * Se o chamador passou as linhas,
+             * usa essas linhas para o histórico.
+             *
+             * Caso contrário, usa finalizedRows.
+             */
             const historico=
               Array.isArray(historyRows) &&
               historyRows.length
@@ -624,8 +707,7 @@ jobs:
               : finalizedRows;
 
             /*
-             * Salva o pedido no histórico somente
-             * uma vez.
+             * Salva no histórico uma única vez.
              */
             if(
               Array.isArray(historico) &&
@@ -637,9 +719,7 @@ jobs:
             }
 
             /*
-             * ZERA O PEDIDO ATUAL.
-             *
-             * O cadastro dos produtos NÃO é apagado.
+             * ZERA AS QUANTIDADES.
              */
             vals={};
 
@@ -652,8 +732,8 @@ jobs:
             generalObservation='';
 
             /*
-             * Remove os dados persistidos
-             * das quantidades.
+             * Remove os dados salvos das
+             * quantidades.
              */
             localStorage.removeItem(
               'pedido_compras_vals'
@@ -668,7 +748,7 @@ jobs:
             );
 
             /*
-             * Limpa a observação da tela.
+             * Limpa observação.
              */
             const obs=
               document.getElementById(
@@ -680,12 +760,12 @@ jobs:
             }
 
             /*
-             * Persiste o estado vazio.
+             * Salva o estado vazio.
              */
             save();
 
             /*
-             * Atualiza completamente a tela.
+             * Atualiza a tela.
              */
             render();
 
@@ -704,25 +784,22 @@ jobs:
               opcoes.style.display='none';
             }
 
+            window.scrollTo({
+              top:0,
+              behavior:'smooth'
+            });
           }
 
-          function sendWhatsApp"""
+          """
 
-          text,n=re.subn(
-              clear_pattern,
-              new_clear_and_marker,
-              text,
-              count=1,
-              flags=re.S
+          text=(
+              text[:clear_start] +
+              new_clear +
+              text[send_start:]
           )
 
-          if n!=1:
-              raise SystemExit(
-                  "ERRO: não foi possível substituir clearPedido."
-              )
-
           # ==========================================================
-          # 3. MANTER A CORREÇÃO DO CATÁLOGO
+          # INICIALIZAÇÃO DO CATÁLOGO
           # ==========================================================
 
           old_start=(
@@ -762,11 +839,11 @@ jobs:
           ):
 
               raise SystemExit(
-                  "ERRO: inicialização do catálogo não encontrada."
+                  "ERRO: inicialização do catálogo não encontrada"
               )
 
           # ==========================================================
-          # 4. BIBLIOTECAS LOCAIS
+          # BIBLIOTECAS LOCAIS
           # ==========================================================
 
           text=text.replace(
@@ -780,7 +857,7 @@ jobs:
           )
 
           # ==========================================================
-          # 5. PRESERVAR IMPORTAÇÃO
+          # GARANTIR CORREÇÃO DE IMPORTAÇÃO
           # ==========================================================
 
           required=[
@@ -804,14 +881,15 @@ jobs:
           )
 
           # ==========================================================
-          # MAINACTIVITY
+          # MAIN ACTIVITY
           # ==========================================================
 
           java=main.read_text(
               encoding="utf-8"
           )
 
-          # Imports
+          # Imports necessários.
+
           if (
               "import android.content.ClipData;"
               not in java
@@ -862,7 +940,7 @@ jobs:
               )
 
           # ==========================================================
-          # FILE CHOOSER
+          # SELETOR DE ARQUIVOS
           # ==========================================================
 
           if "onShowFileChooser" not in java:
@@ -879,30 +957,37 @@ jobs:
                       ValueCallback<Uri[]> callback,
                       FileChooserParams params) {
 
-                  if (MainActivity.this.filePathCallback != null) {
-                      MainActivity.this.filePathCallback.onReceiveValue(null);
+                  if (
+                      MainActivity.this.filePathCallback != null
+                  ) {
+                      MainActivity.this.filePathCallback
+                          .onReceiveValue(null);
                   }
 
-                  MainActivity.this.filePathCallback = callback;
+                  MainActivity.this.filePathCallback =
+                      callback;
 
                   try {
-                      Intent intent = params.createIntent();
+
+                      Intent intent =
+                          params.createIntent();
 
                       startActivityForResult(
-                              intent,
-                              FILE_CHOOSER_REQUEST
+                          intent,
+                          FILE_CHOOSER_REQUEST
                       );
 
                       return true;
 
                   } catch (Exception e) {
 
-                      MainActivity.this.filePathCallback = null;
+                      MainActivity.this.filePathCallback =
+                          null;
 
                       Toast.makeText(
-                              MainActivity.this,
-                              "Não foi possível abrir o seletor de arquivos.",
-                              Toast.LENGTH_LONG
+                          MainActivity.this,
+                          "Não foi possível abrir o seletor de arquivos.",
+                          Toast.LENGTH_LONG
                       ).show();
 
                       return false;
@@ -920,7 +1005,7 @@ jobs:
                   )
 
           # ==========================================================
-          # RESULTADO DO FILE CHOOSER
+          # RESULTADO DO SELETOR
           # ==========================================================
 
           if (
@@ -939,9 +1024,9 @@ jobs:
                   Intent data) {
 
               super.onActivityResult(
-                      requestCode,
-                      resultCode,
-                      data
+                  requestCode,
+                  resultCode,
+                  data
               );
 
               if(
@@ -958,13 +1043,16 @@ jobs:
                   data != null
               ){
 
-                  if(data.getClipData()!=null){
+                  if(
+                      data.getClipData()!=null
+                  ){
 
                       int count=
                           data.getClipData()
                               .getItemCount();
 
-                      results=new Uri[count];
+                      results=
+                          new Uri[count];
 
                       for(
                           int i=0;
@@ -982,15 +1070,17 @@ jobs:
                       data.getData()!=null
                   ){
 
-                      results=new Uri[]{
-                          data.getData()
-                      };
+                      results=
+                          new Uri[]{
+                              data.getData()
+                          };
                   }
               }
 
-              filePathCallback.onReceiveValue(
-                  results
-              );
+              filePathCallback
+                  .onReceiveValue(
+                      results
+                  );
 
               filePathCallback=null;
           }
@@ -1009,16 +1099,76 @@ jobs:
           # SHARE PDF
           # ==========================================================
 
-          pdf_pattern_java=(
-              r"        @JavascriptInterface\s+"
-              r"public void sharePdf\s*\("
-              r"String filename,\s*String base64\)\s*\{"
-              r".*?"
-              r"\n        \}\s+"
-              r"@JavascriptInterface"
+          pdf_start=java.find(
+              "public void sharePdf("
           )
 
-          pdf_method_java="""        @JavascriptInterface
+          if pdf_start==-1:
+
+              raise SystemExit(
+                  "ERRO: sharePdf não encontrada"
+              )
+
+          # Localiza o próximo @JavascriptInterface depois
+          # do método para determinar o final.
+          next_interface=java.find(
+              "@JavascriptInterface",
+              pdf_start+20
+          )
+
+          if next_interface==-1:
+
+              raise SystemExit(
+                  "ERRO: final de sharePdf não encontrado"
+              )
+
+          # Volta até o início da anotação.
+          method_start=java.rfind(
+              "@JavascriptInterface",
+              0,
+              pdf_start
+          )
+
+          if method_start==-1:
+
+              raise SystemExit(
+                  "ERRO: início de sharePdf não encontrado"
+              )
+
+          # Encontra fechamento do método por contagem de chaves.
+          brace_start=java.find(
+              "{",
+              pdf_start
+          )
+
+          depth=0
+          method_end=-1
+
+          for i in range(
+              brace_start,
+              len(java)
+          ):
+
+              if java[i]=="{":
+                  depth+=1
+
+              elif java[i]=="}":
+
+                  depth-=1
+
+                  if depth==0:
+
+                      method_end=i+1
+
+                      break
+
+          if method_end==-1:
+
+              raise SystemExit(
+                  "ERRO: não foi possível localizar final de sharePdf"
+              )
+
+          new_share_pdf="""@JavascriptInterface
           public void sharePdf(
                   String filename,
                   String base64) {
@@ -1072,7 +1222,9 @@ jobs:
                           filename
                       );
 
-                  if(safeName.isEmpty()){
+                  if(
+                      safeName.isEmpty()
+                  ){
                       safeName="pedido.pdf";
                   }
 
@@ -1092,10 +1244,13 @@ jobs:
 
                   try(
                       FileOutputStream out=
-                          new FileOutputStream(file)
+                          new FileOutputStream(
+                              file
+                          )
                   ){
 
                       out.write(bytes);
+
                       out.flush();
                   }
 
@@ -1139,7 +1294,7 @@ jobs:
                       )
                   );
 
-              }catch(Exception e){
+              } catch(Exception e) {
 
                   Toast.makeText(
                       MainActivity.this,
@@ -1148,26 +1303,17 @@ jobs:
                       Toast.LENGTH_LONG
                   ).show();
               }
-          }
+          }"""
 
-          @JavascriptInterface"""
-
-          java,n=re.subn(
-              pdf_pattern_java,
-              pdf_method_java,
-              java,
-              count=1,
-              flags=re.S
+          java=(
+              java[:method_start] +
+              "@JavascriptInterface\n        " +
+              new_share_pdf.strip() +
+              java[method_end:]
           )
 
-          if n!=1:
-
-              raise SystemExit(
-                  "ERRO: sharePdf não encontrado."
-              )
-
           # ==========================================================
-          # SAVEB64 COM 3 ARGUMENTOS
+          # SAVEB64
           # ==========================================================
 
           if (
@@ -1198,7 +1344,7 @@ jobs:
               if marker not in java:
 
                   raise SystemExit(
-                      "ERRO: saveBase64 não encontrado."
+                      "ERRO: saveBase64 não encontrado"
                   )
 
               java=java.replace(
@@ -1221,9 +1367,10 @@ jobs:
                   "    public void onBackPressed() {"
               )
 
-              helper="""    private String sanitizeFilename(String filename) {
+              helper="""    private String sanitizeFilename(
+              String filename) {
 
-              if (filename == null) {
+              if(filename==null){
                   return "";
               }
 
@@ -1237,13 +1384,17 @@ jobs:
 
           """
 
-              if marker in java:
+              if marker not in java:
 
-                  java=java.replace(
-                      marker,
-                      helper+marker,
-                      1
+                  raise SystemExit(
+                      "ERRO: local para sanitizeFilename não encontrado"
                   )
+
+              java=java.replace(
+                  marker,
+                  helper+marker,
+                  1
+              )
 
           main.write_text(
               java,
@@ -1251,7 +1402,7 @@ jobs:
           )
 
           print(
-              "Aplicativo corrigido com sucesso."
+              "Correções aplicadas com sucesso."
           )
 
           PY
@@ -1310,7 +1461,7 @@ jobs:
             "orientation:'landscape'" \
             "$HTML"
           then
-            echo "ERRO: PDF ainda está em landscape."
+            echo "ERRO: PDF em landscape."
             exit 1
           fi
 
@@ -1318,11 +1469,11 @@ jobs:
             'orientation:"landscape"' \
             "$HTML"
           then
-            echo "ERRO: PDF ainda está em landscape."
+            echo "ERRO: PDF em landscape."
             exit 1
           fi
 
-          echo "PDF A4 RETRATO: OK"
+          echo "PDF RETRATO: OK"
 
           echo "Verificando limpeza..."
 
