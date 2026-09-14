@@ -11,11 +11,8 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-
-      - name: Baixar exatamente a V9
+      - name: Baixar projeto
         uses: actions/checkout@v4
-        with:
-          ref: 69bd377f51e567832edd60769ba312e3d7f39156
 
       - name: Configurar Java 17
         uses: actions/setup-java@v4
@@ -23,642 +20,207 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Configurar Gradle 8.7
+      - name: Configurar Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
 
-      - name: Extrair projeto V9
+      - name: Preparar projeto
         shell: bash
         run: |
           set -e
-
           rm -rf projeto
-
           test -f "Super-Pedido-Pro.zip"
-
           mkdir -p projeto
-
           unzip -o "Super-Pedido-Pro.zip" -d projeto
 
       - name: Localizar projeto Android
         shell: bash
         run: |
           set -e
-
-          ANDROID_DIR=$(find "$GITHUB_WORKSPACE/projeto" \
-            -name settings.gradle \
-            -type f \
-            -print \
-            -quit | xargs -r dirname)
-
-          if [ -z "$ANDROID_DIR" ]; then
-            echo "ERRO: projeto Android não encontrado."
-            exit 1
-          fi
-
+          ANDROID_DIR=$(find "$GITHUB_WORKSPACE/projeto" -name settings.gradle -type f -print -quit | xargs -r dirname)
+          test -n "$ANDROID_DIR"
           echo "ANDROID_DIR=$ANDROID_DIR" >> "$GITHUB_ENV"
+          echo "Projeto encontrado em: $ANDROID_DIR"
 
-          echo "Projeto Android:"
-          echo "$ANDROID_DIR"
-
-      - name: Ativar AndroidX
+      - name: Configurar AndroidX
         shell: bash
         run: |
           set -e
-
           cd "$ANDROID_DIR"
-
           touch gradle.properties
+          grep -q "android.useAndroidX=true" gradle.properties || echo "android.useAndroidX=true" >> gradle.properties
+          grep -q "android.enableJetifier=true" gradle.properties || echo "android.enableJetifier=true" >> gradle.properties
 
-          grep -Fq "android.useAndroidX=true" gradle.properties || \
-            echo "android.useAndroidX=true" >> gradle.properties
-
-          grep -Fq "android.enableJetifier=true" gradle.properties || \
-            echo "android.enableJetifier=true" >> gradle.properties
-
-      - name: Alterar somente o relatório PDF
+      - name: Corrigir aplicativo - Admin, importação, PDF e limpeza
         shell: bash
         run: |
           set -e
 
-          python3 <<'PY'
+          python3 - <<'PY'
           from pathlib import Path
+          import re
           import os
 
           root = Path(os.environ["ANDROID_DIR"])
-
           html = root / "app/src/main/assets/app/index.html"
+          main = next((root / "app/src/main/java").rglob("MainActivity.java"), None)
 
           if not html.exists():
-              raise SystemExit("ERRO: index.html não encontrado.")
+              raise SystemExit("ERRO: index.html não encontrado")
+
+          if main is None:
+              raise SystemExit("ERRO: MainActivity.java não encontrado")
 
           text = html.read_text(encoding="utf-8")
 
-          inicio = text.find("async function openPDF")
-          fim = text.find("function sendWhatsApp", inicio)
-
-          if inicio == -1:
-              raise SystemExit("ERRO: função openPDF não encontrada.")
-
-          if fim == -1:
-              raise SystemExit("ERRO: função sendWhatsApp não encontrada.")
-
-          novo_open_pdf = r'''async function openPDF(sendViaWhatsApp=false){
-            const rows=finalizedRows.length?finalizedRows:getRows();
-
-            if(!rows.length){
-              alert('Nenhum item foi selecionado.');
-              return;
-            }
-
-            try{
-              const {jsPDF}=window.jspdf||{};
-
-              if(!jsPDF){
-                throw new Error('Biblioteca PDF não carregada.');
-              }
-
-              const doc=new jsPDF({
-                orientation:'portrait',
-                unit:'mm',
-                format:'a4'
-              });
-
-              const pageWidth=210;
-              const pageHeight=297;
-              const margin=10;
-              const tableWidth=190;
-
-              const colCode=28;
-              const colName=100;
-              const colStock=30;
-              const colOrder=32;
-
-              let y=15;
-
-              function drawTitle(){
-                doc.setFont('helvetica','bold');
-                doc.setFontSize(15);
-
-                doc.text(
-                  'PEDIDO DE COMPRAS',
-                  pageWidth/2,
-                  y,
-                  {align:'center'}
-                );
-
-                y+=7;
-
-                doc.setFont('helvetica','normal');
-                doc.setFontSize(8);
-
-                doc.text(
-                  new Date().toLocaleString('pt-BR'),
-                  margin,
-                  y
-                );
-
-                y+=7;
-              }
-
-              function drawHeader(){
-                const h=7;
-
-                if(y+h>pageHeight-15){
-                  doc.addPage();
-                  y=15;
-                  drawTitle();
-                }
-
-                doc.setFont('helvetica','bold');
-                doc.setFontSize(7);
-
-                doc.rect(
-                  margin,
-                  y,
-                  tableWidth,
-                  h
-                );
-
-                doc.line(
-                  margin+colCode,
-                  y,
-                  margin+colCode,
-                  y+h
-                );
-
-                doc.line(
-                  margin+colCode+colName,
-                  y,
-                  margin+colCode+colName,
-                  y+h
-                );
-
-                doc.line(
-                  margin+colCode+colName+colStock,
-                  y,
-                  margin+colCode+colName+colStock,
-                  y+h
-                );
-
-                doc.text(
-                  'CÓDIGO',
-                  margin+colCode/2,
-                  y+4.6,
-                  {align:'center'}
-                );
-
-                doc.text(
-                  'NOME DO PRODUTO',
-                  margin+colCode+2,
-                  y+4.6
-                );
-
-                doc.text(
-                  'ESTOQUE',
-                  margin+colCode+colName+colStock/2,
-                  y+4.6,
-                  {align:'center'}
-                );
-
-                doc.text(
-                  'PEDIDO',
-                  margin+colCode+colName+colStock+colOrder/2,
-                  y+4.6,
-                  {align:'center'}
-                );
-
-                y+=h;
-              }
-
-              function drawCategory(category){
-                if(y+18>pageHeight-15){
-                  doc.addPage();
-                  y=15;
-                  drawTitle();
-                }
-
-                doc.setFont('helvetica','bold');
-                doc.setFontSize(9);
-
-                doc.text(
-                  String(category||'').toUpperCase(),
-                  margin,
-                  y
-                );
-
-                y+=5;
-
-                drawHeader();
-              }
-
-              function drawProduct(item){
-                const code=String(item.code||'-');
-                const name=String(item.name||'');
-                const stock=String(item.stock??0);
-                const order=String(item.order??0);
-
-                const lines=[];
-
-                const nameLines=doc.splitTextToSize(
-                  name,
-                  colName-4
-                );
-
-                lines.push(...nameLines);
-
-                if(item.obs){
-                  lines.push(
-                    ...doc.splitTextToSize(
-                      'Obs: '+String(item.obs),
-                      colName-4
-                    )
-                  );
-                }
-
-                if(item.validade){
-                  lines.push(
-                    ...doc.splitTextToSize(
-                      'Validade: '+String(item.validade),
-                      colName-4
-                    )
-                  );
-                }
-
-                if(!lines.length){
-                  lines.push('');
-                }
-
-                const h=Math.max(
-                  7,
-                  lines.length*4.2+3
-                );
-
-                if(y+h>pageHeight-15){
-                  doc.addPage();
-                  y=15;
-                  drawTitle();
-                  drawHeader();
-                }
-
-                doc.setFont('helvetica','normal');
-                doc.setFontSize(6.8);
-
-                doc.rect(
-                  margin,
-                  y,
-                  tableWidth,
-                  h
-                );
-
-                doc.line(
-                  margin+colCode,
-                  y,
-                  margin+colCode,
-                  y+h
-                );
-
-                doc.line(
-                  margin+colCode+colName,
-                  y,
-                  margin+colCode+colName,
-                  y+h
-                );
-
-                doc.line(
-                  margin+colCode+colName+colStock,
-                  y,
-                  margin+colCode+colName+colStock,
-                  y+h
-                );
-
-                doc.text(
-                  code,
-                  margin+colCode/2,
-                  y+4.3,
-                  {align:'center'}
-                );
-
-                let textY=y+4.3;
-
-                lines.forEach(line=>{
-                  doc.text(
-                    line,
-                    margin+colCode+2,
-                    textY
-                  );
-
-                  textY+=4.2;
-                });
-
-                doc.text(
-                  stock,
-                  margin+colCode+colName+colStock/2,
-                  y+4.3,
-                  {align:'center'}
-                );
-
-                doc.setFont('helvetica','bold');
-
-                doc.text(
-                  order,
-                  margin+colCode+colName+colStock+colOrder/2,
-                  y+4.3,
-                  {align:'center'}
-                );
-
-                doc.setFont('helvetica','normal');
-
-                y+=h;
-              }
-
-              drawTitle();
-
-              const groups=groupRows(rows);
-
-              for(const [category,items] of Object.entries(groups)){
-                drawCategory(category);
-
-                items.forEach(item=>{
-                  drawProduct(item);
-                });
-
-                y+=4;
-              }
-
-              if(generalObservation){
-                if(y+20>pageHeight-15){
-                  doc.addPage();
-                  y=15;
-                  drawTitle();
-                }
-
-                doc.setFont('helvetica','bold');
-                doc.setFontSize(8);
-
-                doc.text(
-                  'OBSERVAÇÃO GERAL:',
-                  margin,
-                  y
-                );
-
-                y+=5;
-
-                doc.setFont('helvetica','normal');
-
-                const obsLines=doc.splitTextToSize(
-                  String(generalObservation),
-                  tableWidth
-                );
-
-                obsLines.forEach(line=>{
-                  if(y+5>pageHeight-15){
-                    doc.addPage();
-                    y=15;
-                    drawTitle();
-                  }
-
-                  doc.text(
-                    line,
-                    margin,
-                    y
-                  );
-
-                  y+=4.5;
-                });
-              }
-
-              const totalPages=doc.internal.getNumberOfPages();
-
-              for(let page=1;page<=totalPages;page++){
-                doc.setPage(page);
-
-                doc.setFont('helvetica','normal');
-                doc.setFontSize(7);
-
-                doc.text(
-                  'Super Pedido Pro',
-                  margin,
-                  pageHeight-6
-                );
-
-                doc.text(
-                  'Página '+page+' de '+totalPages,
-                  pageWidth-margin,
-                  pageHeight-6,
-                  {align:'right'}
-                );
-              }
-
-              const filename=
-                'pedido-acougue-'+
-                new Date().toISOString().slice(0,10)+
-                '.pdf';
-
-              const base64=
-                doc.output('datauristring')
-                  .split(',')[1];
-
-              if(
-                window.AndroidFileBridge &&
-                typeof window.AndroidFileBridge.sharePdf==='function'
-              ){
-                window.AndroidFileBridge.sharePdf(
-                  'pedido-acougue.pdf',
-                  base64
-                );
-
-                saveHistory(rows);
-                clearPedido();
-
-                return;
-              }
-
-              const blob=doc.output('blob');
-
-              if(
-                sendViaWhatsApp &&
-                navigator.share &&
-                typeof File!=='undefined'
-              ){
-                const file=new File(
-                  [blob],
-                  filename,
-                  {
-                    type:'application/pdf'
-                  }
-                );
-
-                if(
-                  !navigator.canShare ||
-                  navigator.canShare({
-                    files:[file]
-                  })
-                ){
-                  try{
-                    await navigator.share({
-                      files:[file],
-                      text:'Pedido do açougue'
-                    });
-
-                    saveHistory(rows);
-                    clearPedido();
-
-                    return;
-                  }catch(e){
-                    if(
-                      e &&
-                      e.name==='AbortError'
-                    ){
-                      return;
-                    }
-                  }
-                }
-              }
-
-              const url=
-                URL.createObjectURL(blob);
-
-              const a=
-                document.createElement('a');
-
-              a.href=url;
-              a.download=filename;
-
-              document.body.appendChild(a);
-
-              a.click();
-
-              a.remove();
-
-              setTimeout(
-                ()=>URL.revokeObjectURL(url),
-                3000
-              );
-
-              if(!sendViaWhatsApp){
-                saveHistory(rows);
-                clearPedido();
-              }
-
-            }catch(e){
-              console.error('openPDF:',e);
-
-              alert(
-                'Não foi possível gerar o PDF: '+
-                (e.message||e)
-              );
-            }
+          # Zerar todas as quantidades depois do envio
+          new_clear = '''function clearPedido(){
+            Object.keys(vals).forEach(k=>delete vals[k]);
+            extras=[];
+            validadeCurta=[];
+            finalizedRows=[];
+            generalObservation='';
+            const obs=document.getElementById('generalObs');
+            if(obs) obs.value='';
+            save();
+            render();
+            updateBadge();
+            closeConference();
           }'''
 
-          novo_texto=(
-              text[:inicio]
-              +novo_open_pdf
-              +"\n"
-              +text[fim:]
+          text, n = re.subn(
+              r"function clearPedido\(\)\{.*?\n\}",
+              new_clear,
+              text,
+              count=1,
+              flags=re.S,
           )
 
-          html.write_text(
-            novo_texto,
-            encoding="utf-8"
+          if n != 1:
+              raise SystemExit("ERRO: não foi possível corrigir clearPedido")
+
+          # Selecionar automaticamente a primeira categoria válida
+          old_start = "load();loadFeatures();APP_DATA=buildAppData();cats=Object.keys(APP_DATA);if(!cats.length && !importedCatalogActive){APP_DATA=DATA;cats=Object.keys(DATA)}tabs();render();updateBadge();renderValidadeCurta();"
+
+          new_start = "load();loadFeatures();APP_DATA=buildAppData();cats=Object.keys(APP_DATA);if(!cats.length && !importedCatalogActive){APP_DATA=DATA;cats=Object.keys(DATA)}if(!current || !APP_DATA[current])current=cats[0]||'';tabs();render();updateBadge();renderValidadeCurta();"
+
+          if old_start in text:
+              text = text.replace(old_start, new_start, 1)
+          elif "if(!current || !APP_DATA[current])current=cats[0]||'';" not in text:
+              raise SystemExit("ERRO: não foi possível corrigir inicialização do catálogo")
+
+          # Bibliotecas locais
+          text = text.replace(
+              'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js',
+              'xlsx.full.min.js'
           )
 
-          print("OK: somente openPDF foi substituído.")
+          text = text.replace(
+              'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
+              'jspdf.umd.min.js'
+          )
+
+          # Confirmar correção da importação
+          required = [
+              'importedCatalogActive=true',
+              'customProducts=rows.filter(x=>x.code||x.name).map(x=>({...x}))',
+              'function repeatLastOrder()',
+              'function openAdmin()',
+              'function saveHistory(rows)',
+              'function applyRepeat(rows)',
+              'window.AndroidFileBridge.sharePdf'
+          ]
+
+          for item in required:
+              if item not in text:
+                  raise SystemExit("ERRO: não encontrado: " + item)
+
+          html.write_text(text, encoding="utf-8")
+
+          print("HTML corrigido.")
+
           PY
+
+      - name: Preparar bibliotecas locais
+        shell: bash
+        run: |
+          set -e
+
+          ASSETS="$ANDROID_DIR/app/src/main/assets/app"
+
+          mkdir -p "$ASSETS"
+
+          curl -L --fail --retry 3 \
+            -o "$ASSETS/xlsx.full.min.js" \
+            "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"
+
+          curl -L --fail --retry 3 \
+            -o "$ASSETS/jspdf.umd.min.js" \
+            "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"
+
+          test -s "$ASSETS/xlsx.full.min.js"
+          test -s "$ASSETS/jspdf.umd.min.js"
 
       - name: Verificar JavaScript
         shell: bash
         run: |
           set -e
 
-          python3 <<'PY'
-          from pathlib import Path
+          HTML="$ANDROID_DIR/app/src/main/assets/app/index.html"
+
+          test -f "$HTML"
+
+          python3 - <<'PY'
           import re
+          from pathlib import Path
           import os
 
-          html=Path(os.environ["ANDROID_DIR"]) / \
-            "app/src/main/assets/app/index.html"
+          html = Path(os.environ["ANDROID_DIR"]) / "app/src/main/assets/app/index.html"
+          text = html.read_text(encoding="utf-8")
 
-          text=html.read_text(encoding="utf-8")
-
-          checks=[
-            "async function openPDF",
-            "function sendWhatsApp",
-            "function clearPedido",
-            "function repeatLastOrder",
-            "function applyRepeat",
-            "function openAdmin",
-            "function saveHistory",
-            "function saveFeatures",
-            "function loadFeatures",
-            "function productByCode",
-            "groupRows",
-            "AndroidFileBridge.sharePdf",
-            "CÓDIGO",
-            "NOME DO PRODUTO",
-            "ESTOQUE",
-            "PEDIDO",
-            "Página",
-            "orientation:'portrait'",
-            "format:'a4'"
-          ]
-
-          for item in checks:
-            if item not in text:
-              raise SystemExit(
-                "ERRO: estrutura ausente: "+item
-              )
-
-          if "orientation:'landscape'" in text:
-            raise SystemExit(
-              "ERRO: relatório em paisagem encontrado."
-            )
-
-          scripts=re.findall(
-            r"<script(?:[^>]*)>(.*?)</script>",
-            text,
-            re.S
-          )
+          scripts = re.findall(r"<script(?:[^>]*)>(.*?)</script>", text, re.S)
 
           if not scripts:
-            raise SystemExit(
-              "ERRO: JavaScript não encontrado."
-            )
+              raise SystemExit("ERRO: nenhum JavaScript encontrado")
 
-          Path("/tmp/super-pedido.js").write_text(
-            "\n".join(scripts),
-            encoding="utf-8"
+          combined = "\n".join(scripts)
+
+          Path("/tmp/super-pedido-inline.js").write_text(
+              combined,
+              encoding="utf-8"
           )
 
-          print("VERIFICAÇÃO: OK")
-          print("Funções principais da V9 preservadas.")
-          print("Relatório configurado em A4 retrato.")
+          required = [
+              "function repeatLastOrder()",
+              "function openAdmin()",
+              "function saveHistory(rows)",
+              "function applyRepeat(rows)",
+              "function clearPedido()",
+              "window.AndroidFileBridge.sharePdf"
+          ]
+
+          for item in required:
+              if item not in text:
+                  raise SystemExit("ERRO: não encontrado: " + item)
+
+          print("Verificação textual concluída.")
           PY
 
-          node --check /tmp/super-pedido.js
+          node --check /tmp/super-pedido-inline.js
 
       - name: Compilar APK
         shell: bash
         run: |
           set -e
-
           cd "$ANDROID_DIR"
 
           chmod +x gradlew 2>/dev/null || true
 
-          if [ -f "./gradlew" ]; then
-            ./gradlew \
-              --no-daemon \
-              --stacktrace \
-              clean \
-              assembleDebug
+          if [ -x "./gradlew" ]; then
+            ./gradlew --no-daemon assembleDebug
           else
-            gradle \
-              --no-daemon \
-              --stacktrace \
-              clean \
-              assembleDebug
+            gradle --no-daemon assembleDebug
           fi
 
       - name: Verificar APK
@@ -666,28 +228,15 @@ jobs:
         run: |
           set -e
 
-          APK=$(find \
-            "$ANDROID_DIR/app/build/outputs/apk" \
+          APK=$(find "$ANDROID_DIR/app/build/outputs/apk" \
             -type f \
             -name "*.apk" \
-            -print \
-            -quit)
+            -print -quit)
 
-          if [ -z "$APK" ]; then
-            echo "ERRO: APK não foi gerado."
-            exit 1
-          fi
-
-          if [ ! -s "$APK" ]; then
-            echo "ERRO: APK vazio."
-            exit 1
-          fi
+          test -n "$APK"
+          test -s "$APK"
 
           echo "APK=$APK" >> "$GITHUB_ENV"
-
-          echo "===================================="
-          echo "APK GERADO COM SUCESSO"
-          echo "===================================="
 
           ls -lh "$APK"
 
@@ -697,4 +246,4 @@ jobs:
           name: Super-Pedido-Pro-APK
           path: ${{ env.APK }}
           if-no-files-found: error
-          retention-days: 30
+```0
