@@ -11,6 +11,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+
       - name: Baixar projeto
         uses: actions/checkout@v4
 
@@ -29,9 +30,13 @@ jobs:
         shell: bash
         run: |
           set -e
+
           rm -rf projeto
+
           test -f "Super-Pedido-Pro.zip"
+
           mkdir -p projeto
+
           unzip -o "Super-Pedido-Pro.zip" -d projeto
 
       - name: Localizar projeto Android
@@ -45,11 +50,14 @@ jobs:
             -print \
             -quit | xargs -r dirname)
 
-          test -n "$ANDROID_DIR"
+          if [ -z "$ANDROID_DIR" ]; then
+            echo "ERRO: projeto Android não encontrado."
+            exit 1
+          fi
 
           echo "ANDROID_DIR=$ANDROID_DIR" >> "$GITHUB_ENV"
 
-          echo "Projeto encontrado em:"
+          echo "Projeto encontrado:"
           echo "$ANDROID_DIR"
 
       - name: Configurar AndroidX
@@ -96,15 +104,13 @@ jobs:
                   "ERRO: MainActivity.java não encontrado"
               )
 
-          # ============================================================
-          # HTML
-          # ============================================================
-
           text = html.read_text(
               encoding="utf-8"
           )
 
-          # Limpar pedido depois do envio
+          # ============================================================
+          # 1. LIMPAR PEDIDO APÓS ENVIO
+          # ============================================================
 
           new_clear = '''function clearPedido(){
             Object.keys(vals).forEach(k=>delete vals[k]);
@@ -133,7 +139,9 @@ jobs:
                   "ERRO: clearPedido não encontrado"
               )
 
-          # Selecionar primeira categoria automaticamente
+          # ============================================================
+          # 2. SELECIONAR PRIMEIRA CATEGORIA AUTOMATICAMENTE
+          # ============================================================
 
           old_start = (
               "load();loadFeatures();"
@@ -164,7 +172,9 @@ jobs:
                   1
               )
 
-          # Bibliotecas locais
+          # ============================================================
+          # 3. BIBLIOTECAS LOCAIS
+          # ============================================================
 
           text = text.replace(
               "https://cdnjs.cloudflare.com/ajax/libs/"
@@ -178,7 +188,9 @@ jobs:
               "jspdf.umd.min.js"
           )
 
-          # Confirmar importação
+          # ============================================================
+          # 4. CONFIRMAR IMPORTAÇÃO
+          # ============================================================
 
           required = [
               "importedCatalogActive=true",
@@ -193,7 +205,7 @@ jobs:
                   )
 
           # ============================================================
-          # PDF
+          # 5. PDF
           # ============================================================
 
           pdf_code = r'''<script>
@@ -709,21 +721,22 @@ jobs:
           )
 
           # ============================================================
-          # JAVA
+          # 6. MAIN ACTIVITY
           # ============================================================
 
           java=main.read_text(
               encoding="utf-8"
           )
 
-          # ============================================================
-          # CORREÇÃO PRINCIPAL:
-          # NÃO usa sanitizeFilename().
-          # ============================================================
+          # ------------------------------------------------------------
+          # Não usar sanitizeFilename().
+          # O nome é tratado diretamente aqui.
+          # ------------------------------------------------------------
 
           safe_share = '''@JavascriptInterface
           public void sharePdf(String filename, String base64) {
               try {
+
                   byte[] bytes =
                       Base64.decode(
                           base64,
@@ -788,77 +801,77 @@ jobs:
                           file
                       );
 
-                  Intent whatsapp =
+                  Intent shareIntent =
                       new Intent(
                           Intent.ACTION_SEND
                       );
 
-                  whatsapp.setType(
+                  shareIntent.setType(
                       "application/pdf"
                   );
 
-                  whatsapp.putExtra(
+                  shareIntent.putExtra(
                       Intent.EXTRA_STREAM,
                       uri
                   );
 
-                  whatsapp.addFlags(
+                  shareIntent.addFlags(
                       Intent.FLAG_GRANT_READ_URI_PERMISSION
                   );
 
-                  whatsapp.setClipData(
+                  shareIntent.setClipData(
                       ClipData.newRawUri(
                           "PDF",
                           uri
                       )
                   );
 
-                  whatsapp.setPackage(
-                      "com.whatsapp"
-                  );
+                  try {
 
-                  try{
-
-                      startActivity(
-                          whatsapp
-                      );
-
-                  }catch(Exception e){
-
-                      Intent chooser =
+                      Intent whatsappIntent =
                           new Intent(
                               Intent.ACTION_SEND
                           );
 
-                      chooser.setType(
+                      whatsappIntent.setType(
                           "application/pdf"
                       );
 
-                      chooser.putExtra(
+                      whatsappIntent.putExtra(
                           Intent.EXTRA_STREAM,
                           uri
                       );
 
-                      chooser.addFlags(
+                      whatsappIntent.addFlags(
                           Intent.FLAG_GRANT_READ_URI_PERMISSION
                       );
 
-                      chooser.setClipData(
+                      whatsappIntent.setClipData(
                           ClipData.newRawUri(
                               "PDF",
                               uri
                           )
                       );
 
+                      whatsappIntent.setPackage(
+                          "com.whatsapp"
+                      );
+
+                      startActivity(
+                          whatsappIntent
+                      );
+
+                  } catch(Exception e) {
+
                       startActivity(
                           Intent.createChooser(
-                              chooser,
+                              shareIntent,
                               "Enviar pedido em PDF"
                           )
                       );
                   }
 
-              }catch(Exception e){
+              } catch(Exception e) {
 
                   e.printStackTrace();
 
@@ -870,12 +883,13 @@ jobs:
               }
           }'''
 
+          # Procurar o método atual sharePdf inteiro.
+
           pattern = (
               r'@JavascriptInterface\s+'
               r'public void sharePdf'
               r'\(String filename, String base64\)'
               r'\s*\{.*?\n\s*\}'
-              r'\s*(?=@JavascriptInterface|\n\s*private|\n\s*\})'
           )
 
           java2,n = re.subn(
@@ -898,7 +912,7 @@ jobs:
           )
 
           print(
-              "Correções aplicadas com sucesso."
+              "Correções da versão 9 aplicadas."
           )
 
           PY
@@ -919,6 +933,7 @@ jobs:
             https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js
 
           test -s xlsx.full.min.js
+
           test -s jspdf.umd.min.js
 
       - name: Verificar correções
@@ -958,9 +973,28 @@ jobs:
 
           cd "$ANDROID_DIR"
 
-          chmod +x gradlew
+          echo "=========================================="
+          echo "INICIANDO COMPILAÇÃO DO APK"
+          echo "=========================================="
 
-          ./gradlew clean assembleDebug --stacktrace
+          if [ -f "./gradlew" ]; then
+
+            echo "Gradle Wrapper encontrado."
+
+            chmod +x ./gradlew
+
+            ./gradlew clean assembleDebug --stacktrace
+
+          else
+
+            echo "Gradle Wrapper não encontrado no ZIP."
+            echo "Usando Gradle 8.7 instalado pelo Actions."
+
+            gradle --version
+
+            gradle clean assembleDebug --stacktrace
+
+          fi
 
       - name: Localizar APK
         shell: bash
@@ -976,12 +1010,15 @@ jobs:
               -quit
           )
 
-          test -n "$APK"
-
-          echo "APK=$APK" >> "$GITHUB_ENV"
+          if [ -z "$APK" ]; then
+            echo "ERRO: APK não foi gerado."
+            exit 1
+          fi
 
           echo "APK encontrado:"
           echo "$APK"
+
+          echo "APK=$APK" >> "$GITHUB_ENV"
 
       - name: Enviar APK
         uses: actions/upload-artifact@v4
