@@ -52,8 +52,7 @@ jobs:
 
           echo "ANDROID_DIR=$ANDROID_DIR" >> "$GITHUB_ENV"
 
-          echo "Projeto encontrado em:"
-          echo "$ANDROID_DIR"
+          echo "Projeto encontrado em: $ANDROID_DIR"
 
       - name: Configurar AndroidX
         shell: bash
@@ -64,522 +63,255 @@ jobs:
 
           touch gradle.properties
 
-          grep -Fq "android.useAndroidX=true" gradle.properties || \
-            echo "android.useAndroidX=true" >> gradle.properties
+          grep -qF "android.useAndroidX=true" gradle.properties \
+            || echo "android.useAndroidX=true" >> gradle.properties
 
-          grep -Fq "android.enableJetifier=true" gradle.properties || \
-            echo "android.enableJetifier=true" >> gradle.properties
+          grep -qF "android.enableJetifier=true" gradle.properties \
+            || echo "android.enableJetifier=true" >> gradle.properties
 
-      - name: Corrigir somente Administração, Repetir e Zeramento
+      - name: Corrigir SOMENTE ADM, Repetir último e limpeza
         shell: bash
         run: |
           set -e
 
           python3 - <<'PY'
           from pathlib import Path
+          import hashlib
           import os
-          import re
 
           root = Path(os.environ["ANDROID_DIR"])
+
           html = root / "app/src/main/assets/app/index.html"
 
           if not html.exists():
-              raise SystemExit("ERRO: index.html não encontrado")
-
-          text = html.read_text(encoding="utf-8")
-
-          # ============================================================
-          # LOCALIZA UMA FUNÇÃO JAVASCRIPT DE FORMA SEGURA
-          # Funciona tanto se a função estiver em uma linha quanto
-          # em várias linhas.
-          # ============================================================
-
-          def find_function(text, name):
-              pattern = re.compile(
-                  r'function\s+' + re.escape(name) +
-                  r'\s*\([^)]*\)\s*\{',
-                  re.S
-              )
-
-              m = pattern.search(text)
-
-              if not m:
-                  return None
-
-              start = m.start()
-              brace_start = text.find("{", m.start(), m.end())
-
-              depth = 0
-              quote = None
-              escape = False
-              i = brace_start
-
-              while i < len(text):
-                  ch = text[i]
-
-                  if quote:
-                      if escape:
-                          escape = False
-                      elif ch == "\\":
-                          escape = True
-                      elif ch == quote:
-                          quote = None
-                  else:
-                      if ch in ("'", '"', "`"):
-                          quote = ch
-                      elif ch == "{":
-                          depth += 1
-                      elif ch == "}":
-                          depth -= 1
-
-                          if depth == 0:
-                              return start, i + 1
-
-                  i += 1
-
               raise SystemExit(
-                  "ERRO: função " + name +
-                  " foi encontrada, mas suas chaves não fecharam."
+                  "ERRO: index.html não encontrado"
               )
 
-          def replace_function(text, name, new_function):
-              found = find_function(text, name)
-
-              if not found:
-                  raise SystemExit(
-                      "ERRO: não foi possível localizar " + name
-                  )
-
-              start, end = found
-
-              return text[:start] + new_function + text[end:]
-
-          # ============================================================
-          # 1. ADMINISTRAÇÃO
-          #
-          # Não usa prompt(), porque prompt() pode não funcionar
-          # corretamente dentro do WebView Android.
-          # ============================================================
-
-          new_open_admin = r'''function openAdmin(){
-            const saved=localStorage.getItem('sp_admin_pin')||'1234';
-
-            featureModal(`
-              <h3>🔐 Administração</h3>
-
-              <div class="stat">
-                Digite o PIN de administração:
-              </div>
-
-              <input
-                id="adminPinInput"
-                type="password"
-                inputmode="numeric"
-                maxlength="12"
-                placeholder="PIN"
-                style="
-                  width:100%;
-                  padding:13px;
-                  border:1px solid #cbd5e1;
-                  border-radius:9px;
-                  font-size:18px;
-                  text-align:center;
-                  margin:8px 0;
-                "
-              >
-
-              <button
-                onclick="confirmAdminPin()"
-                style="
-                  width:100%;
-                  background:#176b3a;
-                  color:white;
-                  border:0;
-                  padding:13px;
-                  border-radius:9px;
-                  font-weight:800;
-                "
-              >
-                🔓 Entrar
-              </button>
-
-              <button
-                onclick="closeFeature()"
-                style="
-                  width:100%;
-                  margin-top:7px;
-                  padding:11px;
-                  border-radius:9px;
-                "
-              >
-                Cancelar
-              </button>
-            `);
-
-            setTimeout(()=>{
-              const el=document.getElementById('adminPinInput');
-              if(el)el.focus();
-            },100);
-          }'''
-
-          text = replace_function(
-              text,
-              "openAdmin",
-              new_open_admin
+          text = html.read_text(
+              encoding="utf-8"
           )
 
-          # ============================================================
-          # 2. CONFIRMAÇÃO DO PIN
-          # ============================================================
+          original = text
 
-          admin_helpers = r'''
-          function confirmAdminPin(){
-            const el=document.getElementById('adminPinInput');
+          def replace_function(
+              source,
+              marker,
+              replacement
+          ):
+              start = source.find(marker)
 
-            if(!el){
-              alert('Tela de administração não encontrada.');
-              return;
-            }
-
-            const pin=String(el.value||'').trim();
-
-            if(!pin){
-              alert('Digite o PIN.');
-              return;
-            }
-
-            const saved=localStorage.getItem('sp_admin_pin')||'1234';
-
-            if(pin!==saved){
-              el.value='';
-              el.focus();
-              alert('PIN incorreto.');
-              return;
-            }
-
-            const totalProdutos=Object.values(APP_DATA)
-              .reduce(
-                (a,s)=>
-                  a+
-                  Object.values(s)
-                    .reduce((b,x)=>b+x.length,0),
-                0
-              );
-
-            featureModal(`
-              <h3>🔐 Administração</h3>
-
-              <div class="stat">
-                Produtos na lista:
-                <b>${totalProdutos}</b>
-              </div>
-
-              <div class="adminGrid">
-
-                <button onclick="importList()">
-                  📥 Importar lista (XLSX/CSV)
-                </button>
-
-                <button onclick="backupJSON()">
-                  💾 Backup completo
-                </button>
-
-                <button onclick="changePin()">
-                  🔑 Alterar PIN
-                </button>
-
-              </div>
-
-              <p class="mini">
-                A importação XLSX/CSV é feita pelo próprio aplicativo.
-              </p>
-
-              <button
-                onclick="clearLocalData()"
-                style="
-                  width:100%;
-                  background:#fff1f2;
-                  color:#b42318;
-                  border:1px solid #fecdd3;
-                  font-weight:800;
-                "
-              >
-                ⚠️ Limpar dados locais do pedido
-              </button>
-
-              <button
-                onclick="closeFeature()"
-                style="width:100%;margin-top:8px"
-              >
-                Fechar
-              </button>
-            `);
-          }
-          '''
-
-          # Só adiciona os auxiliares se ainda não existirem.
-          if "function confirmAdminPin()" not in text:
-              marker = "function importList()"
-              pos = text.find(marker)
-
-              if pos < 0:
+              if start < 0:
                   raise SystemExit(
-                      "ERRO: não foi possível localizar importList"
+                      "ERRO: não encontrou " + marker
                   )
 
-              text = text[:pos] + admin_helpers + "\n" + text[pos:]
+              next_function = source.find(
+                  "function ",
+                  start + len(marker)
+              )
 
-          # ============================================================
-          # 3. REPETIR ÚLTIMO PEDIDO
+              if next_function < 0:
+                  raise SystemExit(
+                      "ERRO: não encontrou o fim de "
+                      + marker
+                  )
+
+              return (
+                  source[:start]
+                  + replacement
+                  + "\n"
+                  + source[next_function:]
+              )
+
+          def get_function(
+              source,
+              marker
+          ):
+              start = source.find(marker)
+
+              if start < 0:
+                  raise SystemExit(
+                      "ERRO: não encontrou " + marker
+                  )
+
+              next_function = source.find(
+                  "function ",
+                  start + len(marker)
+              )
+
+              if next_function < 0:
+                  raise SystemExit(
+                      "ERRO: não encontrou o fim de "
+                      + marker
+                  )
+
+              return source[start:next_function]
+
+          # ==================================================
+          # GUARDAR O RELATÓRIO ORIGINAL DA BASE #49
+          # ==================================================
+
+          report_text_before = get_function(
+              original,
+              "function reportText(source=getRows()){"
+          )
+
+          group_rows_before = get_function(
+              original,
+              "function groupRows(rows){"
+          )
+
+          open_pdf_before = get_function(
+              original,
+              "function openPDF(){"
+          )
+
+          # ==================================================
+          # 1. ADMINISTRAÇÃO
           #
-          # Não depende de prompt.
-          # Recupera diretamente o pedido salvo.
-          # ============================================================
+          # Remove dependência do prompt() do WebView Android.
+          # ==================================================
 
-          new_repeat = r'''function repeatLastOrder(){
-            try{
-              let rows=Array.isArray(lastOrder)?lastOrder:[];
+          new_admin = '''function openAdmin(){featureModal(`<h3>🔐 Administração</h3><p>Digite o PIN de administração.</p><input id="adminPinInput" type="password" inputmode="numeric" autocomplete="off" placeholder="PIN" style="width:100%;box-sizing:border-box;padding:12px;font-size:18px"><div style="display:flex;gap:8px;margin-top:10px"><button onclick="confirmAdminPin()">Entrar</button><button onclick="closeFeature()">Cancelar</button></div>`);setTimeout(()=>{const e=document.getElementById('adminPinInput');if(e)e.focus()},50)}
+          function confirmAdminPin(){const input=document.getElementById('adminPinInput');const pin=input?String(input.value||''):'';const saved=localStorage.getItem('sp_admin_pin')||'1234';if(pin!==saved){alert('PIN incorreto.');return}featureModal(`<h3>🔐 Administração</h3><div class="stat">Produtos na lista: <b>${Object.values(APP_DATA).reduce((a,s)=>a+Object.values(s).reduce((b,x)=>b+x.length,0),0)}</b></div><div class="adminGrid"><button onclick="importList()">📥 Importar lista (XLSX/CSV)</button><button onclick="generateImportTemplate()">📄 Gerar lista para preencher</button><button onclick="backupJSON()">💾 Backup completo</button><button onclick="changePin()">🔑 Alterar PIN</button></div><p class="mini">No Android, a importação XLSX/CSV é lida pelo próprio aplicativo. Após uma importação, a planilha passa a ser a lista oficial; itens antigos que não estiverem nela deixam de aparecer.</p><button onclick="clearLocalData()">⚠️ Limpar dados locais do pedido</button>`)}'''
 
-              if(!rows.length){
-                const raw=localStorage.getItem('sp_last_order')||'[]';
+          # ==================================================
+          # 2. REPETIR ÚLTIMO PEDIDO
+          # ==================================================
 
-                try{
-                  rows=JSON.parse(raw);
-                }catch(e){
-                  rows=[];
-                }
-              }
+          new_repeat = '''function repeatLastOrder(){let rows=Array.isArray(lastOrder)?lastOrder:[];if(!rows.length){try{rows=JSON.parse(localStorage.getItem('sp_last_order')||'[]')}catch(e){rows=[]}}if(!rows.length&&Array.isArray(historyOrders)&&historyOrders.length){rows=historyOrders[0].rows||[];if(rows.length)rows.generalObservation=historyOrders[0].generalObservation||''}if(!rows.length){alert('Ainda não existe último pedido.');return}lastOrder=JSON.parse(JSON.stringify(rows));saveFeatures();applyRepeat(lastOrder)}'''
 
-              if(!Array.isArray(rows)||!rows.length){
-                alert('Ainda não existe último pedido.');
-                return;
-              }
+          new_apply = '''function applyRepeat(rows){if(!Array.isArray(rows)||!rows.length){alert('Não foi possível recuperar o último pedido.');return}vals={};extras=[];rows.forEach(x=>{if(x.cat==='Produto Adicional'){extras.push({code:x.code==='-'?'':x.code,name:x.name,qty:Number(x.order)||0});return}const f=productByCode(x.code);if(f){const ko=key(f.c,f.s,f.i,'o');vals[ko]=Number(x.order)||0;const ks=key(f.c,f.s,f.i,'s');vals[ks]=Number(x.stock)||0;}});generalObservation=(rows.generalObservation||generalObservation);const obs=document.getElementById('generalObs');if(obs)obs.value=generalObservation;save();saveFeatures();render();updateBadge();closeFeature();alert('Último pedido recuperado. Confira antes de enviar.')}'''
 
-              applyRepeat(rows);
+          # ==================================================
+          # 3. LIMPAR PEDIDO
+          #
+          # Mantém histórico e último pedido.
+          # ==================================================
 
-            }catch(e){
-              console.error(e);
-              alert(
-                'Não foi possível recuperar o último pedido: '+
-                (e.message||e)
-              );
-            }
-          }'''
+          new_clear = '''function clearPedido(){if(finalizedRows.length)saveHistory(finalizedRows);vals={};extras=[];validadeCurta=[];finalizedRows=[];save();localStorage.removeItem('pedido_compras_vals');localStorage.removeItem('pedido_compras_extras');localStorage.removeItem('pedido_compras_validade_curta');render();renderValidadeCurta();updateBadge();closeConference();window.scrollTo({top:0,behavior:'smooth'})}'''
+
+          # Aplicar SOMENTE as três funções.
 
           text = replace_function(
               text,
-              "repeatLastOrder",
+              "function openAdmin(){",
+              new_admin
+          )
+
+          text = replace_function(
+              text,
+              "function repeatLastOrder(){",
               new_repeat
           )
 
-          # ============================================================
-          # 4. APPLY REPEAT
-          #
-          # Localização por contagem de chaves evita o erro que apareceu
-          # no build anterior.
-          # ============================================================
-
-          new_apply = r'''function applyRepeat(rows){
-            try{
-              if(!Array.isArray(rows)||!rows.length){
-                alert('Não há itens para repetir.');
-                return;
-              }
-
-              vals={};
-              extras=[];
-
-              rows.forEach(x=>{
-                if(!x)return;
-
-                if(x.cat==='Produto Adicional'){
-                  const qty=Number(x.order)||0;
-
-                  if(qty>0){
-                    extras.push({
-                      code:x.code==='-'?'':String(x.code||''),
-                      name:String(x.name||'Produto adicional'),
-                      qty:qty
-                    });
-                  }
-
-                  return;
-                }
-
-                const f=productByCode(x.code);
-
-                if(f){
-                  const ko=key(
-                    f.c,
-                    f.s,
-                    f.i,
-                    'o'
-                  );
-
-                  const ks=key(
-                    f.c,
-                    f.s,
-                    f.i,
-                    's'
-                  );
-
-                  vals[ko]=Number(x.order)||0;
-                  vals[ks]=Number(x.stock)||0;
-                }
-              });
-
-              if(Object.prototype.hasOwnProperty.call(
-                rows,
-                'generalObservation'
-              )){
-                generalObservation=
-                  rows.generalObservation||'';
-              }
-
-              const obs=
-                document.getElementById('generalObs');
-
-              if(obs){
-                obs.value=generalObservation||'';
-              }
-
-              save();
-              saveFeatures();
-              render();
-              updateBadge();
-              closeFeature();
-
-              alert(
-                'Último pedido recuperado. Confira antes de enviar.'
-              );
-
-            }catch(e){
-              console.error(e);
-
-              alert(
-                'Não foi possível repetir o pedido: '+
-                (e.message||e)
-              );
-            }
-          }'''
-
           text = replace_function(
               text,
-              "applyRepeat",
+              "function applyRepeat(rows){",
               new_apply
           )
 
-          # ============================================================
-          # 5. ZERAMENTO
-          #
-          # Mantém cadastro/lista.
-          # Zera estoque, pedido, adicionais e validade curta.
-          # NÃO apaga o último pedido nem histórico.
-          # ============================================================
-
-          new_clear = r'''function clearPedido(){
-            try{
-              Object.keys(vals).forEach(k=>{
-                if(
-                  k.endsWith('|s') ||
-                  k.endsWith('|o')
-                ){
-                  vals[k]=0;
-                }
-              });
-
-              extras=[];
-              validadeCurta=[];
-              finalizedRows=[];
-              generalObservation='';
-
-              const obs=
-                document.getElementById('generalObs');
-
-              if(obs){
-                obs.value='';
-              }
-
-              save();
-              saveFeatures();
-
-              render();
-              updateBadge();
-              renderValidadeCurta();
-              closeConference();
-
-            }catch(e){
-              console.error(e);
-
-              alert(
-                'Não foi possível zerar o pedido: '+
-                (e.message||e)
-              );
-            }
-          }'''
-
           text = replace_function(
               text,
-              "clearPedido",
+              "function clearPedido(){",
               new_clear
           )
 
-          # ============================================================
-          # 6. CORREÇÃO CRÍTICA DO ENVIO ANDROID
+          # ==================================================
+          # PDF:
           #
-          # Primeiro salva histórico e zera.
-          # Depois chama sharePdf().
+          # NÃO muda geração, layout ou conteúdo.
           #
-          # Assim o WebView não pode interromper o zeramento depois
-          # que o compartilhamento Android assumir o controle.
-          #
-          # O PDF em si NÃO é alterado.
-          # ============================================================
+          # Apenas garante que, depois que o Android receber
+          # o PDF, o pedido seja salvo no histórico e limpo.
+          # ==================================================
 
-          old_android = """const b64=doc.output('datauristring').split(',')[1];
-          window.AndroidFileBridge.sharePdf('pedido-acougue.pdf',b64);
-          saveHistory(rows);
-          clearPedido();
-          return;"""
+          old_hook = (
+              "window.AndroidFileBridge.sharePdf("
+              "'pedido-acougue.pdf',text);return"
+          )
 
-          new_android = """const b64=doc.output('datauristring').split(',')[1];
-          saveHistory(rows);
-          clearPedido();
-          window.AndroidFileBridge.sharePdf('pedido-acougue.pdf',b64);
-          return;"""
+          new_hook = (
+              "window.AndroidFileBridge.sharePdf("
+              "'pedido-acougue.pdf',text);"
+              "saveHistory(rows);"
+              "clearPedido();"
+              "return"
+          )
 
-          if old_android not in text:
+          if text.count(old_hook) != 1:
               raise SystemExit(
-                  "ERRO: trecho Android do openPDF não encontrado."
+                  "ERRO: gancho Android do PDF "
+                  "não encontrado exatamente uma vez"
               )
 
-          text=text.replace(
-              old_android,
-              new_android,
+          text = text.replace(
+              old_hook,
+              new_hook,
               1
           )
 
-          # ============================================================
-          # 7. GARANTIAS
-          # ============================================================
+          # ==================================================
+          # PROTEÇÃO ABSOLUTA DO RELATÓRIO
+          # ==================================================
 
-          required=[
-              "function openAdmin()",
-              "function confirmAdminPin()",
-              "function repeatLastOrder()",
-              "function applyRepeat(rows)",
-              "function clearPedido()",
-              "function openPDF(",
-              "window.AndroidFileBridge.sharePdf",
-              "saveHistory(rows)",
-              "android.useAndroidX"
+          if get_function(
+              text,
+              "function reportText(source=getRows()){"
+          ) != report_text_before:
+
+              raise SystemExit(
+                  "ERRO GRAVE: reportText foi alterado"
+              )
+
+          if get_function(
+              text,
+              "function groupRows(rows){"
+          ) != group_rows_before:
+
+              raise SystemExit(
+                  "ERRO GRAVE: groupRows foi alterado"
+              )
+
+          expected_open_pdf = open_pdf_before.replace(
+              old_hook,
+              new_hook
+          )
+
+          if get_function(
+              text,
+              "function openPDF(){"
+          ) != expected_open_pdf:
+
+              raise SystemExit(
+                  "ERRO GRAVE: openPDF recebeu "
+                  "alteração além do pós-envio"
+              )
+
+          # ==================================================
+          # VERIFICAÇÕES FINAIS
+          # ==================================================
+
+          required = [
+              "function openAdmin(){",
+              "function confirmAdminPin(){",
+              "function repeatLastOrder(){",
+              "function applyRepeat(rows){",
+              "function clearPedido(){",
+              "function openPDF(){",
+              "function reportText(source=getRows()){",
+              "function groupRows(rows){",
+              "window.AndroidFileBridge.sharePdf('pedido-acougue.pdf',text);saveHistory(rows);clearPedido();return"
           ]
 
           for item in required:
+
               if item not in text:
+
                   raise SystemExit(
-                      "ERRO: verificação final falhou: "+
-                      item
+                      "ERRO: recurso ausente: "
+                      + item
                   )
 
           html.write_text(
@@ -587,61 +319,81 @@ jobs:
               encoding="utf-8"
           )
 
-          print("========================================")
-          print("CORREÇÃO CONCLUÍDA")
-          print("========================================")
-          print("Administração: OK")
-          print("Repetir último: OK")
-          print("Zeramento após envio: OK")
-          print("Relatório existente preservado: OK")
-          print("========================================")
+          print(
+              "========================================"
+          )
+
+          print(
+              "OK: ADM corrigido."
+          )
+
+          print(
+              "OK: REPETIR ÚLTIMO corrigido."
+          )
+
+          print(
+              "OK: LIMPEZA após envio corrigida."
+          )
+
+          print(
+              "OK: reportText INALTERADO."
+          )
+
+          print(
+              "OK: groupRows INALTERADO."
+          )
+
+          print(
+              "OK: geração do relatório INALTERADA."
+          )
+
+          print(
+              "OK: PDF Android recebeu somente "
+              "o pós-envio."
+          )
+
+          print(
+              "HASH reportText:",
+              hashlib.sha256(
+                  report_text_before.encode()
+              ).hexdigest()
+          )
+
+          print(
+              "HASH groupRows:",
+              hashlib.sha256(
+                  group_rows_before.encode()
+              ).hexdigest()
+          )
+
+          print(
+              "========================================"
+          )
+
           PY
 
-      - name: Preparar bibliotecas locais
+      - name: Preparar bibliotecas PDF e Excel
         shell: bash
         run: |
           set -e
 
           ASSETS="$ANDROID_DIR/app/src/main/assets/app"
 
-          test -d "$ASSETS"
+          mkdir -p "$ASSETS"
 
-          curl -L --fail \
+          curl -L --fail --retry 3 \
             -o "$ASSETS/xlsx.full.min.js" \
             "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"
 
-          curl -L --fail \
+          curl -L --fail --retry 3 \
             -o "$ASSETS/jspdf.umd.min.js" \
             "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"
 
-          python3 - <<'PY'
-          from pathlib import Path
-          import os
+          test -s "$ASSETS/xlsx.full.min.js"
 
-          root=Path(os.environ["ANDROID_DIR"])
-          html=root/"app/src/main/assets/app/index.html"
+          test -s "$ASSETS/jspdf.umd.min.js"
 
-          text=html.read_text(encoding="utf-8")
-
-          text=text.replace(
-              "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js",
-              "xlsx.full.min.js"
-          )
-
-          text=text.replace(
-              "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js",
-              "jspdf.umd.min.js"
-          )
-
-          html.write_text(
-              text,
-              encoding="utf-8"
-          )
-
-          print("Bibliotecas locais configuradas.")
-          PY
-
-      - name: Verificar HTML
+      - name: Verificar JavaScript
         shell: bash
         run: |
           set -e
@@ -651,56 +403,71 @@ jobs:
           test -f "$HTML"
 
           python3 - <<'PY'
-          from pathlib import Path
-          import os
           import re
+          import os
+          from pathlib import Path
 
-          html=Path(
-              os.environ["ANDROID_DIR"]
-          )/"app/src/main/assets/app/index.html"
-
-          text=html.read_text(encoding="utf-8")
-
-          checks=[
-              "function openAdmin()",
-              "function confirmAdminPin()",
-              "function repeatLastOrder()",
-              "function applyRepeat(rows)",
-              "function clearPedido()",
-              "function openPDF(",
-              "window.AndroidFileBridge.sharePdf",
-              "saveHistory(rows)"
-          ]
-
-          for item in checks:
-              if item not in text:
-                  raise SystemExit(
-                      "ERRO HTML: "+item
-                  )
-
-          # Extrai o JavaScript inline para validar sintaxe.
-          scripts=re.findall(
-              r"<script(?:\s[^>]*)?>(.*?)</script>",
-              text,
-              flags=re.S|re.I
+          html = (
+              Path(os.environ["ANDROID_DIR"])
+              / "app/src/main/assets/app/index.html"
           )
 
-          js="\n".join(scripts)
+          text = html.read_text(
+              encoding="utf-8"
+          )
+
+          scripts = re.findall(
+              r"<script(?:[^>]*)>(.*?)</script>",
+              text,
+              re.S
+          )
+
+          if not scripts:
+
+              raise SystemExit(
+                  "ERRO: nenhum JavaScript encontrado"
+              )
 
           Path(
               "/tmp/super-pedido-inline.js"
           ).write_text(
-              js,
+              "\n".join(scripts),
               encoding="utf-8"
           )
 
-          print("Verificação textual do HTML: OK")
-          print("JavaScript inline extraído.")
+          checks = [
+              "function openAdmin(){",
+              "function confirmAdminPin(){",
+              "function repeatLastOrder(){",
+              "function applyRepeat(rows){",
+              "function clearPedido(){",
+              "function openPDF(){",
+              "function reportText(source=getRows()){",
+              "function groupRows(rows){",
+              "CÓDIGO",
+              "NOME DO PRODUTO",
+              "ESTOQUE",
+              "PEDIDO",
+          ]
+
+          for item in checks:
+
+              if item not in text:
+
+                  raise SystemExit(
+                      "ERRO: não encontrado: "
+                      + item
+                  )
+
+          print(
+              "OK: verificações estruturais concluídas."
+          )
+
           PY
 
           node --check /tmp/super-pedido-inline.js
 
-          echo "Sintaxe JavaScript: OK"
+          echo "OK: JavaScript sem erro de sintaxe."
 
       - name: Compilar APK
         shell: bash
@@ -709,38 +476,28 @@ jobs:
 
           cd "$ANDROID_DIR"
 
-          chmod +x gradlew 2>/dev/null || true
-
-          if [ -x "./gradlew" ]; then
-            ./gradlew --no-daemon assembleDebug
-          else
-            gradle --no-daemon assembleDebug
-          fi
+          gradle --no-daemon assembleDebug
 
       - name: Verificar APK
         shell: bash
         run: |
           set -e
 
-          APK=$(find "$ANDROID_DIR/app/build/outputs/apk" \
+          APK=$(find \
+            "$ANDROID_DIR/app/build/outputs/apk" \
             -type f \
             -name "*.apk" \
             -print -quit)
 
           test -n "$APK"
+
           test -s "$APK"
 
-          echo "APK=$APK" >> "$GITHUB_ENV"
-
-          echo "========================================"
-          echo "APK GERADO COM SUCESSO"
-          echo "========================================"
-
-          ls -lh "$APK"
+          echo "APK gerado: $APK"
 
       - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
           name: Super-Pedido-Pro-APK
-          path: ${{ env.APK }}
+          path: ${{ env.ANDROID_DIR }}/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
