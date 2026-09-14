@@ -11,7 +11,6 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-
       - name: Baixar projeto
         uses: actions/checkout@v4
 
@@ -30,13 +29,9 @@ jobs:
         shell: bash
         run: |
           set -e
-
           rm -rf projeto
-
           test -f "Super-Pedido-Pro.zip"
-
           mkdir -p projeto
-
           unzip -o "Super-Pedido-Pro.zip" -d projeto
 
       - name: Localizar projeto Android
@@ -50,14 +45,11 @@ jobs:
             -print \
             -quit | xargs -r dirname)
 
-          if [ -z "$ANDROID_DIR" ]; then
-            echo "ERRO: projeto Android não encontrado."
-            exit 1
-          fi
+          test -n "$ANDROID_DIR"
 
           echo "ANDROID_DIR=$ANDROID_DIR" >> "$GITHUB_ENV"
 
-          echo "Projeto encontrado:"
+          echo "Projeto encontrado em:"
           echo "$ANDROID_DIR"
 
       - name: Configurar AndroidX
@@ -75,7 +67,7 @@ jobs:
           grep -q "android.enableJetifier=true" gradle.properties \
             || echo "android.enableJetifier=true" >> gradle.properties
 
-      - name: Corrigir aplicativo - Admin, importação, PDF e limpeza
+      - name: Corrigir aplicativo - versão 9 + PDF
         shell: bash
         run: |
           set -e
@@ -104,13 +96,15 @@ jobs:
                   "ERRO: MainActivity.java não encontrado"
               )
 
+          # ============================================================
+          # HTML
+          # ============================================================
+
           text = html.read_text(
               encoding="utf-8"
           )
 
-          # ============================================================
-          # 1. LIMPAR PEDIDO APÓS ENVIO
-          # ============================================================
+          # Limpar pedido depois do envio
 
           new_clear = '''function clearPedido(){
             Object.keys(vals).forEach(k=>delete vals[k]);
@@ -139,9 +133,7 @@ jobs:
                   "ERRO: clearPedido não encontrado"
               )
 
-          # ============================================================
-          # 2. SELECIONAR PRIMEIRA CATEGORIA
-          # ============================================================
+          # Selecionar primeira categoria automaticamente
 
           old_start = (
               "load();loadFeatures();"
@@ -172,9 +164,7 @@ jobs:
                   1
               )
 
-          # ============================================================
-          # 3. BIBLIOTECAS LOCAIS
-          # ============================================================
+          # Bibliotecas locais
 
           text = text.replace(
               "https://cdnjs.cloudflare.com/ajax/libs/"
@@ -188,19 +178,28 @@ jobs:
               "jspdf.umd.min.js"
           )
 
+          # Confirmar importação
+
+          required = [
+              "importedCatalogActive=true",
+              "customProducts=rows.filter(x=>x.code||x.name).map(x=>({...x}))",
+              "localStorage.setItem('sp_imported_catalog_active'"
+          ]
+
+          for item in required:
+              if item not in text:
+                  raise SystemExit(
+                      f"ERRO: correção de importação ausente: {item}"
+                  )
+
           # ============================================================
-          # 4. NOVO PDF
-          #
-          # Não substituímos a função antiga por regex.
-          # Adicionamos uma nova versão no final do HTML.
-          # Isso evita quebrar o JavaScript existente.
+          # PDF
           # ============================================================
 
-          pdf_code = r'''
-          <script>
+          pdf_code = r'''<script>
           (function(){
 
-            window.openPDF = async function(){
+            window.openPDF=function(){
 
               const rows =
                 finalizedRows.length
@@ -223,51 +222,38 @@ jobs:
                   );
                 }
 
-                const jsPDF =
-                  window.jspdf.jsPDF;
-
                 const doc =
-                  new jsPDF({
+                  new window.jspdf.jsPDF({
                     orientation:'landscape',
                     unit:'mm',
                     format:'a4'
                   });
 
-                const pageWidth = 297;
-                const pageHeight = 210;
-                const margem = 10;
+                const W=297;
+                const H=210;
+                const M=10;
 
-                const colCodigo = 30;
-                const colProduto = 167;
-                const colEstoque = 35;
-                const colPedido = 35;
+                const C1=30;
+                const C2=167;
+                const C3=35;
+                const C4=35;
 
-                const xCodigo = margem;
-                const xProduto =
-                  xCodigo + colCodigo;
+                const x1=M;
+                const x2=x1+C1;
+                const x3=x2+C2;
+                const x4=x3+C3;
 
-                const xEstoque =
-                  xProduto + colProduto;
+                const rowH=7;
+                const headH=8;
 
-                const xPedido =
-                  xEstoque + colEstoque;
-
-                const alturaCabecalho = 8;
-                const alturaLinha = 7;
-
-                let y = 12;
+                let y=12;
 
                 const data =
                   new Date().toLocaleDateString(
-                    'pt-BR',
-                    {
-                      day:'2-digit',
-                      month:'2-digit',
-                      year:'numeric'
-                    }
+                    'pt-BR'
                   );
 
-                function tituloPagina(){
+                function title(){
 
                   doc.setFont(
                     'helvetica',
@@ -278,14 +264,14 @@ jobs:
 
                   doc.text(
                     'RELATÓRIO DE PEDIDO',
-                    pageWidth / 2,
+                    W/2,
                     y,
                     {
                       align:'center'
                     }
                   );
 
-                  y += 8;
+                  y+=8;
 
                   doc.setFont(
                     'helvetica',
@@ -295,30 +281,26 @@ jobs:
                   doc.setFontSize(9);
 
                   doc.text(
-                    'Data: ' + data,
-                    margem,
+                    'Data: '+data,
+                    M,
                     y
                   );
 
-                  y += 7;
+                  y+=7;
                 }
 
-                function novaPagina(){
-
-                  doc.addPage();
-
-                  y = 12;
-
-                  tituloPagina();
-                }
-
-                function cabecalho(){
+                function header(){
 
                   if(
-                    y + alturaCabecalho >
-                    pageHeight - 10
+                    y+headH >
+                    H-10
                   ){
-                    novaPagina();
+
+                    doc.addPage();
+
+                    y=12;
+
+                    title();
                   }
 
                   doc.setFont(
@@ -328,115 +310,101 @@ jobs:
 
                   doc.setFontSize(8);
 
-                  doc.rect(
-                    xCodigo,
-                    y,
-                    colCodigo,
-                    alturaCabecalho
-                  );
+                  const cols=[
+                    [x1,C1,'CÓDIGO'],
+                    [x2,C2,'NOME DO PRODUTO'],
+                    [x3,C3,'ESTOQUE'],
+                    [x4,C4,'PEDIDO']
+                  ];
 
-                  doc.rect(
-                    xProduto,
-                    y,
-                    colProduto,
-                    alturaCabecalho
-                  );
+                  cols.forEach(function(c){
 
-                  doc.rect(
-                    xEstoque,
-                    y,
-                    colEstoque,
-                    alturaCabecalho
-                  );
+                    doc.rect(
+                      c[0],
+                      y,
+                      c[1],
+                      headH
+                    );
 
-                  doc.rect(
-                    xPedido,
-                    y,
-                    colPedido,
-                    alturaCabecalho
-                  );
+                    if(
+                      c[2] ===
+                      'NOME DO PRODUTO'
+                    ){
 
-                  doc.text(
-                    'CÓDIGO',
-                    xCodigo + colCodigo / 2,
-                    y + 5.2,
-                    {
-                      align:'center'
+                      doc.text(
+                        c[2],
+                        c[0]+3,
+                        y+5.2
+                      );
+
+                    }else{
+
+                      doc.text(
+                        c[2],
+                        c[0]+c[1]/2,
+                        y+5.2,
+                        {
+                          align:'center'
+                        }
+                      );
                     }
-                  );
+                  });
 
-                  doc.text(
-                    'NOME DO PRODUTO',
-                    xProduto + 3,
-                    y + 5.2
-                  );
-
-                  doc.text(
-                    'ESTOQUE',
-                    xEstoque + colEstoque / 2,
-                    y + 5.2,
-                    {
-                      align:'center'
-                    }
-                  );
-
-                  doc.text(
-                    'PEDIDO',
-                    xPedido + colPedido / 2,
-                    y + 5.2,
-                    {
-                      align:'center'
-                    }
-                  );
-
-                  y += alturaCabecalho;
+                  y+=headH;
                 }
 
-                function nomeProduto(nome){
+                function fitName(name){
 
                   const original =
-                    String(nome || '');
+                    String(name || '');
 
-                  let valor = original;
+                  let value =
+                    original;
 
                   while(
-                    doc.getTextWidth(valor) >
-                      colProduto - 6 &&
-                    valor.length > 3
+                    value.length>3 &&
+                    doc.getTextWidth(value) >
+                      C2-6
                   ){
-                    valor =
-                      valor.substring(
+
+                    value =
+                      value.slice(
                         0,
-                        valor.length - 1
+                        -1
                       );
                   }
 
                   if(
-                    valor !== original
+                    value !== original
                   ){
-                    valor =
-                      valor.substring(
+
+                    value =
+                      value.slice(
                         0,
                         Math.max(
                           1,
-                          valor.length - 3
+                          value.length-3
                         )
-                      ) + '...';
+                      )+'...';
                   }
 
-                  return valor;
+                  return value;
                 }
 
-                function linha(item){
+                function line(item){
 
                   if(
-                    y + alturaLinha >
-                    pageHeight - 10
+                    y+rowH >
+                    H-10
                   ){
 
-                    novaPagina();
+                    doc.addPage();
 
-                    cabecalho();
+                    y=12;
+
+                    title();
+
+                    header();
                   }
 
                   doc.setFont(
@@ -447,110 +415,126 @@ jobs:
                   doc.setFontSize(8);
 
                   doc.rect(
-                    xCodigo,
+                    x1,
                     y,
-                    colCodigo,
-                    alturaLinha
+                    C1,
+                    rowH
                   );
 
                   doc.rect(
-                    xProduto,
+                    x2,
                     y,
-                    colProduto,
-                    alturaLinha
+                    C2,
+                    rowH
                   );
 
                   doc.rect(
-                    xEstoque,
+                    x3,
                     y,
-                    colEstoque,
-                    alturaLinha
+                    C3,
+                    rowH
                   );
 
                   doc.rect(
-                    xPedido,
+                    x4,
                     y,
-                    colPedido,
-                    alturaLinha
+                    C4,
+                    rowH
                   );
-
-                  doc.text(
-                    String(item.code || '-'),
-                    xCodigo + 3,
-                    y + 4.8
-                  );
-
-                  doc.text(
-                    nomeProduto(item.name),
-                    xProduto + 3,
-                    y + 4.8
-                  );
-
-                  doc.text(
-                    String(item.stock ?? 0),
-                    xEstoque + colEstoque / 2,
-                    y + 4.8,
-                    {
-                      align:'center'
-                    }
-                  );
-
-                  doc.text(
-                    String(item.order ?? 0),
-                    xPedido + colPedido / 2,
-                    y + 4.8,
-                    {
-                      align:'center'
-                    }
-                  );
-
-                  y += alturaLinha;
-                }
-
-                tituloPagina();
-
-                const grupos =
-                  groupRows(rows);
-
-                for(
-                  const [categoria,items]
-                  of Object.entries(grupos)
-                ){
-
-                  if(
-                    y + 25 >
-                    pageHeight - 10
-                  ){
-                    novaPagina();
-                  }
-
-                  y += 5;
-
-                  doc.setFont(
-                    'helvetica',
-                    'bold'
-                  );
-
-                  doc.setFontSize(12);
 
                   doc.text(
                     String(
-                      categoria || ''
-                    ).toUpperCase(),
-                    margem,
-                    y
+                      item.code || '-'
+                    ),
+                    x1+3,
+                    y+4.8
                   );
 
-                  y += 4;
+                  doc.text(
+                    fitName(item.name),
+                    x2+3,
+                    y+4.8
+                  );
 
-                  cabecalho();
+                  doc.text(
+                    String(
+                      item.stock ?? 0
+                    ),
+                    x3+C3/2,
+                    y+4.8,
+                    {
+                      align:'center'
+                    }
+                  );
 
-                  for(
-                    const item of items
-                  ){
-                    linha(item);
-                  }
+                  doc.text(
+                    String(
+                      item.order ?? 0
+                    ),
+                    x4+C4/2,
+                    y+4.8,
+                    {
+                      align:'center'
+                    }
+                  );
+
+                  y+=rowH;
                 }
+
+                title();
+
+                const groups =
+                  groupRows(rows);
+
+                Object.entries(
+                  groups
+                ).forEach(
+                  function(entry){
+
+                    const cat =
+                      entry[0];
+
+                    const items =
+                      entry[1];
+
+                    if(
+                      y+25 >
+                      H-10
+                    ){
+
+                      doc.addPage();
+
+                      y=12;
+
+                      title();
+                    }
+
+                    y+=5;
+
+                    doc.setFont(
+                      'helvetica',
+                      'bold'
+                    );
+
+                    doc.setFontSize(12);
+
+                    doc.text(
+                      String(
+                        cat || ''
+                      ).toUpperCase(),
+                      M,
+                      y
+                    );
+
+                    y+=4;
+
+                    header();
+
+                    items.forEach(
+                      line
+                    );
+                  }
+                );
 
                 if(
                   typeof generalObservation !==
@@ -559,13 +543,18 @@ jobs:
                 ){
 
                   if(
-                    y + 20 >
-                    pageHeight - 10
+                    y+20 >
+                    H-10
                   ){
-                    novaPagina();
+
+                    doc.addPage();
+
+                    y=12;
+
+                    title();
                   }
 
-                  y += 7;
+                  y+=7;
 
                   doc.setFont(
                     'helvetica',
@@ -576,11 +565,11 @@ jobs:
 
                   doc.text(
                     'OBSERVAÇÃO GERAL:',
-                    margem,
+                    M,
                     y
                   );
 
-                  y += 5;
+                  y+=5;
 
                   doc.setFont(
                     'helvetica',
@@ -589,7 +578,7 @@ jobs:
 
                   doc.setFontSize(8);
 
-                  const linhas =
+                  const lines =
                     doc.splitTextToSize(
                       String(
                         generalObservation
@@ -598,8 +587,8 @@ jobs:
                     );
 
                   doc.text(
-                    linhas,
-                    margem,
+                    lines,
+                    M,
                     y
                   );
                 }
@@ -608,12 +597,12 @@ jobs:
                   doc.getNumberOfPages();
 
                 for(
-                  let pagina = 1;
-                  pagina <= total;
-                  pagina++
+                  let p=1;
+                  p<=total;
+                  p++
                 ){
 
-                  doc.setPage(pagina);
+                  doc.setPage(p);
 
                   doc.setFont(
                     'helvetica',
@@ -624,17 +613,15 @@ jobs:
 
                   doc.text(
                     'Super Pedido Pro',
-                    margem,
-                    pageHeight - 5
+                    M,
+                    H-5
                   );
 
                   doc.text(
-                    'Página ' +
-                      pagina +
-                      ' de ' +
-                      total,
-                    pageWidth - margem,
-                    pageHeight - 5,
+                    'Página '+p+
+                    ' de '+total,
+                    W-M,
+                    H-5,
                     {
                       align:'right'
                     }
@@ -643,12 +630,17 @@ jobs:
 
                 const base64 =
                   doc
-                    .output('datauristring')
+                    .output(
+                      'datauristring'
+                    )
                     .split(',')[1];
 
-                const nomeArquivo =
+                const filename =
                   'relatorio-pedido-' +
-                  data.replace(/\//g,'-') +
+                  data.replace(
+                    /\//g,
+                    '-'
+                  ) +
                   '.pdf';
 
                 if(
@@ -659,53 +651,57 @@ jobs:
                 ){
 
                   window.AndroidFileBridge.sharePdf(
-                    nomeArquivo,
+                    filename,
                     base64
                   );
 
                 }else{
 
                   doc.save(
-                    nomeArquivo
+                    filename
                   );
                 }
 
-              }catch(error){
+              }catch(e){
 
                 console.error(
                   'Erro ao gerar PDF:',
-                  error
+                  e
                 );
 
                 alert(
-                  'Não foi possível gerar o PDF: ' +
-                  error.message
+                  'Não foi possível gerar o PDF: '+
+                  e.message
                 );
               }
             };
 
-            const botao =
+            const button =
               document.getElementById(
                 'btnWhatsPdf'
               );
 
-            if(botao){
-              botao.onclick =
+            if(button){
+
+              button.onclick =
                 window.openPDF;
             }
 
           })();
-          </script>
-          '''
+          </script>'''
 
           if "</body>" in text:
-              text = text.replace(
+
+              text=text.replace(
                   "</body>",
-                  pdf_code + "\n</body>",
+                  pdf_code+
+                  "\n</body>",
                   1
               )
+
           else:
-              text += "\n" + pdf_code
+
+              text += pdf_code
 
           html.write_text(
               text,
@@ -713,276 +709,37 @@ jobs:
           )
 
           # ============================================================
-          # 5. MAIN ACTIVITY
+          # JAVA
           # ============================================================
 
-          java = main.read_text(
+          java=main.read_text(
               encoding="utf-8"
           )
 
-          if (
-              "import android.content.ClipData;"
-              not in java
-          ):
-              java = java.replace(
-                  "import android.content.Intent;\n",
-                  "import android.content.ClipData;\n"
-                  "import android.content.Intent;\n",
-                  1
-              )
-
-          if (
-              "import android.webkit.ValueCallback;"
-              not in java
-          ):
-              java = java.replace(
-                  "import android.webkit.WebView;\n",
-                  "import android.webkit.ValueCallback;\n"
-                  "import android.webkit.WebView;\n",
-                  1
-              )
-
-          if (
-              "import android.webkit.WebChromeClient;"
-              not in java
-          ):
-              java = java.replace(
-                  "import android.webkit.WebView;\n",
-                  "import android.webkit.WebChromeClient;\n"
-                  "import android.webkit.WebView;\n",
-                  1
-              )
-
-          if (
-              "private ValueCallback<Uri[]> filePathCallback;"
-              not in java
-          ):
-
-              java = java.replace(
-                  "public class MainActivity extends Activity {\n",
-                  "public class MainActivity extends Activity {\n"
-                  "    private ValueCallback<Uri[]> filePathCallback;\n"
-                  "    private static final int FILE_CHOOSER_REQUEST = 1001;\n",
-                  1
-              )
-
-          if "onShowFileChooser" not in java:
-
-              marker = (
-                  "        webView.setWebViewClient("
-                  "new WebViewClient());\n"
-              )
-
-              block = '''        webView.setWebChromeClient(new WebChromeClient() {
-              @Override
-              public boolean onShowFileChooser(
-                      WebView view,
-                      ValueCallback<Uri[]> callback,
-                      FileChooserParams params) {
-
-                  if(
-                      MainActivity.this.filePathCallback
-                      != null
-                  ){
-                      MainActivity.this.filePathCallback
-                          .onReceiveValue(null);
-                  }
-
-                  MainActivity.this.filePathCallback =
-                      callback;
-
-                  try{
-
-                      Intent intent =
-                          params.createIntent();
-
-                      startActivityForResult(
-                          intent,
-                          FILE_CHOOSER_REQUEST
-                      );
-
-                      return true;
-
-                  }catch(Exception e){
-
-                      MainActivity.this.filePathCallback =
-                          null;
-
-                      Toast.makeText(
-                          MainActivity.this,
-                          "Não foi possível abrir os arquivos.",
-                          Toast.LENGTH_LONG
-                      ).show();
-
-                      return false;
-                  }
-              }
-          });
-          '''
-
-              if marker in java:
-                  java = java.replace(
-                      marker,
-                      marker + block,
-                      1
-                  )
-
-          if (
-              "protected void onActivityResult("
-              not in java
-          ):
-
-              marker = (
-                  "    public class AndroidFileBridge {\n"
-              )
-
-              result = '''    @Override
-          protected void onActivityResult(
-                  int requestCode,
-                  int resultCode,
-                  Intent data) {
-
-              super.onActivityResult(
-                  requestCode,
-                  resultCode,
-                  data
-              );
-
-              if(
-                  requestCode != FILE_CHOOSER_REQUEST ||
-                  filePathCallback == null
-              ){
-                  return;
-              }
-
-              Uri[] results = null;
-
-              if(
-                  resultCode == RESULT_OK &&
-                  data != null
-              ){
-
-                  if(data.getClipData() != null){
-
-                      int count =
-                          data.getClipData()
-                              .getItemCount();
-
-                      results =
-                          new Uri[count];
-
-                      for(
-                          int i=0;
-                          i<count;
-                          i++
-                      ){
-
-                          results[i] =
-                              data.getClipData()
-                                  .getItemAt(i)
-                                  .getUri();
-                      }
-
-                  }else if(
-                      data.getData() != null
-                  ){
-
-                      results =
-                          new Uri[]{
-                              data.getData()
-                          };
-                  }
-              }
-
-              filePathCallback.onReceiveValue(
-                  results
-              );
-
-              filePathCallback = null;
-          }
-
-          '''
-
-              java = java.replace(
-                  marker,
-                  result + marker,
-                  1
-              )
-
           # ============================================================
-          # 6. COMPARTILHAMENTO DO PDF
+          # CORREÇÃO PRINCIPAL:
+          # NÃO usa sanitizeFilename().
           # ============================================================
 
-          pdf_pattern = (
-              r"        @JavascriptInterface\n"
-              r"        public void sharePdf"
-              r"\(String filename, String base64\)"
-              r"\s*\{.*?\n"
-              r"        \}\n\n"
-              r"        @JavascriptInterface"
-          )
-
-          pdf_method = '''        @JavascriptInterface
-          public void sharePdf(
-                  String filename,
-                  String base64) {
-
-              try{
-
-                  if(
-                      base64 == null ||
-                      base64.trim().isEmpty()
-                  ){
-                      throw new Exception(
-                          "PDF vazio"
-                      );
-                  }
-
-                  String clean = base64;
-
-                  int comma =
-                      clean.indexOf(',');
-
-                  if(comma >= 0){
-                      clean =
-                          clean.substring(
-                              comma + 1
-                          );
-                  }
-
+          safe_share = '''@JavascriptInterface
+          public void sharePdf(String filename, String base64) {
+              try {
                   byte[] bytes =
                       Base64.decode(
-                          clean,
+                          base64,
                           Base64.DEFAULT
                       );
 
-                  File dir =
-                      new File(
-                          getCacheDir(),
-                          "shared"
-                      );
-
-                  if(
-                      !dir.exists() &&
-                      !dir.mkdirs()
-                  ){
-                      throw new Exception(
-                          "Não foi possível criar a pasta temporária"
-                      );
-                  }
-
                   String safeName =
-                      sanitizeFilename(
-                          filename
-                      );
-
-                  if(
-                      safeName == null ||
-                      safeName.isEmpty()
-                  ){
-                      safeName =
-                          "pedido.pdf";
-                  }
+                      filename == null ||
+                      filename.trim().isEmpty()
+                          ? "arquivo.pdf"
+                          : new File(filename)
+                              .getName()
+                              .replaceAll(
+                                  "[\\\\/:*?\\\"<>|]",
+                                  "_"
+                              );
 
                   if(
                       !safeName
@@ -992,89 +749,151 @@ jobs:
                       safeName += ".pdf";
                   }
 
+                  File sharedDir =
+                      new File(
+                          MainActivity.this
+                              .getCacheDir(),
+                          "shared"
+                      );
+
+                  if(
+                      !sharedDir.exists() &&
+                      !sharedDir.mkdirs() &&
+                      !sharedDir.exists()
+                  ){
+                      throw new Exception(
+                          "Não foi possível criar cache/shared."
+                      );
+                  }
+
                   File file =
                       new File(
-                          dir,
+                          sharedDir,
                           safeName
                       );
 
                   try(
-                      FileOutputStream out =
+                      FileOutputStream fos =
                           new FileOutputStream(file)
                   ){
-
-                      out.write(bytes);
-                      out.flush();
+                      fos.write(bytes);
                   }
 
                   Uri uri =
                       FileProvider.getUriForFile(
                           MainActivity.this,
-                          getPackageName() +
-                              ".fileprovider",
+                          MainActivity.this
+                              .getPackageName()
+                              + ".fileprovider",
                           file
                       );
 
-                  Intent intent =
+                  Intent whatsapp =
                       new Intent(
                           Intent.ACTION_SEND
                       );
 
-                  intent.setType(
+                  whatsapp.setType(
                       "application/pdf"
                   );
 
-                  intent.putExtra(
+                  whatsapp.putExtra(
                       Intent.EXTRA_STREAM,
                       uri
                   );
 
-                  intent.setClipData(
+                  whatsapp.addFlags(
+                      Intent.FLAG_GRANT_READ_URI_PERMISSION
+                  );
+
+                  whatsapp.setClipData(
                       ClipData.newRawUri(
                           "PDF",
                           uri
                       )
                   );
 
-                  intent.addFlags(
-                      Intent.FLAG_GRANT_READ_URI_PERMISSION
+                  whatsapp.setPackage(
+                      "com.whatsapp"
                   );
 
-                  startActivity(
-                      Intent.createChooser(
-                          intent,
-                          "Enviar pedido em PDF"
-                      )
-                  );
+                  try{
+
+                      startActivity(
+                          whatsapp
+                      );
+
+                  }catch(Exception e){
+
+                      Intent chooser =
+                          new Intent(
+                              Intent.ACTION_SEND
+                          );
+
+                      chooser.setType(
+                          "application/pdf"
+                      );
+
+                      chooser.putExtra(
+                          Intent.EXTRA_STREAM,
+                          uri
+                      );
+
+                      chooser.addFlags(
+                          Intent.FLAG_GRANT_READ_URI_PERMISSION
+                      );
+
+                      chooser.setClipData(
+                          ClipData.newRawUri(
+                              "PDF",
+                              uri
+                          )
+                      );
+
+                      startActivity(
+                          Intent.createChooser(
+                              chooser,
+                              "Enviar pedido em PDF"
+                          )
+                      );
+                  }
 
               }catch(Exception e){
 
+                  e.printStackTrace();
+
                   Toast.makeText(
                       MainActivity.this,
-                      "Erro ao compartilhar PDF: " +
-                          e.getMessage(),
+                      "Erro ao compartilhar o PDF.",
                       Toast.LENGTH_LONG
                   ).show();
               }
-          }
+          }'''
 
-          @JavascriptInterface'''
+          pattern = (
+              r'@JavascriptInterface\s+'
+              r'public void sharePdf'
+              r'\(String filename, String base64\)'
+              r'\s*\{.*?\n\s*\}'
+              r'\s*(?=@JavascriptInterface|\n\s*private|\n\s*\})'
+          )
 
-          java,n = re.subn(
-              pdf_pattern,
-              pdf_method,
+          java2,n = re.subn(
+              pattern,
+              safe_share,
               java,
               count=1,
               flags=re.S
           )
 
           if n != 1:
+
               raise SystemExit(
-                  "ERRO: função sharePdf não encontrada"
+                  "ERRO: método sharePdf não encontrado"
               )
 
           main.write_text(
-              java,
+              java2,
               encoding="utf-8"
           )
 
@@ -1089,39 +908,48 @@ jobs:
         run: |
           set -e
 
-          ASSETS="$ANDROID_DIR/app/src/main/assets/app"
+          cd "$ANDROID_DIR/app/src/main/assets/app"
 
-          curl -L \
-            --fail \
-            --retry 3 \
-            -o "$ASSETS/xlsx.full.min.js" \
-            "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"
+          curl -L --fail --retry 3 \
+            -o xlsx.full.min.js \
+            https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js
 
-          curl -L \
-            --fail \
-            --retry 3 \
-            -o "$ASSETS/jspdf.umd.min.js" \
-            "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"
+          curl -L --fail --retry 3 \
+            -o jspdf.umd.min.js \
+            https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js
 
-          test -s "$ASSETS/xlsx.full.min.js"
-          test -s "$ASSETS/jspdf.umd.min.js"
+          test -s xlsx.full.min.js
+          test -s jspdf.umd.min.js
 
-      - name: Preparar compilação
+      - name: Verificar correções
         shell: bash
         run: |
           set -e
 
           cd "$ANDROID_DIR"
 
-          echo "Projeto Android:"
-          pwd
+          test -f app/src/main/assets/app/index.html
 
-          echo "Arquivos principais:"
-          test -f settings.gradle
-          test -f build.gradle
-          test -f app/build.gradle
+          test -f app/src/main/assets/app/xlsx.full.min.js
 
-          echo "Projeto pronto para compilação."
+          test -f app/src/main/assets/app/jspdf.umd.min.js
+
+          grep -q "RELATÓRIO DE PEDIDO" \
+            app/src/main/assets/app/index.html
+
+          grep -q "AndroidFileBridge.sharePdf" \
+            app/src/main/assets/app/index.html
+
+          if grep -R \
+            "sanitizeFilename(filename)" \
+            app/src/main/java \
+            --include="*.java"
+          then
+            echo "ERRO: sanitizeFilename ainda está sendo chamado."
+            exit 1
+          fi
+
+          echo "Verificação concluída com sucesso."
 
       - name: Compilar APK
         shell: bash
@@ -1130,38 +958,34 @@ jobs:
 
           cd "$ANDROID_DIR"
 
-          echo "======================================"
-          echo "INICIANDO COMPILAÇÃO DO APK"
-          echo "======================================"
+          chmod +x gradlew
 
-          gradle \
-            --no-daemon \
-            --stacktrace \
-            clean \
-            assembleDebug
+          ./gradlew clean assembleDebug --stacktrace
 
-          echo "======================================"
-          echo "COMPILAÇÃO CONCLUÍDA"
-          echo "======================================"
-
-      - name: Verificar APK
+      - name: Localizar APK
         shell: bash
         run: |
           set -e
 
-          APK="$ANDROID_DIR/app/build/outputs/apk/debug/app-debug.apk"
+          APK=$(
+            find \
+              "$ANDROID_DIR/app/build/outputs/apk" \
+              -type f \
+              -name "*.apk" \
+              -print \
+              -quit
+          )
 
-          if [ ! -f "$APK" ]; then
-            echo "ERRO: APK não foi gerado."
-            exit 1
-          fi
+          test -n "$APK"
 
-          echo "APK GERADO COM SUCESSO:"
-          ls -lh "$APK"
+          echo "APK=$APK" >> "$GITHUB_ENV"
 
-      - name: Publicar APK
+          echo "APK encontrado:"
+          echo "$APK"
+
+      - name: Enviar APK
         uses: actions/upload-artifact@v4
         with:
           name: Super-Pedido-Pro-APK
-          path: ${{ env.ANDROID_DIR }}/app/build/outputs/apk/debug/app-debug.apk
+          path: ${{ env.APK }}
           if-no-files-found: error
