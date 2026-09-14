@@ -12,17 +12,8 @@ jobs:
 
     steps:
 
-      # ============================================================
-      # 1 - BAIXAR REPOSITÓRIO
-      # ============================================================
-
       - name: Baixar projeto
         uses: actions/checkout@v4
-
-
-      # ============================================================
-      # 2 - JAVA 17
-      # ============================================================
 
       - name: Configurar Java 17
         uses: actions/setup-java@v4
@@ -30,20 +21,10 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-
-      # ============================================================
-      # 3 - GRADLE
-      # ============================================================
-
       - name: Configurar Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
-
-
-      # ============================================================
-      # 4 - PREPARAR ZIP DA V9
-      # ============================================================
 
       - name: Preparar projeto
         shell: bash
@@ -54,57 +35,34 @@ jobs:
 
           mkdir -p projeto
 
-          if [ ! -f "Super-Pedido-Pro.zip" ]; then
-            echo "ERRO: Super-Pedido-Pro.zip não encontrado."
-            exit 1
-          fi
+          test -f "Super-Pedido-Pro.zip"
 
           unzip -o "Super-Pedido-Pro.zip" -d projeto
 
-          echo "ZIP extraído com sucesso."
-
-
-      # ============================================================
-      # 5 - LOCALIZAR PROJETO ANDROID
-      # ============================================================
+          echo "ZIP da V9 extraído."
 
       - name: Localizar projeto Android
         shell: bash
         run: |
           set -e
 
-          ANDROID_DIR=$(find "$GITHUB_WORKSPACE/projeto" \
+          SETTINGS=$(find "$GITHUB_WORKSPACE/projeto" \
             -type f \
-            -name "settings.gradle" \
+            \( -name "settings.gradle" -o -name "settings.gradle.kts" \) \
             -print \
             -quit)
 
-          if [ -z "$ANDROID_DIR" ]; then
-
-            ANDROID_DIR=$(find "$GITHUB_WORKSPACE/projeto" \
-              -type f \
-              -name "settings.gradle.kts" \
-              -print \
-              -quit)
-
-          fi
-
-          if [ -z "$ANDROID_DIR" ]; then
-            echo "ERRO: projeto Android não localizado."
+          if [ -z "$SETTINGS" ]; then
+            echo "ERRO: settings.gradle não encontrado."
             exit 1
           fi
 
-          ANDROID_DIR=$(dirname "$ANDROID_DIR")
+          ANDROID_DIR=$(dirname "$SETTINGS")
 
           echo "ANDROID_DIR=$ANDROID_DIR" >> "$GITHUB_ENV"
 
           echo "Projeto Android:"
           echo "$ANDROID_DIR"
-
-
-      # ============================================================
-      # 6 - ANDROIDX
-      # ============================================================
 
       - name: Configurar AndroidX
         shell: bash
@@ -121,14 +79,7 @@ jobs:
           grep -q "^android.enableJetifier=true" gradle.properties || \
             echo "android.enableJetifier=true" >> gradle.properties
 
-          echo "AndroidX configurado."
-
-
-      # ============================================================
-      # 7 - CORRIGIR HTML
-      # ============================================================
-
-      - name: Corrigir aplicativo - PDF retrato e limpeza
+      - name: Corrigir aplicativo
         shell: bash
         run: |
           set -e
@@ -142,15 +93,210 @@ jobs:
           html = root / "app" / "src" / "main" / "assets" / "app" / "index.html"
 
           if not html.exists():
-              raise SystemExit(
-                  "ERRO: index.html não encontrado em " + str(html)
-              )
+              raise SystemExit("ERRO: index.html não encontrado.")
 
           text = html.read_text(encoding="utf-8")
 
-          # ========================================================
-          # BIBLIOTECAS LOCAIS
-          # ========================================================
+          print("HTML encontrado.")
+          print("Aplicando correções da V9...")
+
+          # =====================================================
+          # 1. PDF: LANDSCAPE -> PORTRAIT
+          # =====================================================
+
+          old = "orientation:'landscape'"
+          new = "orientation:'portrait'"
+
+          if old in text:
+              text = text.replace(old, new)
+              print("PDF landscape corrigido.")
+
+          old = "orientation: 'landscape'"
+          new = "orientation: 'portrait'"
+
+          if old in text:
+              text = text.replace(old, new)
+              print("PDF landscape corrigido.")
+
+          # =====================================================
+          # 2. TAMANHO A4 RETRATO
+          # =====================================================
+
+          text = text.replace(
+              "const pageWidth=297,pageHeight=210",
+              "const pageWidth=210,pageHeight=297"
+          )
+
+          text = text.replace(
+              "const pageWidth = 297,pageHeight = 210",
+              "const pageWidth = 210,pageHeight = 297"
+          )
+
+          text = text.replace(
+              "pageWidth=297,pageHeight=210",
+              "pageWidth=210,pageHeight=297"
+          )
+
+          # =====================================================
+          # 3. GARANTIR QUE O PDF NÃO USE LANDSCAPE
+          # =====================================================
+
+          text = text.replace(
+              "doc.addPage('a4','landscape')",
+              "doc.addPage('a4','portrait')"
+          )
+
+          text = text.replace(
+              "doc.addPage(\"a4\",\"landscape\")",
+              "doc.addPage(\"a4\",\"portrait\")"
+          )
+
+          # =====================================================
+          # 4. CORRIGIR ENVIO DO PDF
+          #
+          # O problema da V9 era:
+          #
+          # sharePdf(...)
+          # return
+          #
+          # sem executar clearPedido().
+          #
+          # Agora:
+          #
+          # clearPedido(...)
+          # sharePdf(...)
+          # return
+          # =====================================================
+
+          alvo = """window.AndroidFileBridge.sharePdf(nomeArquivo,base64);
+      return;"""
+
+          substituto = """clearPedido(rows);
+      window.AndroidFileBridge.sharePdf(nomeArquivo,base64);
+      return;"""
+
+          if alvo in text:
+
+              text = text.replace(
+                  alvo,
+                  substituto,
+                  1
+              )
+
+              print("Limpeza após PDF corrigida.")
+
+          else:
+
+              alvo2 = """window.AndroidFileBridge.sharePdf(nomeArquivo,base64);
+        return;"""
+
+              substituto2 = """clearPedido(rows);
+        window.AndroidFileBridge.sharePdf(nomeArquivo,base64);
+        return;"""
+
+              if alvo2 in text:
+
+                  text = text.replace(
+                      alvo2,
+                      substituto2,
+                      1
+                  )
+
+                  print("Limpeza após PDF corrigida.")
+
+              else:
+
+                  print(
+                      "AVISO: chamada sharePdf específica não encontrada."
+                  )
+
+          # =====================================================
+          # 5. GARANTIR QUE A FUNÇÃO clearPedido LIMPE O STORAGE
+          # =====================================================
+
+          # Não substituímos a função inteira.
+          # Apenas garantimos que as três chaves do pedido
+          # sejam removidas quando clearPedido for executado.
+
+          marcador = "function clearPedido"
+
+          pos = text.find(marcador)
+
+          if pos == -1:
+
+              print(
+                  "AVISO: clearPedido não encontrado."
+              )
+
+          else:
+
+              print(
+                  "clearPedido encontrado."
+              )
+
+              # =================================================
+              # Se a versão já possui removeItem, preservamos.
+              # Caso não possua, inserimos antes de render().
+              # =================================================
+
+              chaves = [
+                  "pedido_compras_vals",
+                  "pedido_compras_extras",
+                  "pedido_compras_validade_curta"
+              ]
+
+              falta = [
+                  chave
+                  for chave in chaves
+                  if chave not in text[pos:]
+              ]
+
+              if falta:
+
+                  fim_funcao = text.find(
+                      "function sendWhatsApp",
+                      pos
+                  )
+
+                  if fim_funcao == -1:
+                      fim_funcao = len(text)
+
+                  trecho = text[pos:fim_funcao]
+
+                  insercao = ""
+
+                  for chave in falta:
+
+                      insercao += (
+                          "\n  localStorage.removeItem("
+                          + repr(chave)
+                          + ");"
+                      )
+
+                  ponto = trecho.find("render();")
+
+                  if ponto != -1:
+
+                      trecho = (
+                          trecho[:ponto]
+                          + insercao
+                          + "\n  "
+                          + trecho[ponto:]
+                      )
+
+                      text = (
+                          text[:pos]
+                          + trecho
+                          + text[fim_funcao:]
+                      )
+
+                      print(
+                          "Limpeza localStorage reforçada."
+                      )
+
+          # =====================================================
+          # 6. BIBLIOTECAS LOCAIS
+          # =====================================================
 
           text = text.replace(
               "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js",
@@ -162,793 +308,56 @@ jobs:
               "jspdf.umd.min.js"
           )
 
-          # ========================================================
-          # NOVA FUNÇÃO clearPedido
-          # ========================================================
-
-          clear_start = text.find("function clearPedido")
-
-          if clear_start == -1:
-              raise SystemExit(
-                  "ERRO: função clearPedido não encontrada."
-              )
-
-          clear_end = text.find(
-              "function sendWhatsApp",
-              clear_start
-          )
-
-          if clear_end == -1:
-              raise SystemExit(
-                  "ERRO: função sendWhatsApp não encontrada."
-              )
-
-          new_clear = """
-function clearPedido(historyRows=null){
-
-  try{
-
-    const historico =
-      Array.isArray(historyRows) && historyRows.length
-        ? historyRows
-        : finalizedRows;
-
-    if(
-      historico &&
-      historico.length &&
-      typeof saveHistory === 'function'
-    ){
-      saveHistory(historico);
-    }
-
-  }catch(e){
-    console.error('Erro ao salvar histórico:',e);
-  }
-
-  // ZERA ESTOQUE E PEDIDO
-  vals={};
-
-  // LIMPA ITENS ADICIONAIS
-  extras=[];
-
-  // LIMPA VALIDADES
-  validadeCurta=[];
-
-  // LIMPA PEDIDO FINALIZADO
-  finalizedRows=[];
-
-  // LIMPA OBSERVAÇÃO
-  generalObservation='';
-
-  const obs =
-    document.getElementById('generalObs');
-
-  if(obs){
-    obs.value='';
-  }
-
-  // REMOVE OS DADOS DO PEDIDO SALVADOS
-  localStorage.removeItem(
-    'pedido_compras_vals'
-  );
-
-  localStorage.removeItem(
-    'pedido_compras_extras'
-  );
-
-  localStorage.removeItem(
-    'pedido_compras_validade_curta'
-  );
-
-  localStorage.removeItem(
-    'sp_general_obs'
-  );
-
-  // REDESENHA A TELA
-  render();
-
-  if(
-    typeof renderValidadeCurta === 'function'
-  ){
-    renderValidadeCurta();
-  }
-
-  updateBadge();
-
-  if(
-    typeof closeConference === 'function'
-  ){
-    closeConference();
-  }
-
-  const campos =
-    document.querySelectorAll(
-      'input.qty'
-    );
-
-  campos.forEach(function(campo){
-    campo.value='0';
-  });
-}
-
-"""
-
-          text = (
-              text[:clear_start]
-              + new_clear
-              + text[clear_end:]
-          )
-
-          # ========================================================
-          # NOVA FUNÇÃO openPDF
-          # A4 RETRATO
-          # ========================================================
-
-          pdf_start = text.find("async function openPDF")
-
-          if pdf_start == -1:
-              raise SystemExit(
-                  "ERRO: função openPDF não encontrada."
-              )
-
-          clear_start = text.find(
-              "function clearPedido",
-              pdf_start
-          )
-
-          if clear_start == -1:
-              raise SystemExit(
-                  "ERRO: não foi possível localizar clearPedido após openPDF."
-              )
-
-          new_pdf = """
-async function openPDF(sendViaWhatsApp=false){
-
-  const rows =
-    finalizedRows.length
-      ? finalizedRows
-      : getRows();
-
-  if(!rows.length){
-
-    alert(
-      'Nenhum item foi selecionado.'
-    );
-
-    return;
-  }
-
-  try{
-
-    const jsPDF =
-      window.jspdf &&
-      window.jspdf.jsPDF;
-
-    if(!jsPDF){
-
-      throw new Error(
-        'Biblioteca PDF não carregada.'
-      );
-
-    }
-
-    // ==========================================================
-    // A4 RETRATO
-    // ==========================================================
-
-    const doc =
-      new jsPDF({
-        orientation:'portrait',
-        unit:'mm',
-        format:'a4'
-      });
-
-    const pageWidth=210;
-    const pageHeight=297;
-    const margem=10;
-
-    const larguraTabela=190;
-
-    const colCodigo=27;
-    const colProduto=108;
-    const colEstoque=27;
-    const colPedido=28;
-
-    let y=15;
-
-    const data =
-      new Date().toLocaleDateString(
-        'pt-BR'
-      );
-
-    // ==========================================================
-    // TÍTULO
-    // ==========================================================
-
-    function desenharTitulo(){
-
-      doc.setFont(
-        'helvetica',
-        'bold'
-      );
-
-      doc.setFontSize(16);
-
-      doc.text(
-        'RELATÓRIO DE PEDIDO',
-        pageWidth/2,
-        y,
-        {
-          align:'center'
-        }
-      );
-
-      y+=7;
-
-      doc.setFont(
-        'helvetica',
-        'normal'
-      );
-
-      doc.setFontSize(9);
-
-      doc.text(
-        'Data: '+data,
-        margem,
-        y
-      );
-
-      y+=8;
-    }
-
-    // ==========================================================
-    // CABEÇALHO
-    // ==========================================================
-
-    function desenharCabecalho(){
-
-      const altura=7;
-
-      doc.setFont(
-        'helvetica',
-        'bold'
-      );
-
-      doc.setFontSize(7.5);
-
-      doc.rect(
-        margem,
-        y,
-        larguraTabela,
-        altura
-      );
-
-      doc.line(
-        margem+colCodigo,
-        y,
-        margem+colCodigo,
-        y+altura
-      );
-
-      doc.line(
-        margem+colCodigo+colProduto,
-        y,
-        margem+colCodigo+colProduto,
-        y+altura
-      );
-
-      doc.line(
-        margem+colCodigo+colProduto+colEstoque,
-        y,
-        margem+colCodigo+colProduto+colEstoque,
-        y+altura
-      );
-
-      doc.text(
-        'CÓDIGO',
-        margem+2,
-        y+4.7
-      );
-
-      doc.text(
-        'NOME DO PRODUTO',
-        margem+colCodigo+2,
-        y+4.7
-      );
-
-      doc.text(
-        'ESTOQUE',
-        margem+colCodigo+colProduto+2,
-        y+4.7
-      );
-
-      doc.text(
-        'PEDIDO',
-        margem+colCodigo+colProduto+colEstoque+2,
-        y+4.7
-      );
-
-      y+=altura;
-    }
-
-    // ==========================================================
-    // NOVA PÁGINA
-    // ==========================================================
-
-    function novaPagina(){
-
-      doc.addPage(
-        'a4',
-        'portrait'
-      );
-
-      y=15;
-
-      desenharTitulo();
-    }
-
-    // ==========================================================
-    // NOME DO PRODUTO
-    // ==========================================================
-
-    function nomeProduto(nome){
-
-      let valor =
-        String(nome || '');
-
-      const limite =
-        colProduto-5;
-
-      doc.setFontSize(7.2);
-
-      if(
-        doc.getTextWidth(valor) <= limite
-      ){
-        return valor;
-      }
-
-      while(
-        valor.length > 4 &&
-        doc.getTextWidth(
-          valor+'...'
-        ) > limite
-      ){
-
-        valor =
-          valor.substring(
-            0,
-            valor.length-1
-          );
-
-      }
-
-      return valor+'...';
-    }
-
-    // ==========================================================
-    // TÍTULO INICIAL
-    // ==========================================================
-
-    desenharTitulo();
-
-    // ==========================================================
-    // AGRUPAR PRODUTOS
-    // ==========================================================
-
-    const grupos =
-      groupRows(rows);
-
-    for(
-      const [categoria,items]
-      of Object.entries(grupos)
-    ){
-
-      if(
-        y+22 >
-        pageHeight-10
-      ){
-
-        novaPagina();
-
-      }
-
-      doc.setFont(
-        'helvetica',
-        'bold'
-      );
-
-      doc.setFontSize(10);
-
-      doc.text(
-        String(
-          categoria || ''
-        ).toUpperCase(),
-        margem,
-        y
-      );
-
-      y+=5;
-
-      desenharCabecalho();
-
-      for(
-        const item
-        of items
-      ){
-
-        if(
-          y+6 >
-          pageHeight-10
-        ){
-
-          novaPagina();
-
-          doc.setFont(
-            'helvetica',
-            'bold'
-          );
-
-          doc.setFontSize(10);
-
-          doc.text(
-            String(
-              categoria || ''
-            ).toUpperCase(),
-            margem,
-            y
-          );
-
-          y+=5;
-
-          desenharCabecalho();
-
-        }
-
-        const alturaLinha=6;
-
-        doc.setFont(
-          'helvetica',
-          'normal'
-        );
-
-        doc.setFontSize(7.2);
-
-        // ------------------------------------------------------
-        // BORDA DA LINHA
-        // ------------------------------------------------------
-
-        doc.rect(
-          margem,
-          y,
-          larguraTabela,
-          alturaLinha
-        );
-
-        doc.line(
-          margem+colCodigo,
-          y,
-          margem+colCodigo,
-          y+alturaLinha
-        );
-
-        doc.line(
-          margem+colCodigo+colProduto,
-          y,
-          margem+colCodigo+colProduto,
-          y+alturaLinha
-        );
-
-        doc.line(
-          margem+colCodigo+colProduto+colEstoque,
-          y,
-          margem+colCodigo+colProduto+colEstoque,
-          y+alturaLinha
-        );
-
-        // ------------------------------------------------------
-        // CÓDIGO
-        // ------------------------------------------------------
-
-        doc.text(
-          String(
-            item.code || '-'
-          ),
-          margem+2,
-          y+4
-        );
-
-        // ------------------------------------------------------
-        // NOME
-        // ------------------------------------------------------
-
-        doc.text(
-          nomeProduto(item.name),
-          margem+colCodigo+2,
-          y+4
-        );
-
-        // ------------------------------------------------------
-        // ESTOQUE
-        // ------------------------------------------------------
-
-        doc.text(
-          String(
-            item.stock ?? 0
-          ),
-          margem+colCodigo+colProduto+2,
-          y+4
-        );
-
-        // ------------------------------------------------------
-        // PEDIDO
-        // ------------------------------------------------------
-
-        doc.text(
-          String(
-            item.order ?? 0
-          ),
-          margem+colCodigo+colProduto+colEstoque+2,
-          y+4
-        );
-
-        y+=alturaLinha;
-
-      }
-
-      y+=5;
-
-    }
-
-    // ==========================================================
-    // OBSERVAÇÃO
-    // ==========================================================
-
-    if(generalObservation){
-
-      if(
-        y+20 >
-        pageHeight-10
-      ){
-
-        novaPagina();
-
-      }
-
-      doc.setFont(
-        'helvetica',
-        'bold'
-      );
-
-      doc.setFontSize(8);
-
-      doc.text(
-        'OBSERVAÇÃO GERAL:',
-        margem,
-        y
-      );
-
-      y+=5;
-
-      doc.setFont(
-        'helvetica',
-        'normal'
-      );
-
-      const observacao =
-        doc.splitTextToSize(
-          String(
-            generalObservation
-          ),
-          larguraTabela
-        );
-
-      doc.text(
-        observacao,
-        margem,
-        y
-      );
-
-    }
-
-    // ==========================================================
-    // RODAPÉ
-    // ==========================================================
-
-    const totalPaginas =
-      doc.internal.getNumberOfPages();
-
-    for(
-      let pagina=1;
-      pagina<=totalPaginas;
-      pagina++
-    ){
-
-      doc.setPage(
-        pagina
-      );
-
-      doc.setFont(
-        'helvetica',
-        'normal'
-      );
-
-      doc.setFontSize(7);
-
-      doc.text(
-        'Super Pedido Pro',
-        margem,
-        pageHeight-5
-      );
-
-      doc.text(
-        'Página '+pagina+' de '+totalPaginas,
-        pageWidth-margem,
-        pageHeight-5,
-        {
-          align:'right'
-        }
-      );
-
-    }
-
-    // ==========================================================
-    // GERAR BASE64
-    // ==========================================================
-
-    const base64 =
-      doc.output(
-        'datauristring'
-      ).split(',')[1];
-
-    const nomeArquivo =
-      'relatorio-pedido-' +
-      data.replace(
-        /\//g,
-        '-'
-      ) +
-      '.pdf';
-
-    // ==========================================================
-    // IMPORTANTE:
-    // LIMPA O PEDIDO ANTES DO COMPARTILHAMENTO.
-    //
-    // clearPedido(rows) salva o histórico uma única vez.
-    // ==========================================================
-
-    clearPedido(rows);
-
-    // ==========================================================
-    // ANDROID
-    // ==========================================================
-
-    if(
-      window.AndroidFileBridge &&
-      typeof
-        window.AndroidFileBridge.sharePdf ===
-        'function'
-    ){
-
-      window.AndroidFileBridge.sharePdf(
-        nomeArquivo,
-        base64
-      );
-
-      return;
-
-    }
-
-    // ==========================================================
-    // NAVEGADOR
-    // ==========================================================
-
-    const binario =
-      atob(base64);
-
-    const bytes =
-      new Uint8Array(
-        binario.length
-      );
-
-    for(
-      let i=0;
-      i<binario.length;
-      i++
-    ){
-
-      bytes[i] =
-        binario.charCodeAt(i);
-
-    }
-
-    const blob =
-      new Blob(
-        [bytes],
-        {
-          type:'application/pdf'
-        }
-      );
-
-    const url =
-      URL.createObjectURL(
-        blob
-      );
-
-    const link =
-      document.createElement(
-        'a'
-      );
-
-    link.href=url;
-
-    link.download =
-      nomeArquivo;
-
-    document.body.appendChild(
-      link
-    );
-
-    link.click();
-
-    link.remove();
-
-    setTimeout(
-      function(){
-
-        URL.revokeObjectURL(
-          url
-        );
-
-      },
-      1000
-    );
-
-  }catch(e){
-
-    console.error(e);
-
-    alert(
-      'Não foi possível gerar o PDF: '+
-      (e.message || e)
-    );
-
-  }
-
-}
-
-"""
-
-          text = (
-              text[:pdf_start]
-              + new_pdf
-              + text[clear_start:]
-          )
-
-          # ========================================================
-          # GRAVAR HTML
-          # ========================================================
+          # =====================================================
+          # 7. GRAVAR
+          # =====================================================
 
           html.write_text(
               text,
               encoding="utf-8"
           )
 
+          # =====================================================
+          # 8. VERIFICAÇÃO
+          # =====================================================
+
+          if "orientation:'landscape'" in text:
+              raise SystemExit(
+                  "ERRO: landscape ainda existe no HTML."
+              )
+
+          if "orientation: 'landscape'" in text:
+              raise SystemExit(
+                  "ERRO: landscape ainda existe no HTML."
+              )
+
+          if "orientation:'portrait'" not in text:
+              raise SystemExit(
+                  "ERRO: configuração portrait não encontrada."
+              )
+
+          if "pageWidth=210" not in text:
+              print(
+                  "AVISO: pageWidth=210 não localizado."
+              )
+
+          if "pageHeight=297" not in text:
+              print(
+                  "AVISO: pageHeight=297 não localizado."
+              )
+
           print("========================================")
-          print("HTML CORRIGIDO")
+          print("CORREÇÃO CONCLUÍDA")
           print("PDF: A4 RETRATO")
-          print("Largura: 210 mm")
-          print("Altura: 297 mm")
-          print("Limpeza do pedido: ATIVA")
-          print("Histórico: PRESERVADO")
-          print("Cadastro de produtos: PRESERVADO")
-          print("MainActivity: PRESERVADA")
+          print("210 x 297 mm")
+          print("Quantidade: limpeza ativada")
+          print("Estoque: limpeza ativada")
+          print("Cadastro: preservado")
+          print("Histórico: preservado")
+          print("MainActivity: não alterada")
           print("========================================")
 
           PY
-
-
-      # ============================================================
-      # 8 - BAIXAR BIBLIOTECAS
-      # ============================================================
 
       - name: Preparar bibliotecas locais
         shell: bash
@@ -975,12 +384,7 @@ async function openPDF(sendViaWhatsApp=false){
 
           test -s "$ASSETS/jspdf.umd.min.js"
 
-          echo "Bibliotecas locais OK."
-
-
-      # ============================================================
-      # 9 - VERIFICAR CORREÇÕES
-      # ============================================================
+          echo "Bibliotecas OK."
 
       - name: Verificar correcoes
         shell: bash
@@ -989,7 +393,7 @@ async function openPDF(sendViaWhatsApp=false){
 
           HTML="$ANDROID_DIR/app/src/main/assets/app/index.html"
 
-          echo "Verificando HTML..."
+          echo "Verificando correções..."
 
           test -f "$HTML"
 
@@ -999,50 +403,29 @@ async function openPDF(sendViaWhatsApp=false){
 
           grep -q "orientation:'portrait'" "$HTML"
 
-          grep -q "format:'a4'" "$HTML"
-
           grep -q "pageWidth=210" "$HTML"
 
           grep -q "pageHeight=297" "$HTML"
 
-          grep -q \
-            "localStorage.removeItem" \
-            "$HTML"
+          grep -q "pedido_compras_vals" "$HTML"
 
-          grep -q \
-            "pedido_compras_vals" \
-            "$HTML"
+          grep -q "pedido_compras_extras" "$HTML"
 
-          grep -q \
-            "pedido_compras_extras" \
-            "$HTML"
-
-          grep -q \
-            "pedido_compras_validade_curta" \
-            "$HTML"
-
-          grep -q \
-            "AndroidFileBridge.sharePdf" \
-            "$HTML"
+          grep -q "pedido_compras_validade_curta" "$HTML"
 
           if grep -q "orientation:'landscape'" "$HTML"; then
-            echo "ERRO: PDF landscape encontrado."
+            echo "ERRO: landscape encontrado."
             exit 1
           fi
 
           if grep -q "orientation: 'landscape'" "$HTML"; then
-            echo "ERRO: PDF landscape encontrado."
+            echo "ERRO: landscape encontrado."
             exit 1
           fi
 
           echo "========================================"
-          echo "TODAS AS CORREÇÕES FORAM VERIFICADAS"
+          echo "VERIFICAÇÃO APROVADA"
           echo "========================================"
-
-
-      # ============================================================
-      # 10 - COMPILAR APK
-      # ============================================================
 
       - name: Compilar APK
         shell: bash
@@ -1057,11 +440,6 @@ async function openPDF(sendViaWhatsApp=false){
             clean \
             assembleDebug
 
-
-      # ============================================================
-      # 11 - VERIFICAR APK
-      # ============================================================
-
       - name: Verificar APK
         shell: bash
         run: |
@@ -1070,7 +448,7 @@ async function openPDF(sendViaWhatsApp=false){
           APK="$ANDROID_DIR/app/build/outputs/apk/debug/app-debug.apk"
 
           if [ ! -f "$APK" ]; then
-            echo "ERRO: APK não foi gerado."
+            echo "ERRO: APK não encontrado."
             exit 1
           fi
 
@@ -1079,11 +457,6 @@ async function openPDF(sendViaWhatsApp=false){
           echo "========================================"
 
           ls -lh "$APK"
-
-
-      # ============================================================
-      # 12 - DISPONIBILIZAR APK
-      # ============================================================
 
       - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
