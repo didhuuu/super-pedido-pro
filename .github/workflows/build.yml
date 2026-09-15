@@ -589,10 +589,62 @@ jobs:
           })();
           JS
 
-          cat /tmp/repetir-ultimo.js >> "$HTML"
-
           node --check \
             /tmp/repetir-ultimo.js
+
+          python3 - "$HTML" /tmp/repetir-ultimo.js <<'PY'
+          from pathlib import Path
+          import sys
+
+          html_file = Path(sys.argv[1])
+          js_file = Path(sys.argv[2])
+
+          html = html_file.read_text(
+              encoding="utf-8"
+          )
+
+          js = js_file.read_text(
+              encoding="utf-8"
+          )
+
+          block = (
+              "\n<script>\n"
+              + js
+              + "\n</script>\n"
+          )
+
+          if "</body>" in html:
+
+              html = html.replace(
+                  "</body>",
+                  block + "</body>",
+                  1
+              )
+
+          elif "</html>" in html:
+
+              html = html.replace(
+                  "</html>",
+                  block + "</html>",
+                  1
+              )
+
+          else:
+
+              raise SystemExit(
+                  "ERRO: não foi encontrado </body> nem </html>."
+              )
+
+          html_file.write_text(
+              html,
+              encoding="utf-8"
+          )
+
+          print(
+              "OK - Repetir Último inserido dentro de <script>."
+          )
+
+          PY
 
       - name: Corrigir Importar Lista dentro do ADM
         shell: bash
@@ -618,10 +670,6 @@ jobs:
               encoding="utf-8"
           )
 
-          # ============================================================
-          # IMPORTS NECESSÁRIOS
-          # ============================================================
-
           required_imports = [
               "import android.content.ClipData;",
               "import android.net.Uri;",
@@ -629,9 +677,12 @@ jobs:
               "import android.webkit.WebChromeClient;"
           ]
 
-          package_pos = java.find("package ")
+          package_pos = java.find(
+              "package "
+          )
 
           if package_pos < 0:
+
               raise SystemExit(
                   "ERRO: package da MainActivity não encontrado."
               )
@@ -642,6 +693,7 @@ jobs:
           )
 
           if package_end < 0:
+
               raise SystemExit(
                   "ERRO: fim do package não encontrado."
               )
@@ -651,13 +703,18 @@ jobs:
           for imp in required_imports:
 
               if imp not in java:
-                  missing_imports.append(imp)
+
+                  missing_imports.append(
+                      imp
+                  )
 
           if missing_imports:
 
               block = (
                   chr(10) +
-                  chr(10).join(missing_imports) +
+                  chr(10).join(
+                      missing_imports
+                  ) +
                   chr(10)
               )
 
@@ -666,10 +723,6 @@ jobs:
                   block +
                   java[package_end + 1:]
               )
-
-          # ============================================================
-          # CAMPOS DO SELETOR DE ARQUIVOS
-          # ============================================================
 
           if (
               "private ValueCallback<Uri[]> filePathCallback;"
@@ -700,10 +753,6 @@ jobs:
                   fields +
                   java[class_match.end():]
               )
-
-          # ============================================================
-          # WEBCHROMECLIENT
-          # ============================================================
 
           chrome_lines = [
               "",
@@ -750,7 +799,9 @@ jobs:
 
               needle = "webView.setWebViewClient("
 
-              start = java.find(needle)
+              start = java.find(
+                  needle
+              )
 
               if start < 0:
 
@@ -786,7 +837,10 @@ jobs:
 
                   else:
 
-                      if ch == "'" or ch == '"':
+                      if (
+                          ch == "'"
+                          or ch == '"'
+                      ):
 
                           quote = ch
 
@@ -800,22 +854,22 @@ jobs:
                           depth -= 1
 
                           if (
-                              seen_open and
-                              depth == 0
+                              seen_open
+                              and depth == 0
                           ):
 
                               j = i + 1
 
                               while (
-                                  j < len(java) and
-                                  java[j].isspace()
+                                  j < len(java)
+                                  and java[j].isspace()
                               ):
 
                                   j += 1
 
                               if (
-                                  j < len(java) and
-                                  java[j] == ';'
+                                  j < len(java)
+                                  and java[j] == ';'
                               ):
 
                                   java = (
@@ -825,6 +879,7 @@ jobs:
                                   )
 
                                   found = True
+
                                   break
 
                   i += 1
@@ -835,11 +890,10 @@ jobs:
                       "ERRO: final de setWebViewClient não encontrado."
                   )
 
-          # ============================================================
-          # RESULTADO DO SELETOR DE ARQUIVOS
-          # ============================================================
-
-          if "protected void onActivityResult" not in java:
+          if (
+              "protected void onActivityResult"
+              not in java
+          ):
 
               result_lines = [
                   "",
@@ -907,7 +961,9 @@ jobs:
                   result_lines
               )
 
-              marker = "    public class AndroidFileBridge {"
+              marker = (
+                  "    public class AndroidFileBridge {"
+              )
 
               if marker in java:
 
