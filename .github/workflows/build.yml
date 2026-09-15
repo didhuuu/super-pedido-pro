@@ -12,6 +12,10 @@ jobs:
 
     steps:
 
+      # ============================================================
+      # BASE DA VERSÃO #65
+      # ============================================================
+
       - name: Baixar projeto - BASE 49
         uses: actions/checkout@v4
         with:
@@ -83,8 +87,9 @@ jobs:
             >> gradle.properties
 
       # ============================================================
-      # RELATÓRIO ORIGINAL DA #49
-      # NÃO ALTERAR O openPDF
+      # RELATÓRIO DA #49
+      #
+      # NÃO ALTERAR.
       # ============================================================
 
       - name: Aplicar EXATAMENTE o relatório aprovado da #49
@@ -112,23 +117,31 @@ jobs:
           start = None
 
           for i, line in enumerate(lines):
-              if line.strip() == "- name: Alterar SOMENTE o relatório":
+
+              if line.strip() == \
+                  "- name: Alterar SOMENTE o relatório":
+
                   start = i
                   break
 
           if start is None:
+
               raise SystemExit(
                   "ERRO: etapa do relatório #49 não encontrada."
               )
 
           run_line = None
 
-          for i in range(start + 1, len(lines)):
+          for i in range(
+              start + 1,
+              len(lines)
+          ):
 
               if re.match(
                   r"^        run:\s*\|\s*$",
                   lines[i]
               ):
+
                   run_line = i
                   break
 
@@ -136,9 +149,11 @@ jobs:
                   r"^      - name:",
                   lines[i]
               ):
+
                   break
 
           if run_line is None:
+
               raise SystemExit(
                   "ERRO: bloco run do relatório não encontrado."
               )
@@ -151,18 +166,31 @@ jobs:
                   r"^      - name:",
                   line
               ):
+
                   break
 
-              if line.startswith("          "):
-                  script.append(line[10:])
+              if line.startswith(
+                  "          "
+              ):
+
+                  script.append(
+                      line[10:]
+                  )
+
               elif line.strip() == "":
+
                   script.append("")
+
               else:
+
                   raise SystemExit(
                       "ERRO: estrutura do relatório #49 inválida."
                   )
 
-          report = "\n".join(script).rstrip() + "\n"
+          report = (
+              "\n".join(script).rstrip()
+              + "\n"
+          )
 
           required = [
               "async function openPDF(sendViaWhatsApp=false)",
@@ -174,9 +202,12 @@ jobs:
           ]
 
           for item in required:
+
               if item not in report:
+
                   raise SystemExit(
-                      "ERRO no relatório #49: " + item
+                      "ERRO no relatório #49: "
+                      + item
                   )
 
           Path(
@@ -199,168 +230,173 @@ jobs:
           echo "OK - relatório #49 aplicado."
 
       # ============================================================
-      # CORREÇÕES JAVASCRIPT
-      # JAVASCRIPT PURO - SEM TAG <script>
+      # CORREÇÃO DO REPETIR ÚLTIMO
       # ============================================================
 
-      - name: Criar arquivo de correções JavaScript
+      - name: Corrigir Repetir Último
         shell: bash
         run: |
           set -e
 
-          cat > /tmp/super-pedido-fix.js <<'FIXJS'
+          cat > /tmp/repetir-ultimo.js <<'FIXJS'
           (function(){
 
-            const superPedidoOriginalOpenAdmin =
-              window.openAdmin;
+            function copiar(valor){
 
-            window.openAdmin = function(){
+              try{
 
-              if(
-                typeof featureModal !== "function" ||
-                typeof superPedidoOriginalOpenAdmin !== "function"
-              ){
-
-                alert(
-                  "Administração indisponível."
+                return JSON.parse(
+                  JSON.stringify(valor)
                 );
 
-                return;
+              }catch(e){
+
+                return valor;
+
               }
 
-              featureModal(`
+            }
 
-                <h3>🔐 Administração</h3>
 
-                <p>
-                  Digite o PIN de administração.
-                </p>
+            function encontrarProduto(item){
 
-                <input
-                  id="superPedidoAdminPin"
-                  type="password"
-                  inputmode="numeric"
-                  autocomplete="off"
-                  placeholder="PIN"
-                  style="
-                    width:100%;
-                    box-sizing:border-box;
-                    padding:12px;
-                    font-size:18px;
-                    margin-bottom:10px;
-                  "
-                >
+              const code =
+                String(
+                  item.code || ""
+                ).trim();
 
-                <button
-                  onclick="superPedidoConfirmarAdmin()"
-                >
-                  Entrar
-                </button>
 
-                <button
-                  onclick="closeFeature()"
-                >
-                  Cancelar
-                </button>
+              const name =
+                String(
+                  item.name || ""
+                ).trim()
+                .toLowerCase();
 
-              `);
 
-              setTimeout(
-                function(){
+              const cat =
+                String(
+                  item.cat || ""
+                ).trim()
+                .toLowerCase();
 
-                  const campo =
-                    document.getElementById(
-                      "superPedidoAdminPin"
-                    );
 
-                  if(!campo){
-                    return;
-                  }
+              /*
+               * Primeiro: código.
+               */
 
-                  campo.focus();
+              if(
+                code &&
+                typeof productByCode ===
+                "function"
+              ){
 
-                  campo.addEventListener(
-                    "keydown",
-                    function(event){
+                const encontrado =
+                  productByCode(code);
+
+                if(encontrado){
+
+                  return encontrado;
+
+                }
+
+              }
+
+
+              /*
+               * Segundo: procurar pelo código
+               * diretamente no APP_DATA.
+               */
+
+              if(
+                typeof APP_DATA !==
+                "undefined"
+              ){
+
+                for(
+                  const [c,sups]
+                  of Object.entries(APP_DATA)
+                ){
+
+                  for(
+                    const [s,items]
+                    of Object.entries(sups)
+                  ){
+
+                    for(
+                      let i=0;
+                      i<items.length;
+                      i++
+                    ){
+
+                      const p =
+                        items[i];
+
+                      const pc =
+                        String(
+                          p[0] || ""
+                        ).trim();
+
+                      const pn =
+                        String(
+                          p[1] || ""
+                        ).trim()
+                        .toLowerCase();
+
 
                       if(
-                        event.key === "Enter"
+                        code &&
+                        pc &&
+                        pc === code
                       ){
 
-                        superPedidoConfirmarAdmin();
+                        return {
+                          c:c,
+                          s:s,
+                          i:i,
+                          p:p
+                        };
+
+                      }
+
+
+                      /*
+                       * Terceira tentativa:
+                       * nome + categoria.
+                       */
+
+                      if(
+                        name &&
+                        pn === name &&
+                        (
+                          !cat ||
+                          String(c)
+                            .trim()
+                            .toLowerCase()
+                            === cat
+                        )
+                      ){
+
+                        return {
+                          c:c,
+                          s:s,
+                          i:i,
+                          p:p
+                        };
 
                       }
 
                     }
-                  );
-
-                },
-                100
-              );
-            };
-
-
-            window.superPedidoConfirmarAdmin =
-              function(){
-
-                const campo =
-                  document.getElementById(
-                    "superPedidoAdminPin"
-                  );
-
-                const pin =
-                  campo
-                    ? String(
-                        campo.value || ""
-                      )
-                    : "";
-
-                const salvo =
-                  localStorage.getItem(
-                    "sp_admin_pin"
-                  ) || "1234";
-
-                if(pin !== salvo){
-
-                  alert(
-                    "PIN incorreto."
-                  );
-
-                  if(campo){
-
-                    campo.value = "";
-
-                    campo.focus();
 
                   }
 
-                  return;
                 }
 
-                const promptOriginal =
-                  window.prompt;
+              }
 
-                window.prompt =
-                  function(){
 
-                    return pin;
+              return null;
 
-                  };
-
-                try{
-
-                  superPedidoOriginalOpenAdmin.call(
-                    window
-                  );
-
-                }finally{
-
-                  window.prompt =
-                    promptOriginal;
-
-                }
-
-              };
+            }
 
 
             window.repeatLastOrder =
@@ -371,25 +407,34 @@ jobs:
                 let observation = "";
 
 
+                /*
+                 * 1 - lastOrder em memória.
+                 */
+
                 try{
 
                   if(
-                    typeof lastOrder !== "undefined" &&
-                    Array.isArray(lastOrder) &&
+                    typeof lastOrder !==
+                    "undefined" &&
+                    Array.isArray(
+                      lastOrder
+                    ) &&
                     lastOrder.length
                   ){
 
                     rows =
-                      JSON.parse(
-                        JSON.stringify(
-                          lastOrder
-                        )
+                      copiar(
+                        lastOrder
                       );
 
                   }
 
-                }catch(error){}
+                }catch(e){}
 
+
+                /*
+                 * 2 - último pedido salvo.
+                 */
 
                 if(!rows.length){
 
@@ -403,37 +448,81 @@ jobs:
                     if(saved){
 
                       const parsed =
-                        JSON.parse(saved);
+                        JSON.parse(
+                          saved
+                        );
 
                       if(
-                        Array.isArray(parsed) &&
+                        Array.isArray(
+                          parsed
+                        ) &&
                         parsed.length
                       ){
 
                         rows = parsed;
 
-                        if(
-                          typeof lastOrder !==
-                          "undefined"
-                        ){
+                      }
 
-                          lastOrder =
-                            JSON.parse(
-                              JSON.stringify(
-                                parsed
-                              )
-                            );
+                    }
 
-                        }
+                  }catch(e){}
+
+                }
+
+
+                /*
+                 * 3 - histórico.
+                 */
+
+                if(!rows.length){
+
+                  try{
+
+                    const savedHistory =
+                      localStorage.getItem(
+                        "sp_history"
+                      );
+
+                    if(savedHistory){
+
+                      const hist =
+                        JSON.parse(
+                          savedHistory
+                        );
+
+                      if(
+                        Array.isArray(hist) &&
+                        hist.length &&
+                        hist[0] &&
+                        Array.isArray(
+                          hist[0].rows
+                        )
+                      ){
+
+                        rows =
+                          copiar(
+                            hist[0].rows
+                          );
+
+                        observation =
+                          String(
+                            hist[0]
+                              .generalObservation
+                              || ""
+                          );
 
                       }
 
                     }
 
-                  }catch(error){}
+                  }catch(e){}
 
                 }
 
+
+                /*
+                 * 4 - memória do histórico.
+                 */
 
                 if(!rows.length){
 
@@ -459,23 +548,21 @@ jobs:
                       ){
 
                         rows =
-                          JSON.parse(
-                            JSON.stringify(
-                              ultimo.rows
-                            )
+                          copiar(
+                            ultimo.rows
                           );
 
                         observation =
                           String(
-                            ultimo.generalObservation ||
-                            ""
+                            ultimo.generalObservation
+                            || ""
                           );
 
                       }
 
                     }
 
-                  }catch(error){}
+                  }catch(e){}
 
                 }
 
@@ -534,6 +621,13 @@ jobs:
                 }
 
 
+                let recuperados = 0;
+
+                let encontrados = 0;
+
+                let primeiroCatalogo = "";
+
+
                 rows.forEach(
                   function(item){
 
@@ -541,6 +635,10 @@ jobs:
                       return;
                     }
 
+
+                    /*
+                     * Produto adicional.
+                     */
 
                     if(
                       item.cat ===
@@ -568,15 +666,7 @@ jobs:
 
                       });
 
-                      return;
-
-                    }
-
-
-                    if(
-                      typeof productByCode !==
-                      "function"
-                    ){
+                      recuperados++;
 
                       return;
 
@@ -584,23 +674,51 @@ jobs:
 
 
                     const produto =
-                      productByCode(
-                        item.code
+                      encontrarProduto(
+                        item
                       );
 
 
                     if(!produto){
+
                       return;
+
                     }
 
 
-                    vals[
+                    encontrados++;
+
+
+                    if(
+                      !primeiroCatalogo
+                    ){
+
+                      primeiroCatalogo =
+                        produto.c;
+
+                    }
+
+
+                    const orderKey =
                       key(
                         produto.c,
                         produto.s,
                         produto.i,
                         "o"
-                      )
+                      );
+
+
+                    const stockKey =
+                      key(
+                        produto.c,
+                        produto.s,
+                        produto.i,
+                        "s"
+                      );
+
+
+                    vals[
+                      orderKey
                     ] =
                       Number(
                         item.order
@@ -608,33 +726,29 @@ jobs:
 
 
                     vals[
-                      key(
-                        produto.c,
-                        produto.s,
-                        produto.i,
-                        "s"
-                      )
+                      stockKey
                     ] =
                       Number(
                         item.stock
                       ) || 0;
 
+
+                    recuperados++;
+
                   }
                 );
 
 
-                let obs =
-                  String(
-                    observation || ""
-                  );
-
+                /*
+                 * Recuperar observação.
+                 */
 
                 if(
-                  !obs &&
+                  !observation &&
                   rows.generalObservation
                 ){
 
-                  obs =
+                  observation =
                     String(
                       rows.generalObservation
                     );
@@ -643,22 +757,28 @@ jobs:
 
 
                 generalObservation =
-                  obs;
+                  String(
+                    observation || ""
+                  );
 
 
-                const campo =
+                const obs =
                   document.getElementById(
                     "generalObs"
                   );
 
 
-                if(campo){
+                if(obs){
 
-                  campo.value =
+                  obs.value =
                     generalObservation;
 
                 }
 
+
+                /*
+                 * Salvar imediatamente.
+                 */
 
                 if(
                   typeof save ===
@@ -676,6 +796,36 @@ jobs:
                 ){
 
                   saveFeatures();
+
+                }
+
+
+                /*
+                 * Ir para a primeira categoria
+                 * que contém item recuperado.
+                 */
+
+                if(
+                  primeiroCatalogo &&
+                  typeof APP_DATA !==
+                  "undefined" &&
+                  APP_DATA[
+                    primeiroCatalogo
+                  ]
+                ){
+
+                  current =
+                    primeiroCatalogo;
+
+                }
+
+
+                if(
+                  typeof tabs ===
+                  "function"
+                ){
+
+                  tabs();
 
                 }
 
@@ -720,232 +870,54 @@ jobs:
                 }
 
 
+                /*
+                 * Mantém o último pedido salvo.
+                 */
+
+                try{
+
+                  lastOrder =
+                    copiar(rows);
+
+                  localStorage.setItem(
+                    "sp_last_order",
+                    JSON.stringify(
+                      lastOrder
+                    )
+                  );
+
+                }catch(e){}
+
+
+                if(
+                  recuperados === 0
+                ){
+
+                  alert(
+                    "O último pedido foi encontrado, mas nenhum produto da lista atual pôde ser localizado."
+                  );
+
+                  return;
+
+                }
+
+
                 alert(
-                  "Último pedido recuperado. Confira antes de enviar."
+                  "Último pedido recuperado: "
+                  + recuperados
+                  + " item(ns). Confira antes de enviar."
                 );
-
-              };
-
-
-            window.clearPedido =
-              function(){
-
-                let linhas = [];
-
-
-                try{
-
-                  if(
-                    typeof finalizedRows !==
-                    "undefined" &&
-                    Array.isArray(
-                      finalizedRows
-                    ) &&
-                    finalizedRows.length
-                  ){
-
-                    linhas =
-                      JSON.parse(
-                        JSON.stringify(
-                          finalizedRows
-                        )
-                      );
-
-                  }
-
-                }catch(error){}
-
-
-                let jaSalvo = false;
-
-
-                try{
-
-                  if(
-                    linhas.length &&
-                    typeof historyOrders !==
-                    "undefined" &&
-                    Array.isArray(
-                      historyOrders
-                    ) &&
-                    historyOrders.length
-                  ){
-
-                    const ultimo =
-                      historyOrders[0];
-
-                    if(
-                      ultimo &&
-                      Array.isArray(
-                        ultimo.rows
-                      )
-                    ){
-
-                      jaSalvo =
-                        JSON.stringify(
-                          ultimo.rows
-                        ) ===
-                        JSON.stringify(
-                          linhas
-                        );
-
-                    }
-
-                  }
-
-                }catch(error){}
-
-
-                if(
-                  linhas.length &&
-                  !jaSalvo &&
-                  typeof saveHistory ===
-                  "function"
-                ){
-
-                  saveHistory(
-                    linhas
-                  );
-
-                }
-
-
-                vals = {};
-
-                extras = [];
-
-                finalizedRows = [];
-
-                generalObservation = "";
-
-
-                if(
-                  typeof validadeCurta !==
-                  "undefined"
-                ){
-
-                  validadeCurta = [];
-
-                }
-
-
-                localStorage.removeItem(
-                  "pedido_compras_vals"
-                );
-
-                localStorage.removeItem(
-                  "pedido_compras_extras"
-                );
-
-                localStorage.removeItem(
-                  "pedido_compras_validade_curta"
-                );
-
-                localStorage.removeItem(
-                  "sp_general_obs"
-                );
-
-
-                const campoObs =
-                  document.getElementById(
-                    "generalObs"
-                  );
-
-
-                if(campoObs){
-
-                  campoObs.value = "";
-
-                }
-
-
-                if(
-                  typeof saveFeatures ===
-                  "function"
-                ){
-
-                  saveFeatures();
-
-                }
-
-
-                if(
-                  typeof render ===
-                  "function"
-                ){
-
-                  render();
-
-                }
-
-
-                if(
-                  typeof renderValidadeCurta ===
-                  "function"
-                ){
-
-                  renderValidadeCurta();
-
-                }
-
-
-                if(
-                  typeof updateBadge ===
-                  "function"
-                ){
-
-                  updateBadge();
-
-                }
-
-
-                const opcoes =
-                  document.getElementById(
-                    "opcoesFinalizado"
-                  );
-
-
-                if(opcoes){
-
-                  opcoes.style.display =
-                    "none";
-
-                }
-
-
-                window.scrollTo({
-
-                  top: 0,
-
-                  behavior: "smooth"
-
-                });
 
               };
 
           })();
           FIXJS
 
-          test -s /tmp/super-pedido-fix.js
+          test -s /tmp/repetir-ultimo.js
 
-          node --check /tmp/super-pedido-fix.js
-
-          echo "OK - JavaScript da correção validado."
-
-      # ============================================================
-      # INSERIR CORREÇÃO NO INDEX
-      # ============================================================
-
-      - name: Aplicar correções na build
-        shell: bash
-        run: |
-          set -e
+          node --check /tmp/repetir-ultimo.js
 
           HTML="$ANDROID_DIR/app/src/main/assets/app/index.html"
-
-          test -f "$HTML"
-
-          test -s /tmp/super-pedido-fix.js
 
           python3 - <<'PY'
           import os
@@ -963,7 +935,7 @@ jobs:
           )
 
           patch = Path(
-              "/tmp/super-pedido-fix.js"
+              "/tmp/repetir-ultimo.js"
           ).read_text(
               encoding="utf-8"
           )
@@ -973,39 +945,11 @@ jobs:
                   "ERRO: </body> não encontrado."
               )
 
-          if (
-              "async function openPDF(sendViaWhatsApp=false)"
-              not in text
-          ):
-              raise SystemExit(
-                  "ERRO: relatório #49 não encontrado."
-              )
-
-          if (
-              "window.AndroidFileBridge.sharePdf"
-              not in text
-          ):
-              raise SystemExit(
-                  "ERRO: AndroidFileBridge não encontrado."
-              )
-
-          if (
-              "orientation:'portrait'"
-              not in text
-          ):
-              raise SystemExit(
-                  "ERRO: relatório não está em retrato."
-              )
-
-          script = (
-              "\n<script>\n"
-              + patch
-              + "\n</script>\n"
-          )
-
           text = text.replace(
               "</body>",
-              script + "</body>",
+              "\n<script>\n"
+              + patch
+              + "\n</script>\n</body>",
               1
           )
 
@@ -1015,15 +959,392 @@ jobs:
           )
 
           print(
-              "OK - correções inseridas."
+              "OK - Repetir Último corrigido."
+          )
+
+          PY
+
+      # ============================================================
+      # CORREÇÃO DO IMPORTADOR NO ANDROID
+      # ============================================================
+
+      - name: Corrigir Importar Lista dentro do ADM
+        shell: bash
+        run: |
+          set -e
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import os
+
+          root = Path(
+              os.environ["ANDROID_DIR"]
+          )
+
+          java_files = list(
+              (
+                  root /
+                  "app/src/main/java"
+              ).rglob(
+                  "MainActivity.java"
+              )
+          )
+
+          if not java_files:
+
+              raise SystemExit(
+                  "ERRO: MainActivity.java não encontrado."
+              )
+
+          main = java_files[0]
+
+          java = main.read_text(
+              encoding="utf-8"
+          )
+
+
+          # ========================================================
+          # IMPORTS
+          # ========================================================
+
+          if (
+              "import android.content.ClipData;"
+              not in java
+          ):
+
+              if (
+                  "import android.content.Intent;"
+                  in java
+              ):
+
+                  java = java.replace(
+                      "import android.content.Intent;",
+                      "import android.content.ClipData;\n"
+                      "import android.content.Intent;",
+                      1
+                  )
+
+              else:
+
+                  raise SystemExit(
+                      "ERRO: import android.content.Intent não encontrado."
+                  )
+
+
+          if (
+              "import android.net.Uri;"
+              not in java
+          ):
+
+              if (
+                  "package "
+                  in java
+              ):
+
+                  pos =
+                      java.find(
+                          "\n",
+                          java.find(
+                              "package "
+                          )
+                      )
+
+                  java = (
+                      java[:pos + 1]
+                      +
+                      "import android.net.Uri;\n"
+                      +
+                      java[pos + 1:]
+                  )
+
+
+          if (
+              "import android.webkit.ValueCallback;"
+              not in java
+          ):
+
+              marker = (
+                  "import android.webkit.WebView;"
+              )
+
+              if marker in java:
+
+                  java = java.replace(
+                      marker,
+                      "import android.webkit.ValueCallback;\n"
+                      + marker,
+                      1
+                  )
+
+              else:
+
+                  marker = (
+                      "import android.webkit.WebSettings;"
+                  )
+
+                  if marker in java:
+
+                      java = java.replace(
+                          marker,
+                          "import android.webkit.ValueCallback;\n"
+                          + marker,
+                          1
+                      )
+
+                  else:
+
+                      raise SystemExit(
+                          "ERRO: import WebView/WebSettings não encontrado."
+                      )
+
+
+          if (
+              "import android.webkit.WebChromeClient;"
+              not in java
+          ):
+
+              marker = (
+                  "import android.webkit.WebView;"
+              )
+
+              if marker in java:
+
+                  java = java.replace(
+                      marker,
+                      "import android.webkit.WebChromeClient;\n"
+                      + marker,
+                      1
+                  )
+
+              else:
+
+                  marker = (
+                      "import android.webkit.WebSettings;"
+                  )
+
+                  if marker in java:
+
+                      java = java.replace(
+                          marker,
+                          "import android.webkit.WebChromeClient;\n"
+                          + marker,
+                          1
+                      )
+
+                  else:
+
+                      raise SystemExit(
+                          "ERRO: local para WebChromeClient não encontrado."
+                      )
+
+
+          # ========================================================
+          # CAMPOS DO FILE CHOOSER
+          # ========================================================
+
+          if (
+              "filePathCallback"
+              not in java
+          ):
+
+              marker = (
+                  "public class MainActivity extends Activity {"
+              )
+
+              if marker not in java:
+
+                  raise SystemExit(
+                      "ERRO: classe MainActivity não encontrada."
+                  )
+
+              fields = """public class MainActivity extends Activity {
+              private ValueCallback<Uri[]> filePathCallback;
+              private static final int FILE_CHOOSER_REQUEST = 1001;"""
+
+              java = java.replace(
+                  marker,
+                  fields,
+                  1
+              )
+
+
+          # ========================================================
+          # WEBCHROMECLIENT
+          # ========================================================
+
+          if (
+              "onShowFileChooser"
+              not in java
+          ):
+
+              marker = (
+                  "        webView.setWebViewClient(new WebViewClient());"
+              )
+
+              if marker not in java:
+
+                  raise SystemExit(
+                      "ERRO: setWebViewClient não encontrado."
+                  )
+
+              block = r'''        webView.setWebChromeClient(new WebChromeClient() {
+                  @Override
+                  public boolean onShowFileChooser(
+                          WebView view,
+                          ValueCallback<Uri[]> callback,
+                          FileChooserParams params) {
+
+                      if (MainActivity.this.filePathCallback != null) {
+                          MainActivity.this.filePathCallback.onReceiveValue(null);
+                      }
+
+                      MainActivity.this.filePathCallback = callback;
+
+                      try {
+
+                          Intent intent =
+                                  params.createIntent();
+
+                          startActivityForResult(
+                                  intent,
+                                  FILE_CHOOSER_REQUEST
+                          );
+
+                          return true;
+
+                      } catch (Exception e) {
+
+                          MainActivity.this.filePathCallback = null;
+
+                          Toast.makeText(
+                                  MainActivity.this,
+                                  "Não foi possível abrir o seletor de arquivos.",
+                                  Toast.LENGTH_LONG
+                          ).show();
+
+                          return false;
+                      }
+                  }
+              });
+'''
+
+              java = java.replace(
+                  marker,
+                  marker + "\n" + block,
+                  1
+              )
+
+
+          # ========================================================
+          # RESULTADO DO SELETOR
+          # ========================================================
+
+          if (
+              "FILE_CHOOSER_REQUEST"
+              in java
+              and
+              "onActivityResult(int requestCode"
+              not in java
+          ):
+
+              marker = (
+                  "    public class AndroidFileBridge {"
+              )
+
+              if marker not in java:
+
+                  raise SystemExit(
+                      "ERRO: AndroidFileBridge não encontrado."
+                  )
+
+              result = r'''    @Override
+              protected void onActivityResult(
+                      int requestCode,
+                      int resultCode,
+                      Intent data) {
+
+                  super.onActivityResult(
+                          requestCode,
+                          resultCode,
+                          data
+                  );
+
+                  if (
+                          requestCode != FILE_CHOOSER_REQUEST
+                          || filePathCallback == null
+                  ) {
+
+                      return;
+                  }
+
+                  Uri[] results = null;
+
+                  if (
+                          resultCode == RESULT_OK
+                          && data != null
+                  ) {
+
+                      if (
+                              data.getClipData() != null
+                      ) {
+
+                          int count =
+                                  data.getClipData()
+                                          .getItemCount();
+
+                          results =
+                                  new Uri[count];
+
+                          for (
+                                  int i = 0;
+                                  i < count;
+                                  i++
+                          ) {
+
+                              results[i] =
+                                      data.getClipData()
+                                              .getItemAt(i)
+                                              .getUri();
+                          }
+
+                      } else if (
+                              data.getData() != null
+                      ) {
+
+                          results =
+                                  new Uri[]{
+                                          data.getData()
+                                  };
+                      }
+                  }
+
+                  filePathCallback.onReceiveValue(
+                          results
+                  );
+
+                  filePathCallback = null;
+              }
+
+'''
+
+              java = java.replace(
+                  marker,
+                  result + marker,
+                  1
+              )
+
+
+          main.write_text(
+              java,
+              encoding="utf-8"
           )
 
           print(
-              "OK - relatório #49 preservado."
+              "OK - seletor de arquivos Android corrigido."
           )
 
           print(
-              "OK - openPDF preservado."
+              "OK - MainActivity atualizado."
           )
 
           PY
@@ -1054,9 +1375,7 @@ jobs:
           test -s "$ASSETS/jspdf.umd.min.js"
 
       # ============================================================
-      # VERIFICAÇÃO JAVASCRIPT
-      #
-      # SEM PYTHON DESNECESSÁRIO.
+      # VERIFICAÇÃO DO JAVASCRIPT
       # ============================================================
 
       - name: Verificar JavaScript
@@ -1093,23 +1412,27 @@ jobs:
             "$HTML"
 
           grep -q \
-            "function saveHistory(rows)" \
+            "importedCatalogActive" \
             "$HTML"
 
           grep -q \
-            "CÓDIGO" \
+            "function importList" \
             "$HTML"
 
           grep -q \
-            "NOME DO PRODUTO" \
+            "function importSpreadsheet" \
             "$HTML"
 
           grep -q \
-            "ESTOQUE" \
+            "function applyImport" \
             "$HTML"
 
           grep -q \
-            "PEDIDO" \
+            "xlsx.full.min.js" \
+            "$HTML"
+
+          grep -q \
+            "jspdf.umd.min.js" \
             "$HTML"
 
           if grep -q \
@@ -1152,6 +1475,7 @@ jobs:
           )
 
           if not scripts:
+
               raise SystemExit(
                   "ERRO: nenhum JavaScript encontrado."
               )
@@ -1163,19 +1487,51 @@ jobs:
               encoding="utf-8"
           )
 
-          print(
-              "JavaScript extraído para validação."
-          )
-
           PY
 
           node --check \
             /tmp/super-pedido-inline.js
 
-          echo ""
-          echo "=========================================="
-          echo " VERIFICAÇÃO JAVASCRIPT: OK"
-          echo "=========================================="
+          echo "OK - JavaScript válido."
+
+      # ============================================================
+      # VERIFICAR IMPORTAÇÃO ANDROID
+      # ============================================================
+
+      - name: Verificar correção do importador
+        shell: bash
+        run: |
+          set -e
+
+          MAIN=$(find \
+            "$ANDROID_DIR/app/src/main/java" \
+            -name MainActivity.java \
+            -type f \
+            -print -quit)
+
+          test -n "$MAIN"
+
+          grep -q \
+            "onShowFileChooser" \
+            "$MAIN"
+
+          grep -q \
+            "FILE_CHOOSER_REQUEST" \
+            "$MAIN"
+
+          grep -q \
+            "filePathCallback" \
+            "$MAIN"
+
+          grep -q \
+            "onActivityResult" \
+            "$MAIN"
+
+          grep -q \
+            "WebChromeClient" \
+            "$MAIN"
+
+          echo "OK - importador Android preparado."
 
       # ============================================================
       # VERIFICAÇÃO FINAL
@@ -1199,10 +1555,6 @@ jobs:
             "$HTML"
 
           grep -q \
-            "window.openAdmin" \
-            "$HTML"
-
-          grep -q \
             "window.repeatLastOrder" \
             "$HTML"
 
@@ -1211,7 +1563,15 @@ jobs:
             "$HTML"
 
           grep -q \
-            "window.clearPedido" \
+            "function importList" \
+            "$HTML"
+
+          grep -q \
+            "function importSpreadsheet" \
+            "$HTML"
+
+          grep -q \
+            "function applyImport" \
             "$HTML"
 
           grep -q \
@@ -1222,16 +1582,32 @@ jobs:
             "format:'a4'" \
             "$HTML"
 
+          MAIN=$(find \
+            "$ANDROID_DIR/app/src/main/java" \
+            -name MainActivity.java \
+            -type f \
+            -print -quit)
+
+          test -n "$MAIN"
+
+          grep -q \
+            "onShowFileChooser" \
+            "$MAIN"
+
+          grep -q \
+            "filePathCallback" \
+            "$MAIN"
+
           echo ""
           echo "=========================================="
-          echo " VERIFICAÇÃO FINAL - OK"
+          echo " VERSÃO 66 - VERIFICAÇÃO FINAL"
           echo "=========================================="
-          echo "BASE 49 ................ OK"
-          echo "RELATÓRIO .............. OK"
+          echo "BASE DA #65 ............ OK"
+          echo "RELATÓRIO .............. PRESERVADO"
           echo "PDF A4 RETRATO ......... OK"
-          echo "ADM .................... OK"
-          echo "REPETIR ................ OK"
-          echo "LIMPAR ................. OK"
+          echo "REPETIR ÚLTIMO ......... CORRIGIDO"
+          echo "IMPORTAR LISTA ADM ..... CORRIGIDO"
+          echo "SELETOR ANDROID ........ OK"
           echo "JAVASCRIPT ............. OK"
           echo "=========================================="
 
