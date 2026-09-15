@@ -12,19 +12,11 @@ jobs:
 
     steps:
 
-      # ============================================================
-      # BASE EXATA DO APK APROVADO - VERSÃO 49
-      # ============================================================
-
       - name: Baixar projeto - BASE 49
         uses: actions/checkout@v4
         with:
           ref: 4e67e53aa453548944592d7b7f417fb77ca9fe7c
           fetch-depth: 1
-
-      # ============================================================
-      # JAVA 17
-      # ============================================================
 
       - name: Configurar Java 17
         uses: actions/setup-java@v4
@@ -32,18 +24,10 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      # ============================================================
-      # GRADLE
-      # ============================================================
-
       - name: Configurar Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
-
-      # ============================================================
-      # PREPARAR PROJETO
-      # ============================================================
 
       - name: Preparar projeto
         shell: bash
@@ -57,10 +41,6 @@ jobs:
           mkdir -p projeto
 
           unzip -o "Super-Pedido-Pro.zip" -d projeto
-
-      # ============================================================
-      # LOCALIZAR ANDROID
-      # ============================================================
 
       - name: Localizar projeto Android
         shell: bash
@@ -81,10 +61,6 @@ jobs:
           echo "Projeto encontrado:"
           echo "$ANDROID_DIR"
 
-      # ============================================================
-      # ANDROIDX
-      # ============================================================
-
       - name: Configurar AndroidX
         shell: bash
         run: |
@@ -97,21 +73,18 @@ jobs:
           grep -qF \
             "android.useAndroidX=true" \
             gradle.properties \
-            || echo \
-            "android.useAndroidX=true" \
+            || echo "android.useAndroidX=true" \
             >> gradle.properties
 
           grep -qF \
             "android.enableJetifier=true" \
             gradle.properties \
-            || echo \
-            "android.enableJetifier=true" \
+            || echo "android.enableJetifier=true" \
             >> gradle.properties
 
       # ============================================================
-      # RELATÓRIO EXATO DA #49
-      #
-      # NÃO MODIFICA openPDF.
+      # RELATÓRIO ORIGINAL DA #49
+      # NÃO ALTERAR O openPDF
       # ============================================================
 
       - name: Aplicar EXATAMENTE o relatório aprovado da #49
@@ -139,31 +112,23 @@ jobs:
           start = None
 
           for i, line in enumerate(lines):
-
-              if line.strip() == \
-                  "- name: Alterar SOMENTE o relatório":
-
+              if line.strip() == "- name: Alterar SOMENTE o relatório":
                   start = i
                   break
 
           if start is None:
-
               raise SystemExit(
                   "ERRO: etapa do relatório #49 não encontrada."
               )
 
           run_line = None
 
-          for i in range(
-              start + 1,
-              len(lines)
-          ):
+          for i in range(start + 1, len(lines)):
 
               if re.match(
                   r"^        run:\s*\|\s*$",
                   lines[i]
               ):
-
                   run_line = i
                   break
 
@@ -171,13 +136,11 @@ jobs:
                   r"^      - name:",
                   lines[i]
               ):
-
                   break
 
           if run_line is None:
-
               raise SystemExit(
-                  "ERRO: bloco run do relatório #49 não encontrado."
+                  "ERRO: bloco run do relatório não encontrado."
               )
 
           script = []
@@ -188,55 +151,32 @@ jobs:
                   r"^      - name:",
                   line
               ):
-
                   break
 
-              if line.startswith(
-                  "          "
-              ):
-
-                  script.append(
-                      line[10:]
-                  )
-
+              if line.startswith("          "):
+                  script.append(line[10:])
               elif line.strip() == "":
-
                   script.append("")
-
               else:
-
                   raise SystemExit(
                       "ERRO: estrutura do relatório #49 inválida."
                   )
 
-          report = (
-              "\n".join(script).rstrip()
-              + "\n"
-          )
+          report = "\n".join(script).rstrip() + "\n"
 
           required = [
-
               "async function openPDF(sendViaWhatsApp=false)",
-
               "window.AndroidFileBridge.sharePdf",
-
               "saveHistory(rows)",
-
               "clearPedido()",
-
               "orientation:'portrait'",
-
               "format:'a4'"
-
           ]
 
           for item in required:
-
               if item not in report:
-
                   raise SystemExit(
-                      "ERRO no relatório #49: "
-                      + item
+                      "ERRO no relatório #49: " + item
                   )
 
           Path(
@@ -247,7 +187,7 @@ jobs:
           )
 
           print(
-              "OK - relatório #49 encontrado."
+              "OK - relatório #49 encontrado e validado."
           )
 
           PY
@@ -259,11 +199,8 @@ jobs:
           echo "OK - relatório #49 aplicado."
 
       # ============================================================
-      # CRIAR CORREÇÃO JAVASCRIPT
-      #
-      # JAVASCRIPT PURO.
-      # SEM <script>.
-      # SEM </script>.
+      # CORREÇÕES JAVASCRIPT
+      # JAVASCRIPT PURO - SEM TAG <script>
       # ============================================================
 
       - name: Criar arquivo de correções JavaScript
@@ -273,10 +210,6 @@ jobs:
 
           cat > /tmp/super-pedido-fix.js <<'FIXJS'
           (function(){
-
-            /* =====================================================
-               ADMINISTRAÇÃO
-               ===================================================== */
 
             const superPedidoOriginalOpenAdmin =
               window.openAdmin;
@@ -430,10 +363,6 @@ jobs:
               };
 
 
-            /* =====================================================
-               REPETIR ÚLTIMO PEDIDO
-               ===================================================== */
-
             window.repeatLastOrder =
               function(){
 
@@ -441,10 +370,6 @@ jobs:
 
                 let observation = "";
 
-
-                /*
-                 * 1 - Memória
-                 */
 
                 try{
 
@@ -465,10 +390,6 @@ jobs:
 
                 }catch(error){}
 
-
-                /*
-                 * 2 - LocalStorage
-                 */
 
                 if(!rows.length){
 
@@ -513,10 +434,6 @@ jobs:
 
                 }
 
-
-                /*
-                 * 3 - Histórico
-                 */
 
                 if(!rows.length){
 
@@ -581,10 +498,6 @@ jobs:
 
               };
 
-
-            /* =====================================================
-               APLICAR REPETIÇÃO
-               ===================================================== */
 
             window.applyRepeat =
               function(
@@ -813,14 +726,6 @@ jobs:
 
               };
 
-
-            /* =====================================================
-               LIMPAR PEDIDO
-               
-               NÃO APAGA:
-               sp_last_order
-               sp_history
-               ===================================================== */
 
             window.clearPedido =
               function(){
@@ -1064,7 +969,6 @@ jobs:
           )
 
           if "</body>" not in text:
-
               raise SystemExit(
                   "ERRO: </body> não encontrado."
               )
@@ -1073,7 +977,6 @@ jobs:
               "async function openPDF(sendViaWhatsApp=false)"
               not in text
           ):
-
               raise SystemExit(
                   "ERRO: relatório #49 não encontrado."
               )
@@ -1082,7 +985,6 @@ jobs:
               "window.AndroidFileBridge.sharePdf"
               not in text
           ):
-
               raise SystemExit(
                   "ERRO: AndroidFileBridge não encontrado."
               )
@@ -1091,11 +993,9 @@ jobs:
               "orientation:'portrait'"
               not in text
           ):
-
               raise SystemExit(
                   "ERRO: relatório não está em retrato."
               )
-
 
           script = (
               "\n<script>\n"
@@ -1103,19 +1003,16 @@ jobs:
               + "\n</script>\n"
           )
 
-
           text = text.replace(
               "</body>",
               script + "</body>",
               1
           )
 
-
           html.write_text(
               text,
               encoding="utf-8"
           )
-
 
           print(
               "OK - correções inseridas."
@@ -1132,7 +1029,7 @@ jobs:
           PY
 
       # ============================================================
-      # BIBLIOTECAS PDF E EXCEL
+      # BIBLIOTECAS
       # ============================================================
 
       - name: Preparar bibliotecas PDF e Excel
@@ -1157,7 +1054,9 @@ jobs:
           test -s "$ASSETS/jspdf.umd.min.js"
 
       # ============================================================
-      # VERIFICAR JAVASCRIPT
+      # VERIFICAÇÃO JAVASCRIPT
+      #
+      # SEM PYTHON DESNECESSÁRIO.
       # ============================================================
 
       - name: Verificar JavaScript
@@ -1169,22 +1068,82 @@ jobs:
 
           test -f "$HTML"
 
-          python3 - <<'PY'
+          grep -q \
+            "async function openPDF(sendViaWhatsApp=false)" \
+            "$HTML"
+
+          grep -q \
+            "window.AndroidFileBridge.sharePdf" \
+            "$HTML"
+
+          grep -q \
+            "window.openAdmin" \
+            "$HTML"
+
+          grep -q \
+            "window.repeatLastOrder" \
+            "$HTML"
+
+          grep -q \
+            "window.applyRepeat" \
+            "$HTML"
+
+          grep -q \
+            "window.clearPedido" \
+            "$HTML"
+
+          grep -q \
+            "function saveHistory(rows)" \
+            "$HTML"
+
+          grep -q \
+            "CÓDIGO" \
+            "$HTML"
+
+          grep -q \
+            "NOME DO PRODUTO" \
+            "$HTML"
+
+          grep -q \
+            "ESTOQUE" \
+            "$HTML"
+
+          grep -q \
+            "PEDIDO" \
+            "$HTML"
+
+          if grep -q \
+            "orientation:'landscape'" \
+            "$HTML"; then
+
+            echo "ERRO: relatório em paisagem."
+
+            exit 1
+
+          fi
+
+          if grep -q \
+            'orientation:"landscape"' \
+            "$HTML"; then
+
+            echo "ERRO: relatório em paisagem."
+
+            exit 1
+
+          fi
+
+          python3 - "$HTML" <<'PY'
           import re
-          import os
+          import sys
           from pathlib import Path
 
-          html = (
-              Path(
-                  os.environ["ANDROID_DIR"]
-              )
-              / "app/src/main/assets/app/index.html"
+          html = Path(
+              sys.argv[1]
           )
 
           text = html.read_text(
               encoding="utf-8"
           )
-
 
           scripts = re.findall(
               r"<script(?:[^>]*)>(.*?)</script>",
@@ -1192,84 +1151,20 @@ jobs:
               re.S
           )
 
-
           if not scripts:
-
               raise SystemExit(
                   "ERRO: nenhum JavaScript encontrado."
               )
 
-
-          combined = "\n".join(
-              scripts
-          )
-
-
           Path(
               "/tmp/super-pedido-inline.js"
           ).write_text(
-              combined,
+              "\n".join(scripts),
               encoding="utf-8"
           )
 
-
-          /*
-           * A verificação abaixo procura nomes,
-           * e NÃO depende de espaços ao redor do "=".
-           */
-
-          required = [
-
-              "async function openPDF(sendViaWhatsApp=false)",
-
-              "window.AndroidFileBridge.sharePdf",
-
-              "window.openAdmin",
-
-              "window.repeatLastOrder",
-
-              "window.applyRepeat",
-
-              "window.clearPedido",
-
-              "function saveHistory(rows)",
-
-              "CÓDIGO",
-
-              "NOME DO PRODUTO",
-
-              "ESTOQUE",
-
-              "PEDIDO"
-
-          ]
-
-
-          for item in required:
-
-              if item not in text:
-
-                  raise SystemExit(
-                      "ERRO: não encontrado: "
-                      + item
-                  )
-
-
-          if (
-              "orientation:'landscape'"
-              in text
-              or
-              'orientation:"landscape"'
-              in text
-          ):
-
-              raise SystemExit(
-                  "ERRO: relatório em paisagem."
-              )
-
-
           print(
-              "OK - verificações textuais concluídas."
+              "JavaScript extraído para validação."
           )
 
           PY
@@ -1277,7 +1172,10 @@ jobs:
           node --check \
             /tmp/super-pedido-inline.js
 
-          echo "OK - JavaScript válido."
+          echo ""
+          echo "=========================================="
+          echo " VERIFICAÇÃO JAVASCRIPT: OK"
+          echo "=========================================="
 
       # ============================================================
       # VERIFICAÇÃO FINAL
@@ -1322,22 +1220,6 @@ jobs:
 
           grep -q \
             "format:'a4'" \
-            "$HTML"
-
-          grep -q \
-            "CÓDIGO" \
-            "$HTML"
-
-          grep -q \
-            "NOME DO PRODUTO" \
-            "$HTML"
-
-          grep -q \
-            "ESTOQUE" \
-            "$HTML"
-
-          grep -q \
-            "PEDIDO" \
             "$HTML"
 
           echo ""
