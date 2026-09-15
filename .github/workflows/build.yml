@@ -11,6 +11,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+
       - name: Baixar projeto
         uses: actions/checkout@v4
 
@@ -69,7 +70,27 @@ jobs:
           grep -qF "android.enableJetifier=true" gradle.properties \
             || echo "android.enableJetifier=true" >> gradle.properties
 
-      - name: Corrigir ADM, Repetir último e limpeza
+      - name: Localizar tela HTML
+        shell: bash
+        run: |
+          set -e
+
+          HTML=$(find "$ANDROID_DIR" \
+            -path "*/src/main/assets/*" \
+            -name index.html \
+            -type f \
+            -print -quit)
+
+          test -n "$HTML"
+
+          APP_DIR=$(dirname "$HTML")
+
+          echo "HTML=$HTML" >> "$GITHUB_ENV"
+          echo "APP_DIR=$APP_DIR" >> "$GITHUB_ENV"
+
+          echo "HTML encontrado em: $HTML"
+
+      - name: Corrigir ADM, Repetir e limpeza
         shell: bash
         run: |
           set -e
@@ -80,65 +101,44 @@ jobs:
           import os
           import re
 
-          root = Path(os.environ["ANDROID_DIR"])
+          html = Path(os.environ["HTML"])
 
-          candidates = [
-              root / "app/src/main/assets/app/index.html",
-              root / "app/src/main/assets/index.html",
-          ]
-
-          html = next(
-              (p for p in candidates if p.exists()),
-              None
-          )
-
-          if html is None:
-              found = list(root.rglob("index.html"))
-
-              if not found:
-                  raise SystemExit(
-                      "ERRO: nenhum index.html encontrado no projeto Android"
-                  )
-
-              html = found[0]
-
-          text = html.read_text(
-              encoding="utf-8"
-          )
-
+          text = html.read_text(encoding="utf-8")
           original = text
 
           def function_block(source, name):
-              marker = f"function {name}("
+              pattern = (
+                  r"function\s+"
+                  + re.escape(name)
+                  + r"\s*\("
+              )
 
-              start = source.find(marker)
+              match = re.search(pattern, source)
 
-              if start < 0:
+              if not match:
                   raise SystemExit(
-                      f"ERRO: não encontrou function {name}() no index.html"
+                      f"ERRO: função {name} não encontrada"
                   )
 
+              start = match.start()
+
               next_match = re.search(
-                  r"\n?function\s+[A-Za-z_$][\w$]*\s*\(",
-                  source[start + len(marker):]
+                  r"\nfunction\s+[A-Za-z_$][\w$]*\s*\(",
+                  source[match.end():]
               )
 
               if next_match:
                   end = (
-                      start
-                      + len(marker)
+                      match.end()
                       + next_match.start()
+                      + 1
                   )
               else:
                   end = len(source)
 
               return start, end, source[start:end]
 
-          def replace_function(
-              source,
-              name,
-              replacement
-          ):
+          def replace_function(source, name, replacement):
               start, end, _ = function_block(
                   source,
                   name
@@ -151,9 +151,9 @@ jobs:
                   + source[end:]
               )
 
-          # ==================================================
-          # PROTEGER O RELATÓRIO ORIGINAL
-          # ==================================================
+          # =========================================================
+          # PROTEÇÃO DO RELATÓRIO DA VERSÃO #49
+          # =========================================================
 
           report_before = function_block(
               original,
@@ -165,131 +165,484 @@ jobs:
               "groupRows"
           )[2]
 
-          # ==================================================
-          # 1. ADMINISTRAÇÃO
-          # ==================================================
+          report_hash_before = hashlib.sha256(
+              report_before.encode("utf-8")
+          ).hexdigest()
 
-          new_admin = '''function openAdmin(){featureModal(`<h3>🔐 Administração</h3><p>Digite o PIN de administração.</p><input id="adminPinInput" type="password" inputmode="numeric" autocomplete="off" placeholder="PIN" style="width:100%;box-sizing:border-box;padding:12px;font-size:18px"><div style="display:flex;gap:8px;margin-top:10px"><button onclick="confirmAdminPin()">Entrar</button><button onclick="closeFeature()">Cancelar</button></div>`);setTimeout(()=>{const e=document.getElementById('adminPinInput');if(e)e.focus()},50)}
-          function confirmAdminPin(){const input=document.getElementById('adminPinInput');const pin=input?String(input.value||''):'';const saved=localStorage.getItem('sp_admin_pin')||'1234';if(pin!==saved){alert('PIN incorreto.');return}featureModal(`<h3>🔐 Administração</h3><div class="stat">Produtos na lista: <b>${Object.values(APP_DATA).reduce((a,s)=>a+Object.values(s).reduce((b,x)=>b+x.length,0),0)}</b></div><div class="adminGrid"><button onclick="importList()">📥 Importar lista (XLSX/CSV)</button><button onclick="generateImportTemplate()">📄 Gerar lista para preencher</button><button onclick="backupJSON()">💾 Backup completo</button><button onclick="changePin()">🔑 Alterar PIN</button></div><p class="mini">No Android, a importação XLSX/CSV é lida pelo próprio aplicativo. Após uma importação, a planilha passa a ser a lista oficial; itens antigos que não estiverem nela deixam de aparecer.</p><button onclick="clearLocalData()">⚠️ Limpar dados locais do pedido</button>`)}'''
+          group_hash_before = hashlib.sha256(
+              group_before.encode("utf-8")
+          ).hexdigest()
 
-          # ==================================================
-          # 2. REPETIR ÚLTIMO PEDIDO
-          # ==================================================
+          # =========================================================
+          # 1 - ADMINISTRAÇÃO
+          # =========================================================
 
-          new_repeat = '''function repeatLastOrder(){let rows=Array.isArray(lastOrder)?lastOrder:[];if(!rows.length){try{rows=JSON.parse(localStorage.getItem('sp_last_order')||'[]')}catch(e){rows=[]}}if(!rows.length&&Array.isArray(historyOrders)&&historyOrders.length){rows=historyOrders[0].rows||[];if(rows.length)rows.generalObservation=historyOrders[0].generalObservation||''}if(!rows.length){alert('Ainda não existe último pedido.');return}lastOrder=JSON.parse(JSON.stringify(rows));saveFeatures();applyRepeat(lastOrder)}'''
+          new_admin = r'''function openAdmin(){
+            featureModal(`
+              <h3>🔐 Administração</h3>
 
-          new_apply = '''function applyRepeat(rows){if(!Array.isArray(rows)||!rows.length){alert('Não foi possível recuperar o último pedido.');return}vals={};extras=[];rows.forEach(x=>{if(x.cat==='Produto Adicional'){extras.push({code:x.code==='-'?'':x.code,name:x.name,qty:Number(x.order)||0});return}const f=productByCode(x.code);if(f){const ko=key(f.c,f.s,f.i,'o');vals[ko]=Number(x.order)||0;const ks=key(f.c,f.s,f.i,'s');vals[ks]=Number(x.stock)||0;}});generalObservation=(rows.generalObservation||generalObservation);const obs=document.getElementById('generalObs');if(obs)obs.value=generalObservation;save();saveFeatures();render();updateBadge();closeFeature();alert('Último pedido recuperado. Confira antes de enviar.')}'''
+              <p>Digite o PIN de administração.</p>
 
-          # ==================================================
-          # 3. LIMPAR PEDIDO
-          # ==================================================
+              <input
+                id="adminPinInput"
+                type="password"
+                inputmode="numeric"
+                autocomplete="off"
+                placeholder="PIN"
+                style="width:100%;box-sizing:border-box;padding:12px;font-size:18px"
+              >
 
-          new_clear = '''function clearPedido(){if(finalizedRows.length)saveHistory(finalizedRows);vals={};extras=[];validadeCurta=[];finalizedRows=[];save();localStorage.removeItem('pedido_compras_vals');localStorage.removeItem('pedido_compras_extras');localStorage.removeItem('pedido_compras_validade_curta');render();renderValidadeCurta();updateBadge();closeConference();window.scrollTo({top:0,behavior:'smooth'})}'''
+              <div style="display:flex;gap:8px;margin-top:10px">
+                <button onclick="confirmAdminPin()">Entrar</button>
+                <button onclick="closeFeature()">Cancelar</button>
+              </div>
+            `);
 
-          # ==================================================
-          # APLICAR CORREÇÕES
-          # ==================================================
+            setTimeout(()=>{
+              const input=document.getElementById('adminPinInput');
+              if(input) input.focus();
+            },50);
+          }
 
-          text = replace_function(
+          function confirmAdminPin(){
+            const input=document.getElementById('adminPinInput');
+
+            const pin=input
+              ? String(input.value||'')
+              : '';
+
+            const saved=
+              localStorage.getItem('sp_admin_pin')
+              ||'1234';
+
+            if(pin!==saved){
+              alert('PIN incorreto.');
+              return;
+            }
+
+            featureModal(`
+              <h3>🔐 Administração</h3>
+
+              <div class="stat">
+                Produtos na lista:
+                <b>
+                  ${
+                    Object.values(APP_DATA).reduce(
+                      (a,s)=>
+                        a+
+                        Object.values(s).reduce(
+                          (b,x)=>b+x.length,
+                          0
+                        ),
+                      0
+                    )
+                  }
+                </b>
+              </div>
+
+              <div class="adminGrid">
+
+                <button onclick="importList()">
+                  📥 Importar lista (XLSX/CSV)
+                </button>
+
+                <button onclick="generateImportTemplate()">
+                  📄 Gerar lista para preencher
+                </button>
+
+                <button onclick="backupJSON()">
+                  💾 Backup completo
+                </button>
+
+                <button onclick="changePin()">
+                  🔑 Alterar PIN
+                </button>
+
+              </div>
+
+              <p class="mini">
+                No Android, a importação XLSX/CSV é lida pelo próprio aplicativo.
+                Após uma importação, a planilha passa a ser a lista oficial;
+                itens antigos que não estiverem nela deixam de aparecer.
+              </p>
+
+              <button onclick="clearLocalData()">
+                ⚠️ Limpar dados locais do pedido
+              </button>
+            `);
+          }'''
+
+          # =========================================================
+          # 2 - REPETIR ÚLTIMO PEDIDO
+          # =========================================================
+
+          new_repeat = r'''function repeatLastOrder(){
+
+            let rows=
+              Array.isArray(lastOrder)
+              ? lastOrder
+              : [];
+
+            if(!rows.length){
+
+              try{
+                rows=JSON.parse(
+                  localStorage.getItem('sp_last_order')
+                  ||'[]'
+                );
+              }catch(e){
+                rows=[];
+              }
+            }
+
+            let observation='';
+
+            if(
+              Array.isArray(historyOrders)
+              &&
+              historyOrders.length
+            ){
+              observation=
+                historyOrders[0].generalObservation
+                ||'';
+            }
+
+            if(!rows.length){
+
+              if(
+                Array.isArray(historyOrders)
+                &&
+                historyOrders.length
+              ){
+
+                rows=
+                  historyOrders[0].rows
+                  ||[];
+
+                observation=
+                  historyOrders[0].generalObservation
+                  ||'';
+              }
+            }
+
+            if(!rows.length){
+
+              alert(
+                'Ainda não existe último pedido.'
+              );
+
+              return;
+            }
+
+            rows=JSON.parse(
+              JSON.stringify(rows)
+            );
+
+            if(
+              !rows.generalObservation
+              &&
+              observation
+            ){
+              rows.generalObservation=
+                observation;
+            }
+
+            lastOrder=
+              JSON.parse(
+                JSON.stringify(rows)
+              );
+
+            saveFeatures();
+
+            applyRepeat(lastOrder);
+          }'''
+
+          # =========================================================
+          # 3 - APLICAÇÃO DO ÚLTIMO PEDIDO
+          # =========================================================
+
+          new_apply = r'''function applyRepeat(rows){
+
+            if(
+              !Array.isArray(rows)
+              ||
+              !rows.length
+            ){
+
+              alert(
+                'Não foi possível recuperar o último pedido.'
+              );
+
+              return;
+            }
+
+            vals={};
+            extras=[];
+
+            rows.forEach(x=>{
+
+              if(
+                x.cat==='Produto Adicional'
+              ){
+
+                extras.push({
+                  code:
+                    x.code==='-'
+                    ?''
+                    :x.code,
+
+                  name:x.name,
+
+                  qty:
+                    Number(x.order)||0
+                });
+
+                return;
+              }
+
+              const f=
+                productByCode(x.code);
+
+              if(f){
+
+                const ko=
+                  key(
+                    f.c,
+                    f.s,
+                    f.i,
+                    'o'
+                  );
+
+                vals[ko]=
+                  Number(x.order)||0;
+
+                const ks=
+                  key(
+                    f.c,
+                    f.s,
+                    f.i,
+                    's'
+                  );
+
+                vals[ks]=
+                  Number(x.stock)||0;
+              }
+            });
+
+            generalObservation=
+              rows.generalObservation
+              ||generalObservation;
+
+            const obs=
+              document.getElementById(
+                'generalObs'
+              );
+
+            if(obs){
+              obs.value=
+                generalObservation;
+            }
+
+            save();
+
+            saveFeatures();
+
+            render();
+
+            updateBadge();
+
+            closeFeature();
+
+            alert(
+              'Último pedido recuperado. Confira antes de enviar.'
+            );
+          }'''
+
+          # =========================================================
+          # 4 - LIMPEZA DO PEDIDO
+          # =========================================================
+
+          new_clear = r'''function clearPedido(){
+
+            if(
+              finalizedRows.length
+            ){
+              saveHistory(
+                finalizedRows
+              );
+            }
+
+            vals={};
+
+            extras=[];
+
+            validadeCurta=[];
+
+            finalizedRows=[];
+
+            save();
+
+            localStorage.removeItem(
+              'pedido_compras_vals'
+            );
+
+            localStorage.removeItem(
+              'pedido_compras_extras'
+            );
+
+            localStorage.removeItem(
+              'pedido_compras_validade_curta'
+            );
+
+            render();
+
+            renderValidadeCurta();
+
+            updateBadge();
+
+            closeConference();
+
+            window.scrollTo({
+              top:0,
+              behavior:'smooth'
+            });
+          }'''
+
+          # =========================================================
+          # APLICAR AS 4 CORREÇÕES
+          # =========================================================
+
+          text=replace_function(
               text,
               "openAdmin",
               new_admin
           )
 
-          text = replace_function(
+          text=replace_function(
               text,
               "repeatLastOrder",
               new_repeat
           )
 
-          text = replace_function(
+          text=replace_function(
               text,
               "applyRepeat",
               new_apply
           )
 
-          text = replace_function(
+          text=replace_function(
               text,
               "clearPedido",
               new_clear
           )
 
-          # ==================================================
-          # PDF
+          # =========================================================
+          # CORRIGIR O ENVIO DO PDF
           #
-          # NÃO procura openPDF() por assinatura rígida.
+          # Não altera o relatório.
           #
-          # Localiza diretamente a chamada Android do PDF.
-          # O relatório já foi criado antes dela.
+          # Apenas garante:
+          # PDF enviado -> histórico salvo -> pedido limpo.
           #
-          # Depois de entregar o PDF ao Android:
-          # salva histórico + limpa pedido.
-          # ==================================================
+          # finalizedRows é zerado antes de clearPedido()
+          # para evitar salvar o histórico duas vezes.
+          # =========================================================
 
           hook_pattern = (
               r"window\.AndroidFileBridge\s*\.\s*sharePdf"
-              r"\s*\(\s*['\"]pedido-acougue\.pdf['\"]"
-              r"\s*,\s*text\s*\)\s*;\s*return"
+              r"\s*\("
+              r"\s*['\"]pedido-acougue\.pdf['\"]"
+              r"\s*,\s*text"
+              r"\s*\)"
+              r"\s*;"
+              r"\s*return"
           )
 
-          matches = list(
+          matches=list(
               re.finditer(
                   hook_pattern,
                   text
               )
           )
 
-          if len(matches) != 1:
+          if len(matches)!=1:
+
               raise SystemExit(
-                  "ERRO: chamada sharePdf do Android "
-                  f"encontrada {len(matches)} vez(es); esperado 1"
+                  "ERRO: chamada Android sharePdf "
+                  f"encontrada {len(matches)} vez(es); "
+                  "esperado exatamente 1."
               )
 
-          match = matches[0]
+          match=matches[0]
 
-          new_hook = (
+          new_hook=(
               "window.AndroidFileBridge.sharePdf("
               "'pedido-acougue.pdf',text);"
               "saveHistory(rows);"
+              "finalizedRows=[];"
               "clearPedido();"
               "return"
           )
 
-          text = (
+          text=(
               text[:match.start()]
-              + new_hook
-              + text[match.end():]
+              +
+              new_hook
+              +
+              text[match.end():]
           )
 
-          # ==================================================
-          # PROTEÇÃO ABSOLUTA DO RELATÓRIO
-          # ==================================================
+          # =========================================================
+          # VERIFICAR QUE O RELATÓRIO NÃO FOI ALTERADO
+          # =========================================================
 
-          report_after = function_block(
+          report_after=function_block(
               text,
               "reportText"
           )[2]
 
-          group_after = function_block(
+          group_after=function_block(
               text,
               "groupRows"
           )[2]
 
-          if report_after != report_before:
+          report_hash_after=hashlib.sha256(
+              report_after.encode("utf-8")
+          ).hexdigest()
+
+          group_hash_after=hashlib.sha256(
+              group_after.encode("utf-8")
+          ).hexdigest()
+
+          if report_after!=report_before:
+
               raise SystemExit(
-                  "ERRO GRAVE: reportText foi alterado"
+                  "ERRO GRAVE: reportText foi alterado."
               )
 
-          if group_after != group_before:
+          if group_after!=group_before:
+
               raise SystemExit(
-                  "ERRO GRAVE: groupRows foi alterado"
+                  "ERRO GRAVE: groupRows foi alterado."
               )
 
-          # ==================================================
-          # VERIFICAÇÕES
-          # ==================================================
+          if report_hash_after!=report_hash_before:
 
-          required = [
+              raise SystemExit(
+                  "ERRO GRAVE: HASH do relatório mudou."
+              )
+
+          if group_hash_after!=group_hash_before:
+
+              raise SystemExit(
+                  "ERRO GRAVE: HASH do agrupamento mudou."
+              )
+
+          # =========================================================
+          # VERIFICAR TODOS OS RECURSOS
+          # =========================================================
+
+          required=[
               "function openAdmin(){",
               "function confirmAdminPin(){",
               "function repeatLastOrder(){",
@@ -297,15 +650,16 @@ jobs:
               "function clearPedido(){",
               "function reportText(source=getRows()){",
               "function groupRows(rows){",
-              "window.AndroidFileBridge.sharePdf('pedido-acougue.pdf',text);saveHistory(rows);clearPedido();return",
+              "window.AndroidFileBridge.sharePdf('pedido-acougue.pdf',text);saveHistory(rows);finalizedRows=[];clearPedido();return"
           ]
 
           for item in required:
 
               if item not in text:
+
                   raise SystemExit(
                       "ERRO: recurso ausente: "
-                      + item
+                      +item
                   )
 
           html.write_text(
@@ -313,26 +667,31 @@ jobs:
               encoding="utf-8"
           )
 
-          print("========================================")
-          print("OK: ADM corrigido")
-          print("OK: REPETIR ÚLTIMO corrigido")
-          print("OK: LIMPEZA após envio corrigida")
-          print("OK: reportText INALTERADO")
-          print("OK: groupRows INALTERADO")
-          print("OK: PDF alterado somente no pós-envio")
-          print(
-              "HASH reportText:",
-              hashlib.sha256(
-                  report_before.encode()
-              ).hexdigest()
-          )
-          print(
-              "HASH groupRows:",
-              hashlib.sha256(
-                  group_before.encode()
-              ).hexdigest()
-          )
-          print("========================================")
+          print("")
+          print("==========================================")
+          print(" VERIFICAÇÃO DAS CORREÇÕES")
+          print("==========================================")
+          print("OK - Administração / ADM")
+          print("OK - PIN de administração")
+          print("OK - Repetir último pedido")
+          print("OK - Recuperação do histórico")
+          print("OK - Produtos adicionais")
+          print("OK - Limpeza após envio")
+          print("OK - Limpeza após PDF Android")
+          print("OK - Histórico preservado")
+          print("OK - reportText INALTERADO")
+          print("OK - groupRows INALTERADO")
+          print("")
+          print("HASH reportText:")
+          print(report_hash_after)
+          print("")
+          print("HASH groupRows:")
+          print(group_hash_after)
+          print("")
+          print("==========================================")
+          print(" CORREÇÃO VALIDADA")
+          print("==========================================")
+          print("")
 
           PY
 
@@ -341,64 +700,64 @@ jobs:
         run: |
           set -e
 
-          ASSETS="$ANDROID_DIR/app/src/main/assets/app"
-
-          mkdir -p "$ASSETS"
+          mkdir -p "$APP_DIR"
 
           curl -L --fail --retry 3 \
-            -o "$ASSETS/xlsx.full.min.js" \
+            -o "$APP_DIR/xlsx.full.min.js" \
             "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"
 
           curl -L --fail --retry 3 \
-            -o "$ASSETS/jspdf.umd.min.js" \
+            -o "$APP_DIR/jspdf.umd.min.js" \
             "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"
 
-          test -s "$ASSETS/xlsx.full.min.js"
+          test -s "$APP_DIR/xlsx.full.min.js"
 
-          test -s "$ASSETS/jspdf.umd.min.js"
+          test -s "$APP_DIR/jspdf.umd.min.js"
+
+          echo "OK - Bibliotecas PDF e Excel"
 
       - name: Verificar JavaScript
         shell: bash
         run: |
           set -e
 
-          HTML="$ANDROID_DIR/app/src/main/assets/app/index.html"
-
-          test -f "$HTML"
-
           python3 - <<'PY'
           import re
           import os
           from pathlib import Path
 
-          html = (
-              Path(os.environ["ANDROID_DIR"])
-              / "app/src/main/assets/app/index.html"
+          html=Path(
+              os.environ["HTML"]
           )
 
-          text = html.read_text(
+          text=html.read_text(
               encoding="utf-8"
           )
 
-          scripts = re.findall(
+          scripts=re.findall(
               r"<script(?:[^>]*)>(.*?)</script>",
               text,
               re.S
           )
 
           if not scripts:
+
               raise SystemExit(
-                  "ERRO: nenhum JavaScript encontrado"
+                  "ERRO: nenhum JavaScript encontrado."
               )
+
+          combined="\n".join(
+              scripts
+          )
 
           Path(
               "/tmp/super-pedido-inline.js"
           ).write_text(
-              "\n".join(scripts),
+              combined,
               encoding="utf-8"
           )
 
-          checks = [
+          required=[
               "function openAdmin(){",
               "function confirmAdminPin(){",
               "function repeatLastOrder(){",
@@ -406,24 +765,55 @@ jobs:
               "function clearPedido(){",
               "function reportText(source=getRows()){",
               "function groupRows(rows){",
+              "window.AndroidFileBridge.sharePdf",
           ]
 
-          for item in checks:
+          for item in required:
+
               if item not in text:
+
                   raise SystemExit(
-                      "ERRO: não encontrado: "
-                      + item
+                      "ERRO JavaScript: "
+                      +item
                   )
 
           print(
-              "OK: estrutura JavaScript verificada"
+              "OK - Estrutura JavaScript validada"
           )
 
           PY
 
-          node --check /tmp/super-pedido-inline.js
+          node --check \
+            /tmp/super-pedido-inline.js
 
-          echo "OK: JavaScript sem erro de sintaxe"
+          echo "OK - JavaScript sem erro de sintaxe"
+
+      - name: Verificação final antes da compilação
+        shell: bash
+        run: |
+          set -e
+
+          test -f "$HTML"
+
+          test -s "$APP_DIR/xlsx.full.min.js"
+
+          test -s "$APP_DIR/jspdf.umd.min.js"
+
+          grep -q "function openAdmin()" "$HTML"
+
+          grep -q "function repeatLastOrder()" "$HTML"
+
+          grep -q "function applyRepeat(rows)" "$HTML"
+
+          grep -q "function clearPedido()" "$HTML"
+
+          grep -q "function reportText(source=getRows())" "$HTML"
+
+          grep -q "function groupRows(rows)" "$HTML"
+
+          echo "=========================================="
+          echo " TODAS AS VERIFICAÇÕES PASSARAM"
+          echo "=========================================="
 
       - name: Compilar APK
         shell: bash
@@ -432,9 +822,12 @@ jobs:
 
           cd "$ANDROID_DIR"
 
-          gradle --no-daemon assembleDebug
+          gradle \
+            --no-daemon \
+            --stacktrace \
+            assembleDebug
 
-      - name: Verificar APK
+      - name: Verificar APK gerado
         shell: bash
         run: |
           set -e
@@ -445,11 +838,23 @@ jobs:
             -name "*.apk" \
             -print -quit)
 
-          test -n "$APK"
+          if [ -z "$APK" ]; then
+            echo "ERRO: APK não foi gerado."
+            exit 1
+          fi
 
-          test -s "$APK"
+          if [ ! -s "$APK" ]; then
+            echo "ERRO: APK gerado está vazio."
+            exit 1
+          fi
 
-          echo "APK gerado: $APK"
+          echo "=========================================="
+          echo " APK GERADO COM SUCESSO"
+          echo "=========================================="
+          echo "Arquivo:"
+          echo "$APK"
+          echo ""
+          ls -lh "$APK"
 
       - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
