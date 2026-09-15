@@ -12,8 +12,15 @@ jobs:
 
     steps:
 
-      - name: Baixar projeto
+      # ==========================================================
+      # BASE EXATA DA VERSÃO 49
+      # ==========================================================
+
+      - name: Baixar projeto - BASE #49
         uses: actions/checkout@v4
+        with:
+          ref: 4e67e53aa453548944592d7b7f417fb77ca9fe7c
+          fetch-depth: 1
 
       - name: Configurar Java 17
         uses: actions/setup-java@v4
@@ -25,6 +32,10 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
+
+      # ==========================================================
+      # PREPARAR PROJETO
+      # ==========================================================
 
       - name: Preparar projeto
         shell: bash
@@ -70,571 +81,127 @@ jobs:
           grep -qF "android.enableJetifier=true" gradle.properties \
             || echo "android.enableJetifier=true" >> gradle.properties
 
-      - name: Alterar SOMENTE o relatório
+      # ==========================================================
+      # RELATÓRIO:
+      # EXECUTA EXATAMENTE O BLOCO DA VERSÃO 49
+      # NÃO REESCREVE O RELATÓRIO
+      # ==========================================================
+
+      - name: Aplicar EXATAMENTE o relatório aprovado da #49
         shell: bash
         run: |
           set -e
 
+          echo "Obtendo o build.yml original da versão #49..."
+
+          git show HEAD:.github/workflows/build.yml \
+            > /tmp/build-v49.yml
+
+          test -s /tmp/build-v49.yml
+
           python3 - <<'PY'
           from pathlib import Path
-          import os
           import re
 
-          root = Path(os.environ["ANDROID_DIR"])
-
-          html = root / "app/src/main/assets/app/index.html"
-
-          if not html.exists():
-              raise SystemExit("ERRO: index.html não encontrado")
-
-          text = html.read_text(encoding="utf-8")
-
-          new_open_pdf = r'''async function openPDF(sendViaWhatsApp=false){
-            const rows=finalizedRows.length?finalizedRows:getRows();
-
-            if(!rows.length){
-              alert('Nenhum item foi selecionado.');
-              return;
-            }
-
-            try{
-
-              const {jsPDF}=window.jspdf||{};
-
-              if(!jsPDF){
-                throw new Error('Biblioteca PDF não carregada.');
-              }
-
-              const doc=new jsPDF({
-                orientation:'portrait',
-                unit:'mm',
-                format:'a4'
-              });
-
-              const pageWidth=210;
-              const pageHeight=297;
-
-              const margem=10;
-              const largura=pageWidth-(margem*2);
-
-              const colCodigo=24;
-              const colEstoque=24;
-              const colPedido=24;
-              const colProduto=
-                largura-colCodigo-colEstoque-colPedido;
-
-              let y=15;
-
-              function novaPagina(){
-
-                doc.addPage();
-
-                y=15;
-              }
-
-              function cabecalho(){
-
-                if(y+9>pageHeight-15){
-                  novaPagina();
-                }
-
-                const altura=8;
-
-                doc.setFillColor(35,35,35);
-
-                doc.setDrawColor(35,35,35);
-
-                doc.rect(
-                  margem,
-                  y,
-                  largura,
-                  altura,
-                  'FD'
-                );
-
-                doc.setTextColor(255,255,255);
-
-                doc.setFont(
-                  'helvetica',
-                  'bold'
-                );
-
-                doc.setFontSize(7.5);
-
-                let x=margem;
-
-                doc.text(
-                  'CÓDIGO',
-                  x+2,
-                  y+5.3
-                );
-
-                x+=colCodigo;
-
-                doc.text(
-                  'NOME DO PRODUTO',
-                  x+2,
-                  y+5.3
-                );
-
-                x+=colProduto;
-
-                doc.text(
-                  'ESTOQUE',
-                  x+2,
-                  y+5.3
-                );
-
-                x+=colEstoque;
-
-                doc.text(
-                  'PEDIDO',
-                  x+2,
-                  y+5.3
-                );
-
-                doc.setTextColor(0,0,0);
-
-                y+=altura;
-              }
-
-              doc.setFont(
-                'helvetica',
-                'bold'
-              );
-
-              doc.setFontSize(16);
-
-              doc.text(
-                'RELATÓRIO DE PEDIDO',
-                margem,
-                y
-              );
-
-              y+=6;
-
-              doc.setFont(
-                'helvetica',
-                'normal'
-              );
-
-              doc.setFontSize(8);
-
-              const data=
-                new Date().toLocaleString('pt-BR');
-
-              doc.text(
-                data,
-                margem,
-                y
-              );
-
-              y+=8;
-
-              const grupos=groupRows(rows);
-
-              for(
-                const [categoria,items]
-                of Object.entries(grupos)
-              ){
-
-                if(y+20>pageHeight-15){
-                  novaPagina();
-                }
-
-                doc.setFont(
-                  'helvetica',
-                  'bold'
-                );
-
-                doc.setFontSize(10);
-
-                doc.text(
-                  String(categoria||'').toUpperCase(),
-                  margem,
-                  y
-                );
-
-                y+=5;
-
-                cabecalho();
-
-                for(const item of items){
-
-                  const nome=
-                    typeof nomeProduto==='function'
-                    ? nomeProduto(item.name)
-                    : String(item.name||'');
-
-                  const linhasNome=
-                    doc.splitTextToSize(
-                      nome,
-                      colProduto-4
-                    );
-
-                  const altura=Math.max(
-                    6,
-                    linhasNome.length*4.2+2
-                  );
-
-                  if(y+altura>pageHeight-15){
-
-                    novaPagina();
-
-                    doc.setFont(
-                      'helvetica',
-                      'bold'
-                    );
-
-                    doc.setFontSize(10);
-
-                    doc.text(
-                      String(categoria||'').toUpperCase(),
-                      margem,
-                      y
-                    );
-
-                    y+=5;
-
-                    cabecalho();
-                  }
-
-                  doc.setFont(
-                    'helvetica',
-                    'normal'
-                  );
-
-                  doc.setFontSize(7.2);
-
-                  doc.setDrawColor(
-                    185,
-                    185,
-                    185
-                  );
-
-                  let x=margem;
-
-                  doc.rect(
-                    x,
-                    y,
-                    largura,
-                    altura
-                  );
-
-                  doc.line(
-                    x+colCodigo,
-                    y,
-                    x+colCodigo,
-                    y+altura
-                  );
-
-                  doc.line(
-                    x+colCodigo+colProduto,
-                    y,
-                    x+colCodigo+colProduto,
-                    y+altura
-                  );
-
-                  doc.line(
-                    x+colCodigo+colProduto+colEstoque,
-                    y,
-                    x+colCodigo+colProduto+colEstoque,
-                    y+altura
-                  );
-
-                  doc.text(
-                    String(item.code||'-'),
-                    x+2,
-                    y+4
-                  );
-
-                  doc.text(
-                    linhasNome,
-                    x+colCodigo+2,
-                    y+4
-                  );
-
-                  doc.text(
-                    String(item.stock??0),
-                    x+colCodigo+colProduto+2,
-                    y+4
-                  );
-
-                  doc.text(
-                    String(item.order??0),
-                    x+colCodigo+colProduto+colEstoque+2,
-                    y+4
-                  );
-
-                  y+=altura;
-                }
-
-                y+=5;
-              }
-
-              if(generalObservation){
-
-                if(y+20>pageHeight-15){
-                  novaPagina();
-                }
-
-                doc.setFont(
-                  'helvetica',
-                  'bold'
-                );
-
-                doc.setFontSize(8);
-
-                doc.text(
-                  'OBSERVAÇÃO GERAL:',
-                  margem,
-                  y
-                );
-
-                y+=5;
-
-                doc.setFont(
-                  'helvetica',
-                  'normal'
-                );
-
-                const linhas=
-                  doc.splitTextToSize(
-                    String(generalObservation),
-                    largura
-                  );
-
-                doc.text(
-                  linhas,
-                  margem,
-                  y
-                );
-
-                y+=linhas.length*4.2;
-              }
-
-              const total=
-                doc.internal.getNumberOfPages();
-
-              for(
-                let pagina=1;
-                pagina<=total;
-                pagina++
-              ){
-
-                doc.setPage(pagina);
-
-                doc.setFont(
-                  'helvetica',
-                  'normal'
-                );
-
-                doc.setFontSize(7);
-
-                doc.text(
-                  'Super Pedido Pro',
-                  margem,
-                  pageHeight-5
-                );
-
-                doc.text(
-                  'Página '+pagina+' de '+total,
-                  pageWidth-margem,
-                  pageHeight-5,
-                  {
-                    align:'right'
-                  }
-                );
-              }
-
-              const base64=
-                doc.output('datauristring')
-                  .split(',')[1];
-
-              const nomeArquivo=
-                'relatorio-pedido-'+
-                data.replace(/\//g,'-')+
-                '.pdf';
-
-              if(
-                window.AndroidFileBridge &&
-                window.AndroidFileBridge.sharePdf
-              ){
-
-                window.AndroidFileBridge.sharePdf(
-                  nomeArquivo,
-                  base64
-                );
-
-                saveHistory(rows);
-
-                clearPedido();
-
-                return;
-              }
-
-              const blob=doc.output('blob');
-
-              if(
-                sendViaWhatsApp &&
-                navigator.share &&
-                typeof File!=='undefined'
-              ){
-
-                const file=new File(
-                  [blob],
-                  nomeArquivo,
-                  {
-                    type:'application/pdf'
-                  }
-                );
-
-                if(
-                  !navigator.canShare ||
-                  navigator.canShare({
-                    files:[file]
-                  })
-                ){
-
-                  try{
-
-                    await navigator.share({
-                      files:[file],
-                      text:'Pedido do açougue'
-                    });
-
-                    saveHistory(rows);
-
-                    clearPedido();
-
-                    return;
-
-                  }catch(e){
-
-                    if(
-                      e &&
-                      e.name==='AbortError'
-                    ){
-                      return;
-                    }
-                  }
-                }
-              }
-
-              const url=
-                URL.createObjectURL(blob);
-
-              const a=
-                document.createElement('a');
-
-              a.href=url;
-
-              a.download=nomeArquivo;
-
-              document.body.appendChild(a);
-
-              a.click();
-
-              a.remove();
-
-              setTimeout(
-                function(){
-                  URL.revokeObjectURL(url);
-                },
-                3000
-              );
-
-              saveHistory(rows);
-
-              clearPedido();
-
-            }catch(e){
-
-              console.error(e);
-
-              alert(
-                'Não foi possível gerar o PDF: '+
-                (e.message||e)
-              );
-            }
-          }'''
-
-          pattern = (
-              r"async function openPDF"
-              r"\(sendViaWhatsApp=false\)"
-              r"\{.*?\n\}"
+          source = Path("/tmp/build-v49.yml").read_text(
+              encoding="utf-8"
           )
 
-          text, count = re.subn(
-              pattern,
-              new_open_pdf,
-              text,
-              count=1,
-              flags=re.S
-          )
+          lines = source.splitlines()
 
-          if count != 1:
+          inicio = None
+
+          for i, line in enumerate(lines):
+              if line.strip() == "- name: Alterar SOMENTE o relatório":
+                  inicio = i
+                  break
+
+          if inicio is None:
               raise SystemExit(
-                  "ERRO: função openPDF não encontrada."
+                  "ERRO: etapa 'Alterar SOMENTE o relatório' não encontrada na #49."
               )
 
-          text=text.replace(
-              'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js',
-              'xlsx.full.min.js'
-          )
+          run_line = None
 
-          text=text.replace(
-              'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
-              'jspdf.umd.min.js'
-          )
+          for i in range(inicio + 1, len(lines)):
+              if re.match(r"^        run:\s*\|\s*$", lines[i]):
+                  run_line = i
+                  break
 
-          required=[
-              'function repeatLastOrder()',
-              'function openAdmin()',
-              'function saveHistory(rows)',
-              'function applyRepeat(rows)',
-              'function clearPedido()',
-              'window.AndroidFileBridge.sharePdf',
+              if re.match(r"^      - name:", lines[i]):
+                  break
+
+          if run_line is None:
+              raise SystemExit(
+                  "ERRO: bloco run do relatório da #49 não encontrado."
+              )
+
+          script = []
+
+          for i in range(run_line + 1, len(lines)):
+
+              line = lines[i]
+
+              if re.match(r"^      - name:", line):
+                  break
+
+              if line.startswith("          "):
+                  script.append(line[10:])
+
+              elif line.strip() == "":
+                  script.append("")
+
+              else:
+                  raise SystemExit(
+                      "ERRO: estrutura inesperada dentro do relatório #49."
+                  )
+
+          report_script = "\n".join(script).rstrip() + "\n"
+
+          required = [
+              "async function openPDF(sendViaWhatsApp=false)",
               "orientation:'portrait'",
               "format:'a4'",
-              "CÓDIGO",
-              "NOME DO PRODUTO",
-              "ESTOQUE",
-              "PEDIDO"
+              "window.AndroidFileBridge.sharePdf",
+              "saveHistory(rows)",
+              "clearPedido()"
           ]
 
           for item in required:
-
-              if item not in text:
+              if item not in report_script:
                   raise SystemExit(
-                      "ERRO: função/recurso ausente: "+item
+                      "ERRO: parte do relatório #49 não encontrada: "
+                      + item
                   )
 
-          if "orientation:'landscape'" in text:
-              raise SystemExit(
-                  "ERRO: PDF em paisagem encontrado."
-              )
-
-          html.write_text(
-              text,
-              encoding='utf-8'
+          Path("/tmp/relatorio-v49.sh").write_text(
+              report_script,
+              encoding="utf-8"
           )
 
           print(
-              "OK: relatório #49 aplicado."
-          )
-
-          print(
-              "OK: MainActivity não foi alterado."
-          )
-
-          print(
-              "OK: funções principais preservadas."
+              "OK: relatório da #49 localizado integralmente."
           )
 
           PY
 
-      - name: Corrigir ADM, Repetir último pedido e zerar após envio
+          chmod +x /tmp/relatorio-v49.sh
+
+          bash /tmp/relatorio-v49.sh
+
+          echo "OK: relatório #49 executado sem alteração."
+
+      # ==========================================================
+      # CORREÇÕES SOLICITADAS
+      #
+      # 1 - ADM
+      # 2 - REPETIR ÚLTIMO PEDIDO
+      # 3 - ZERAR PEDIDO APÓS ENVIO
+      #
+      # NÃO ALTERA openPDF
+      # ==========================================================
+
+      - name: Corrigir ADM, Repetir último e zerar após envio
         shell: bash
         run: |
           set -e
@@ -647,31 +214,50 @@ jobs:
           from pathlib import Path
           import os
 
-          html=Path(
-              os.environ["ANDROID_DIR"]
-          )/"app/src/main/assets/app/index.html"
+          html = (
+              Path(os.environ["ANDROID_DIR"])
+              / "app/src/main/assets/app/index.html"
+          )
 
-          text=html.read_text(
+          text = html.read_text(
               encoding="utf-8"
           )
 
-          patch=r'''
+          patch = r'''
 <script>
 (function(){
 
   /* ==========================================================
-     ADM
+     CORREÇÃO ADM
+     Mantém toda a administração original da #49.
+     Apenas substitui o primeiro prompt por uma tela própria.
      ========================================================== */
 
-  window.openAdmin=function(){
+  const __superPedidoOpenAdminOriginal =
+    window.openAdmin;
+
+  window.openAdmin = function(){
+
+    if(
+      typeof featureModal !== "function" ||
+      typeof __superPedidoOpenAdminOriginal !== "function"
+    ){
+
+      alert("Administração indisponível.");
+
+      return;
+    }
 
     featureModal(`
+
       <h3>🔐 Administração</h3>
 
-      <p>Digite o PIN de administração.</p>
+      <p>
+        Digite o PIN de administração.
+      </p>
 
       <input
-        id="adminPinInput"
+        id="superPedidoAdminPin"
         type="password"
         inputmode="numeric"
         autocomplete="off"
@@ -681,88 +267,82 @@ jobs:
           box-sizing:border-box;
           padding:12px;
           font-size:18px;
+          margin-bottom:10px;
         "
       >
 
-      <div
-        style="
-          display:flex;
-          gap:8px;
-          margin-top:10px;
-        "
+      <button
+        class="primary"
+        onclick="superPedidoConfirmarAdmin()"
       >
+        Entrar
+      </button>
 
-        <button
-          onclick="confirmAdminPin()"
-        >
-          Entrar
-        </button>
+      <button
+        onclick="closeFeature()"
+      >
+        Cancelar
+      </button>
 
-        <button
-          onclick="closeFeature()"
-        >
-          Cancelar
-        </button>
-
-      </div>
     `);
 
     setTimeout(function(){
 
-      const input=
+      const input =
         document.getElementById(
-          'adminPinInput'
+          "superPedidoAdminPin"
         );
 
-      if(input){
+      if(!input){
+        return;
+      }
 
-        input.focus();
+      input.focus();
 
-        input.addEventListener(
-          'keydown',
-          function(e){
+      input.addEventListener(
+        "keydown",
+        function(event){
 
-            if(e.key==='Enter'){
+          if(event.key === "Enter"){
 
-              confirmAdminPin();
-
-            }
+            superPedidoConfirmarAdmin();
 
           }
-        );
 
-      }
+        }
+      );
 
     },100);
 
   };
 
-  window.confirmAdminPin=function(){
 
-    const input=
+  window.superPedidoConfirmarAdmin = function(){
+
+    const input =
       document.getElementById(
-        'adminPinInput'
+        "superPedidoAdminPin"
       );
 
-    const pin=
+    const pin =
       input
-      ? String(input.value||'')
-      : '';
+      ? String(input.value || "")
+      : "";
 
-    const saved=
+    const saved =
       localStorage.getItem(
-        'sp_admin_pin'
-      ) || '1234';
+        "sp_admin_pin"
+      ) || "1234";
 
-    if(pin!==saved){
+    if(pin !== saved){
 
       alert(
-        'PIN incorreto.'
+        "PIN incorreto."
       );
 
       if(input){
 
-        input.value='';
+        input.value = "";
 
         input.focus();
 
@@ -772,353 +352,121 @@ jobs:
 
     }
 
-    featureModal(`
+    /*
+     * A função original da #49 contém toda a administração.
+     *
+     * Para não duplicar nem modificar essa administração,
+     * interceptamos temporariamente o prompt original.
+     */
 
-      <h3>🔐 Administração</h3>
+    const promptOriginal =
+      window.prompt;
 
-      <div class="stat">
+    window.prompt = function(){
 
-        Produtos na lista:
+      return pin;
 
-        <b>
-          ${
-            Object.values(APP_DATA).reduce(
-              (a,s)=>
-                a+
-                Object.values(s).reduce(
-                  (b,x)=>b+x.length,
-                  0
-                ),
-              0
-            )
-          }
-        </b>
+    };
 
-      </div>
+    try{
 
-      <div class="adminGrid">
+      __superPedidoOpenAdminOriginal.call(
+        window
+      );
 
-        <button
-          onclick="importList()"
-        >
-          📥 Importar lista (XLSX/CSV)
-        </button>
+    }finally{
 
-        <button
-          onclick="generateImportTemplate()"
-        >
-          📄 Gerar lista para preencher
-        </button>
+      window.prompt =
+        promptOriginal;
 
-        <button
-          onclick="backupJSON()"
-        >
-          💾 Backup completo
-        </button>
-
-        <button
-          onclick="changePin()"
-        >
-          🔑 Alterar PIN
-        </button>
-
-      </div>
-
-      <p class="mini">
-
-        No Android, a importação XLSX/CSV
-        é lida pelo próprio aplicativo.
-
-        Após uma importação, a planilha
-        passa a ser a lista oficial.
-
-      </p>
-
-      <button
-        onclick="clearLocalData()"
-      >
-        ⚠️ Limpar dados locais do pedido
-      </button>
-
-    `);
+    }
 
   };
 
 
   /* ==========================================================
-     REPETIR ÚLTIMO PEDIDO
+     CORREÇÃO REPETIR ÚLTIMO PEDIDO
      ========================================================== */
 
-  window.repeatLastOrder=function(){
+  window.repeatLastOrder = function(){
 
-    let rows=[];
+    try{
 
-    if(
-      Array.isArray(lastOrder) &&
-      lastOrder.length
-    ){
+      let rows = [];
 
-      rows=
-        JSON.parse(
-          JSON.stringify(
-            lastOrder
-          )
-        );
+      /*
+       * Primeiro tenta a memória atual.
+       */
 
-    }
+      if(
+        typeof lastOrder !== "undefined" &&
+        Array.isArray(lastOrder) &&
+        lastOrder.length
+      ){
 
-    if(!rows.length){
-
-      try{
-
-        const stored=
-          localStorage.getItem(
-            'sp_last_order'
+        rows =
+          JSON.parse(
+            JSON.stringify(
+              lastOrder
+            )
           );
 
-        if(stored){
+      }
 
-          const parsed=
-            JSON.parse(
-              stored
+      /*
+       * Depois tenta o localStorage.
+       */
+
+      if(!rows.length){
+
+        try{
+
+          const saved =
+            localStorage.getItem(
+              "sp_last_order"
             );
 
-          if(
-            Array.isArray(parsed) &&
-            parsed.length
-          ){
+          if(saved){
 
-            rows=parsed;
+            const parsed =
+              JSON.parse(
+                saved
+              );
+
+            if(
+              Array.isArray(parsed) &&
+              parsed.length
+            ){
+
+              rows = parsed;
+
+            }
 
           }
+
+        }catch(e){
+
+          rows = [];
 
         }
 
-      }catch(e){
-
-        rows=[];
-
       }
 
-    }
+      /*
+       * Último recurso:
+       * primeiro item do histórico.
+       */
 
-    if(
-      !rows.length &&
-      Array.isArray(historyOrders) &&
-      historyOrders.length
-    ){
-
-      const ultimo=
-        historyOrders[0];
+      let observation = "";
 
       if(
-        ultimo &&
-        Array.isArray(
-          ultimo.rows
-        )
+        !rows.length &&
+        typeof historyOrders !== "undefined" &&
+        Array.isArray(historyOrders) &&
+        historyOrders.length
       ){
 
-        rows=
-          JSON.parse(
-            JSON.stringify(
-              ultimo.rows
-            )
-          );
-
-        rows.generalObservation=
-          ultimo.generalObservation || '';
-
-      }
-
-    }
-
-    if(!rows.length){
-
-      alert(
-        'Ainda não existe último pedido.'
-      );
-
-      return;
-
-    }
-
-    lastOrder=
-      JSON.parse(
-        JSON.stringify(
-          rows
-        )
-      );
-
-    saveFeatures();
-
-    applyRepeat(
-      JSON.parse(
-        JSON.stringify(
-          rows
-        )
-      )
-    );
-
-  };
-
-
-  window.applyRepeat=function(rows){
-
-    if(
-      !Array.isArray(rows) ||
-      !rows.length
-    ){
-
-      alert(
-        'Não foi possível recuperar o último pedido.'
-      );
-
-      return;
-
-    }
-
-    vals={};
-
-    extras=[];
-
-    rows.forEach(function(x){
-
-      if(!x){
-
-        return;
-
-      }
-
-      if(
-        x.cat==='Produto Adicional'
-      ){
-
-        extras.push({
-
-          code:
-            x.code==='-'
-            ? ''
-            : String(
-                x.code||''
-              ),
-
-          name:
-            String(
-              x.name||''
-            ),
-
-          qty:
-            Number(
-              x.order
-            )||0
-
-        });
-
-        return;
-
-      }
-
-      const f=
-        productByCode(
-          x.code
-        );
-
-      if(!f){
-
-        return;
-
-      }
-
-      vals[
-        key(
-          f.c,
-          f.s,
-          f.i,
-          'o'
-        )
-      ]=
-        Number(
-          x.order
-        )||0;
-
-      vals[
-        key(
-          f.c,
-          f.s,
-          f.i,
-          's'
-        )
-      ]=
-        Number(
-          x.stock
-        )||0;
-
-    });
-
-    if(
-      typeof rows.generalObservation==='string'
-    ){
-
-      generalObservation=
-        rows.generalObservation;
-
-    }
-
-    const obs=
-      document.getElementById(
-        'generalObs'
-      );
-
-    if(obs){
-
-      obs.value=
-        generalObservation;
-
-    }
-
-    save();
-
-    saveFeatures();
-
-    render();
-
-    updateBadge();
-
-    closeFeature();
-
-    alert(
-      'Último pedido recuperado. Confira antes de enviar.'
-    );
-
-  };
-
-
-  /* ==========================================================
-     ZERAR PEDIDO APÓS ENVIO
-     ========================================================== */
-
-  window.clearPedido=function(){
-
-    const rowsToSave=
-      Array.isArray(finalizedRows)
-      ? JSON.parse(
-          JSON.stringify(
-            finalizedRows
-          )
-        )
-      : [];
-
-    let jaSalvo=false;
-
-    if(
-      rowsToSave.length &&
-      Array.isArray(historyOrders) &&
-      historyOrders.length
-    ){
-
-      try{
-
-        const ultimo=
+        const ultimo =
           historyOrders[0];
 
         if(
@@ -1128,123 +476,609 @@ jobs:
           )
         ){
 
-          jaSalvo=
-            JSON.stringify(
-              ultimo.rows
-            )===
-            JSON.stringify(
-              rowsToSave
+          rows =
+            JSON.parse(
+              JSON.stringify(
+                ultimo.rows
+              )
+            );
+
+          observation =
+            String(
+              ultimo.generalObservation || ""
             );
 
         }
 
-      }catch(e){
+      }
 
-        jaSalvo=false;
+      if(!rows.length){
+
+        alert(
+          "Ainda não existe último pedido."
+        );
+
+        return;
 
       }
 
+      /*
+       * Mantém o último pedido salvo.
+       */
+
+      if(
+        typeof lastOrder !== "undefined"
+      ){
+
+        lastOrder =
+          JSON.parse(
+            JSON.stringify(
+              rows
+            )
+          );
+
+      }
+
+      /*
+       * Recupera a observação do histórico.
+       */
+
+      if(
+        !observation &&
+        typeof historyOrders !== "undefined" &&
+        Array.isArray(historyOrders) &&
+        historyOrders.length
+      ){
+
+        observation =
+          String(
+            historyOrders[0].generalObservation || ""
+          );
+
+      }
+
+      window.applyRepeat(
+        rows,
+        observation
+      );
+
+    }catch(error){
+
+      console.error(
+        "repeatLastOrder:",
+        error
+      );
+
+      alert(
+        "Não foi possível repetir o último pedido."
+      );
+
     }
 
+  };
+
+
+  /* ==========================================================
+     APLICAÇÃO DO ÚLTIMO PEDIDO
+     ========================================================== */
+
+  window.applyRepeat = function(
+    rows,
+    observation
+  ){
+
     if(
-      rowsToSave.length &&
-      !jaSalvo
+      !Array.isArray(rows) ||
+      !rows.length
     ){
 
-      saveHistory(
-        rowsToSave
+      alert(
+        "Não foi possível recuperar o último pedido."
       );
+
+      return;
 
     }
 
-    vals={};
+    vals = {};
 
-    extras=[];
-
-    validadeCurta=[];
-
-    finalizedRows=[];
-
-    generalObservation='';
-
-    const obs=
-      document.getElementById(
-        'generalObs'
-      );
-
-    if(obs){
-
-      obs.value='';
-
-    }
-
-    localStorage.removeItem(
-      'pedido_compras_vals'
-    );
-
-    localStorage.removeItem(
-      'pedido_compras_extras'
-    );
-
-    localStorage.removeItem(
-      'pedido_compras_validade_curta'
-    );
-
-    localStorage.removeItem(
-      'sp_general_obs'
-    );
-
-    render();
+    extras = [];
 
     if(
-      typeof renderValidadeCurta===
-      'function'
+      typeof validadeCurta !== "undefined"
+    ){
+
+      validadeCurta = [];
+
+    }
+
+    rows.forEach(
+      function(x){
+
+        if(!x){
+          return;
+        }
+
+        /*
+         * Produto adicional.
+         */
+
+        if(
+          x.cat === "Produto Adicional"
+        ){
+
+          extras.push({
+
+            code:
+              x.code === "-"
+              ? ""
+              : String(
+                  x.code || ""
+                ),
+
+            name:
+              String(
+                x.name || ""
+              ),
+
+            qty:
+              Number(
+                x.order
+              ) || 0
+
+          });
+
+          return;
+
+        }
+
+        /*
+         * Produto normal.
+         */
+
+        if(
+          typeof productByCode !== "function"
+        ){
+
+          return;
+
+        }
+
+        const produto =
+          productByCode(
+            x.code
+          );
+
+        if(!produto){
+
+          return;
+
+        }
+
+        vals[
+          key(
+            produto.c,
+            produto.s,
+            produto.i,
+            "o"
+          )
+        ] =
+          Number(
+            x.order
+          ) || 0;
+
+        vals[
+          key(
+            produto.c,
+            produto.s,
+            produto.i,
+            "s"
+          )
+        ] =
+          Number(
+            x.stock
+          ) || 0;
+
+      }
+    );
+
+    /*
+     * Recupera observação.
+     */
+
+    let obsFinal =
+      String(
+        observation || ""
+      );
+
+    if(
+      !obsFinal &&
+      typeof rows.generalObservation === "string"
+    ){
+
+      obsFinal =
+        rows.generalObservation;
+
+    }
+
+    if(
+      !obsFinal &&
+      typeof historyOrders !== "undefined" &&
+      Array.isArray(historyOrders) &&
+      historyOrders.length
+    ){
+
+      obsFinal =
+        String(
+          historyOrders[0].generalObservation || ""
+        );
+
+    }
+
+    generalObservation =
+      obsFinal;
+
+    const campoObs =
+      document.getElementById(
+        "generalObs"
+      );
+
+    if(campoObs){
+
+      campoObs.value =
+        generalObservation;
+
+    }
+
+    if(
+      typeof save === "function"
+    ){
+
+      save();
+
+    }
+
+    if(
+      typeof saveFeatures === "function"
+    ){
+
+      saveFeatures();
+
+    }
+
+    if(
+      typeof render === "function"
+    ){
+
+      render();
+
+    }
+
+    if(
+      typeof renderValidadeCurta === "function"
     ){
 
       renderValidadeCurta();
 
     }
 
-    updateBadge();
-
     if(
-      typeof closeConference===
-      'function'
+      typeof updateBadge === "function"
     ){
 
-      closeConference();
+      updateBadge();
 
     }
 
-    const opcoes=
-      document.getElementById(
-        'opcoesFinalizado'
+    if(
+      typeof closeFeature === "function"
+    ){
+
+      closeFeature();
+
+    }
+
+    alert(
+      "Último pedido recuperado. Confira antes de enviar."
+    );
+
+  };
+
+
+  /* ==========================================================
+     ZERAR PEDIDO
+     
+     IMPORTANTE:
+     - preserva sp_last_order
+     - preserva sp_history
+     - limpa somente a digitação atual
+     - funciona quando chamado pelo relatório #49
+     ========================================================== */
+
+  window.clearPedido = function(){
+
+    try{
+
+      let rowsToSave = [];
+
+      if(
+        typeof finalizedRows !== "undefined" &&
+        Array.isArray(finalizedRows) &&
+        finalizedRows.length
+      ){
+
+        rowsToSave =
+          JSON.parse(
+            JSON.stringify(
+              finalizedRows
+            )
+          );
+
+      }
+
+      /*
+       * O relatório #49 já chama saveHistory(rows)
+       * antes de chamar clearPedido().
+       *
+       * Portanto, só salva aqui se ainda não estiver
+       * no histórico, evitando duplicação.
+       */
+
+      let jaSalvo = false;
+
+      if(
+        rowsToSave.length &&
+        typeof historyOrders !== "undefined" &&
+        Array.isArray(historyOrders) &&
+        historyOrders.length
+      ){
+
+        try{
+
+          const ultimo =
+            historyOrders[0];
+
+          if(
+            ultimo &&
+            Array.isArray(
+              ultimo.rows
+            )
+          ){
+
+            jaSalvo =
+              JSON.stringify(
+                ultimo.rows
+              ) ===
+              JSON.stringify(
+                rowsToSave
+              );
+
+          }
+
+        }catch(e){
+
+          jaSalvo = false;
+
+        }
+
+      }
+
+      if(
+        rowsToSave.length &&
+        !jaSalvo &&
+        typeof saveHistory === "function"
+      ){
+
+        saveHistory(
+          rowsToSave
+        );
+
+      }
+
+      /*
+       * ZERA A DIGITAÇÃO.
+       */
+
+      vals = {};
+
+      extras = [];
+
+      if(
+        typeof validadeCurta !== "undefined"
+      ){
+
+        validadeCurta = [];
+
+      }
+
+      finalizedRows = [];
+
+      generalObservation = "";
+
+      /*
+       * Limpa campo de observação.
+       */
+
+      const campoObs =
+        document.getElementById(
+          "generalObs"
+        );
+
+      if(campoObs){
+
+        campoObs.value = "";
+
+      }
+
+      /*
+       * Limpa somente os dados do pedido atual.
+       *
+       * NÃO remove:
+       * sp_last_order
+       * sp_history
+       */
+
+      localStorage.removeItem(
+        "pedido_compras_vals"
       );
 
-    if(opcoes){
+      localStorage.removeItem(
+        "pedido_compras_extras"
+      );
 
-      opcoes.style.display=
-        'none';
+      localStorage.removeItem(
+        "pedido_compras_validade_curta"
+      );
 
-    }
+      localStorage.removeItem(
+        "sp_general_obs"
+      );
 
-    document
-      .querySelectorAll(
-        'input.qty'
-      )
-      .forEach(function(el){
+      /*
+       * Salva o estado limpo.
+       *
+       * Isso mantém o último pedido e o histórico.
+       */
 
-        el.value='0';
+      if(
+        typeof saveFeatures === "function"
+      ){
+
+        saveFeatures();
+
+      }
+
+      /*
+       * Atualiza a tela.
+       */
+
+      if(
+        typeof render === "function"
+      ){
+
+        render();
+
+      }
+
+      if(
+        typeof renderValidadeCurta === "function"
+      ){
+
+        renderValidadeCurta();
+
+      }
+
+      if(
+        typeof updateBadge === "function"
+      ){
+
+        updateBadge();
+
+      }
+
+      /*
+       * Fecha tela de conferência,
+       * se existir.
+       */
+
+      if(
+        typeof closeConference === "function"
+      ){
+
+        closeConference();
+
+      }
+
+      /*
+       * Esconde opções de pedido finalizado.
+       */
+
+      const opcoes =
+        document.getElementById(
+          "opcoesFinalizado"
+        );
+
+      if(opcoes){
+
+        opcoes.style.display =
+          "none";
+
+      }
+
+      /*
+       * Garante visualmente que todos
+       * os campos de quantidade ficaram em zero.
+       */
+
+      document
+        .querySelectorAll(
+          "input.qty"
+        )
+        .forEach(
+          function(input){
+
+            input.value = "0";
+
+          }
+        );
+
+      window.scrollTo({
+
+        top: 0,
+
+        behavior: "smooth"
 
       });
 
-    window.scrollTo({
+    }catch(error){
 
-      top:0,
+      console.error(
+        "clearPedido:",
+        error
+      );
 
-      behavior:'smooth'
+      /*
+       * Mesmo se algum elemento visual
+       * não existir, o pedido precisa ser zerado.
+       */
 
-    });
+      try{
+
+        vals = {};
+
+        extras = [];
+
+        finalizedRows = [];
+
+        generalObservation = "";
+
+        localStorage.removeItem(
+          "pedido_compras_vals"
+        );
+
+        localStorage.removeItem(
+          "pedido_compras_extras"
+        );
+
+        localStorage.removeItem(
+          "pedido_compras_validade_curta"
+        );
+
+        localStorage.removeItem(
+          "sp_general_obs"
+        );
+
+        if(
+          typeof saveFeatures === "function"
+        ){
+
+          saveFeatures();
+
+        }
+
+      }catch(e){}
+
+    }
 
   };
 
@@ -1252,31 +1086,44 @@ jobs:
 </script>
 '''
 
-          marcador='</body>'
+          if "</body>" not in text:
 
-          if marcador in text:
-
-              text=text.replace(
-                  marcador,
-                  patch+'\n'+marcador,
-                  1
+              raise SystemExit(
+                  "ERRO: </body> não encontrado."
               )
 
-          else:
-
-              text += patch
+          text = text.replace(
+              "</body>",
+              patch + "\n</body>",
+              1
+          )
 
           html.write_text(
               text,
               encoding="utf-8"
           )
 
-          print("OK: ADM corrigido.")
-          print("OK: Repetir último pedido corrigido.")
-          print("OK: pedido será zerado após envio.")
-          print("OK: relatório #49 não foi alterado.")
+          print(
+              "OK: ADM corrigido."
+          )
+
+          print(
+              "OK: Repetir último pedido corrigido."
+          )
+
+          print(
+              "OK: zeragem após envio corrigida."
+          )
+
+          print(
+              "OK: openPDF da #49 não foi substituído."
+          )
 
           PY
+
+      # ==========================================================
+      # BIBLIOTECAS EXATAMENTE COMO NA #49
+      # ==========================================================
 
       - name: Preparar bibliotecas PDF e Excel
         shell: bash
@@ -1299,6 +1146,10 @@ jobs:
 
           test -s "$ASSETS/jspdf.umd.min.js"
 
+      # ==========================================================
+      # VERIFICAÇÃO JAVASCRIPT
+      # ==========================================================
+
       - name: Verificar JavaScript
         shell: bash
         run: |
@@ -1313,26 +1164,28 @@ jobs:
           import os
           from pathlib import Path
 
-          html=Path(
-              os.environ["ANDROID_DIR"]
-          )/"app/src/main/assets/app/index.html"
+          html = (
+              Path(os.environ["ANDROID_DIR"])
+              / "app/src/main/assets/app/index.html"
+          )
 
-          text=html.read_text(
+          text = html.read_text(
               encoding="utf-8"
           )
 
-          scripts=re.findall(
+          scripts = re.findall(
               r"<script(?:[^>]*)>(.*?)</script>",
               text,
               re.S
           )
 
           if not scripts:
+
               raise SystemExit(
-                  "ERRO: nenhum JavaScript encontrado"
+                  "ERRO: nenhum JavaScript encontrado."
               )
 
-          combined="\n".join(
+          combined = "\n".join(
               scripts
           )
 
@@ -1343,17 +1196,28 @@ jobs:
               encoding="utf-8"
           )
 
-          required=[
+          required = [
+
               "async function openPDF(sendViaWhatsApp=false)",
+
               "window.openAdmin=function()",
+
               "window.repeatLastOrder=function()",
-              "window.applyRepeat=function(rows)",
-              "window.clearPedido=function()",
+
+              "window.applyRepeat = function(",
+
+              "window.clearPedido = function()",
+
               "window.AndroidFileBridge.sharePdf",
+
               "CÓDIGO",
+
               "NOME DO PRODUTO",
+
               "ESTOQUE",
+
               "PEDIDO"
+
           ]
 
           for item in required:
@@ -1361,7 +1225,8 @@ jobs:
               if item not in text:
 
                   raise SystemExit(
-                      "ERRO: não encontrado: "+item
+                      "ERRO: não encontrado: "
+                      + item
                   )
 
           if (
@@ -1375,7 +1240,7 @@ jobs:
               )
 
           print(
-              "Verificação textual concluída."
+              "OK: verificações textuais concluídas."
           )
 
           PY
@@ -1383,10 +1248,18 @@ jobs:
           node --check \
             /tmp/super-pedido-inline.js
 
+          echo "OK: JavaScript válido."
+
+      # ==========================================================
+      # VERIFICAÇÃO FINAL
+      # ==========================================================
+
       - name: Verificação final antes da compilação
         shell: bash
         run: |
           set -e
+
+          HTML="$ANDROID_DIR/app/src/main/assets/app/index.html"
 
           test -f "$HTML"
 
@@ -1399,11 +1272,11 @@ jobs:
             "$HTML"
 
           grep -q \
-            "window.applyRepeat=function(rows)" \
+            "window.applyRepeat = function(" \
             "$HTML"
 
           grep -q \
-            "window.clearPedido=function()" \
+            "window.clearPedido = function()" \
             "$HTML"
 
           grep -q \
@@ -1414,15 +1287,30 @@ jobs:
             "orientation:'portrait'" \
             "$HTML"
 
+          grep -q \
+            "format:'a4'" \
+            "$HTML"
+
+          grep -q \
+            "RELATÓRIO DE PEDIDO" \
+            "$HTML"
+
           echo "=========================================="
           echo " VERIFICAÇÃO FINAL"
           echo "=========================================="
+          echo "OK - BASE DA VERSÃO 49"
+          echo "OK - RELATÓRIO DA #49"
           echo "OK - ADM"
-          echo "OK - Repetir último pedido"
-          echo "OK - Zerar pedido"
-          echo "OK - Relatório A4 retrato"
-          echo "OK - JavaScript válido"
+          echo "OK - REPETIR ÚLTIMO PEDIDO"
+          echo "OK - ZERAR APÓS ENVIO"
+          echo "OK - PDF A4 RETRATO"
+          echo "OK - ANDROID FILE BRIDGE"
+          echo "OK - JAVASCRIPT"
           echo "=========================================="
+
+      # ==========================================================
+      # COMPILAR APK
+      # ==========================================================
 
       - name: Compilar APK
         shell: bash
@@ -1447,6 +1335,10 @@ jobs:
 
           fi
 
+      # ==========================================================
+      # VERIFICAR APK
+      # ==========================================================
+
       - name: Verificar APK
         shell: bash
         run: |
@@ -1464,7 +1356,15 @@ jobs:
 
           echo "APK=$APK" >> "$GITHUB_ENV"
 
+          echo "=========================================="
+          echo " APK GERADO COM SUCESSO"
+          echo "=========================================="
+
           ls -lh "$APK"
+
+      # ==========================================================
+      # DISPONIBILIZAR APK
+      # ==========================================================
 
       - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
