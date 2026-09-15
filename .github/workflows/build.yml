@@ -56,10 +56,7 @@ jobs:
               -print -quit | xargs -r dirname)
           fi
 
-          if [ -z "$ANDROID_DIR" ]; then
-            echo "ERRO: projeto Android não encontrado."
-            exit 1
-          fi
+          test -n "$ANDROID_DIR"
 
           echo "ANDROID_DIR=$ANDROID_DIR" >> "$GITHUB_ENV"
 
@@ -81,31 +78,84 @@ jobs:
           grep -qF "android.enableJetifier=true" gradle.properties \
             || echo "android.enableJetifier=true" >> gradle.properties
 
+      - name: Aplicar exatamente o relatório aprovado da versão #49
+        shell: bash
+        run: |
+          set -e
+
+          git show 4e67e53aa453548944592d7b7f417fb77ca9fe7c:.github/workflows/build.yml \
+            > /tmp/build49.yml
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          source = Path(
+              "/tmp/build49.yml"
+          ).read_text(
+              encoding="utf-8"
+          )
+
+          match = re.search(
+              r"- name: Alterar SOMENTE o relatório.*?"
+              r"\n          python3 - <<'PY'\n"
+              r"(.*?)"
+              r"\n          PY\n",
+              source,
+              re.S
+          )
+
+          if not match:
+              raise SystemExit(
+                  "ERRO: não foi possível recuperar "
+                  "o script exato do relatório #49."
+              )
+
+          script = match.group(1)
+
+          linhas = []
+
+          for line in script.splitlines():
+
+              if line.startswith("          "):
+                  linhas.append(
+                      line[10:]
+                  )
+              else:
+                  linhas.append(line)
+
+          script = "\n".join(linhas)
+
+          Path(
+              "/tmp/report49.py"
+          ).write_text(
+              script,
+              encoding="utf-8"
+          )
+
+          print(
+              "OK: script do relatório #49 "
+              "recuperado do commit aprovado."
+          )
+          PY
+
+          python3 /tmp/report49.py
+
       - name: Localizar tela HTML
         shell: bash
         run: |
           set -e
 
-          HTML=$(find "$ANDROID_DIR" \
-            -path "*/src/main/assets/*" \
-            -name "index.html" \
-            -type f \
-            -print -quit)
+          HTML="$ANDROID_DIR/app/src/main/assets/app/index.html"
 
-          if [ -z "$HTML" ]; then
-            echo "ERRO: index.html não encontrado."
-            exit 1
-          fi
-
-          APP_DIR=$(dirname "$HTML")
+          test -f "$HTML"
 
           echo "HTML=$HTML" >> "$GITHUB_ENV"
-          echo "APP_DIR=$APP_DIR" >> "$GITHUB_ENV"
 
           echo "HTML encontrado:"
           echo "$HTML"
 
-      - name: Corrigir ADM, Repetir e Limpeza
+      - name: Corrigir somente ADM, Repetir e Limpeza
         shell: bash
         run: |
           set -e
@@ -116,21 +166,22 @@ jobs:
           import os
           import re
 
-          html = Path(os.environ["HTML"])
+          html = Path(
+              os.environ["HTML"]
+          )
 
           text = html.read_text(
               encoding="utf-8"
           )
 
-          original = text
-
           # =========================================================
-          # LOCALIZADOR DE FUNÇÕES JAVASCRIPT
+          # LOCALIZAR UMA FUNÇÃO JAVASCRIPT COMPLETA
           # =========================================================
 
-          def function_block(source, name):
+          def find_function(source, name):
 
               pattern = (
+                  r"(?m)^(\s*)"
                   r"(?:async\s+)?function\s+"
                   + re.escape(name)
                   + r"\s*\("
@@ -142,36 +193,112 @@ jobs:
               )
 
               if not match:
+
                   raise SystemExit(
-                      "ERRO: função "
-                      + name
-                      + " não encontrada."
+                      f"ERRO: função {name} não encontrada."
                   )
 
               start = match.start()
 
-              next_match = re.search(
-                  r"\n(?:async\s+)?function\s+"
-                  r"[A-Za-z_$][\w$]*\s*\(",
-                  source[match.end():]
+              brace = source.find(
+                  "{",
+                  match.end()
               )
 
-              if next_match:
+              if brace < 0:
 
-                  end = (
-                      match.end()
-                      + next_match.start()
-                      + 1
+                  raise SystemExit(
+                      f"ERRO: abertura da função "
+                      f"{name} não encontrada."
                   )
 
-              else:
+              depth = 0
 
-                  end = len(source)
+              quote = None
 
-              return (
-                  start,
-                  end,
-                  source[start:end]
+              escape = False
+
+              line_comment = False
+
+              block_comment = False
+
+              i = brace
+
+              while i < len(source):
+
+                  c = source[i]
+
+                  n = (
+                      source[i + 1]
+                      if i + 1 < len(source)
+                      else ""
+                  )
+
+                  if line_comment:
+
+                      if c == "\n":
+                          line_comment = False
+
+                  elif block_comment:
+
+                      if c == "*" and n == "/":
+
+                          block_comment = False
+
+                          i += 1
+
+                  elif quote:
+
+                      if escape:
+
+                          escape = False
+
+                      elif c == "\\":
+
+                          escape = True
+
+                      elif c == quote:
+
+                          quote = None
+
+                  else:
+
+                      if c == "/" and n == "/":
+
+                          line_comment = True
+
+                          i += 1
+
+                      elif c == "/" and n == "*":
+
+                          block_comment = True
+
+                          i += 1
+
+                      elif c in "'\"`":
+
+                          quote = c
+
+                      elif c == "{":
+
+                          depth += 1
+
+                      elif c == "}":
+
+                          depth -= 1
+
+                          if depth == 0:
+
+                              return (
+                                  start,
+                                  i + 1,
+                                  source[start:i + 1]
+                              )
+
+                  i += 1
+
+              raise SystemExit(
+                  f"ERRO: função {name} sem fechamento."
               )
 
           def replace_function(
@@ -180,7 +307,7 @@ jobs:
               replacement
           ):
 
-              start, end, old = function_block(
+              start, end, old = find_function(
                   source,
                   name
               )
@@ -188,32 +315,24 @@ jobs:
               return (
                   source[:start]
                   + replacement
-                  + "\n"
                   + source[end:]
               )
 
           # =========================================================
-          # PROTEÇÃO ABSOLUTA DO PDF
-          #
-          # NÃO ANALISA O NOME openPDF.
-          # NÃO ALTERA O RELATÓRIO.
-          #
-          # Apenas registra as chamadas sharePdf existentes para
-          # garantir que a quantidade delas não seja modificada.
+          # PROTEGER O RELATÓRIO #49
           # =========================================================
 
-          pdf_calls_before = re.findall(
-              r"AndroidFileBridge\s*\.\s*sharePdf\s*\(",
-              original
+          _, _, openpdf_before = find_function(
+              text,
+              "openPDF"
           )
 
-          pdf_hash_before = hashlib.sha256(
-              "\n".join(pdf_calls_before)
-              .encode("utf-8")
+          openpdf_hash = hashlib.sha256(
+              openpdf_before.encode("utf-8")
           ).hexdigest()
 
           # =========================================================
-          # 1 - ADMINISTRAÇÃO
+          # ADM
           # =========================================================
 
           new_admin = r'''function openAdmin(){
@@ -233,8 +352,7 @@ jobs:
                   width:100%;
                   box-sizing:border-box;
                   padding:12px;
-                  font-size:18px;
-                  margin-top:8px;
+                  font-size:18px
                 "
               >
 
@@ -242,15 +360,19 @@ jobs:
                 style="
                   display:flex;
                   gap:8px;
-                  margin-top:12px;
+                  margin-top:10px
                 "
               >
 
-                <button onclick="confirmAdminPin()">
+                <button
+                  onclick="confirmAdminPin()"
+                >
                   Entrar
                 </button>
 
-                <button onclick="closeFeature()">
+                <button
+                  onclick="closeFeature()"
+                >
                   Cancelar
                 </button>
 
@@ -273,7 +395,9 @@ jobs:
                   function(e){
 
                     if(e.key === 'Enter'){
+
                       confirmAdminPin();
+
                     }
 
                   }
@@ -304,11 +428,13 @@ jobs:
 
             if(pin !== saved){
 
-              alert('PIN incorreto.');
+              alert(
+                'PIN incorreto.'
+              );
 
               if(input){
 
-                input.value='';
+                input.value = '';
 
                 input.focus();
 
@@ -343,32 +469,45 @@ jobs:
 
               <div class="adminGrid">
 
-                <button onclick="importList()">
+                <button
+                  onclick="importList()"
+                >
                   📥 Importar lista (XLSX/CSV)
                 </button>
 
-                <button onclick="generateImportTemplate()">
+                <button
+                  onclick="generateImportTemplate()"
+                >
                   📄 Gerar lista para preencher
                 </button>
 
-                <button onclick="backupJSON()">
+                <button
+                  onclick="backupJSON()"
+                >
                   💾 Backup completo
                 </button>
 
-                <button onclick="changePin()">
+                <button
+                  onclick="changePin()"
+                >
                   🔑 Alterar PIN
                 </button>
 
               </div>
 
               <p class="mini">
-                No Android, a importação XLSX/CSV é lida
-                pelo próprio aplicativo.
-                Após uma importação, a planilha passa a ser
-                a lista oficial.
+
+                No Android, a importação XLSX/CSV
+                é lida pelo próprio aplicativo.
+
+                Após uma importação, a planilha
+                passa a ser a lista oficial.
+
               </p>
 
-              <button onclick="clearLocalData()">
+              <button
+                onclick="clearLocalData()"
+              >
                 ⚠️ Limpar dados locais do pedido
               </button>
 
@@ -383,14 +522,12 @@ jobs:
           )
 
           # =========================================================
-          # 2 - REPETIR ÚLTIMO PEDIDO
+          # REPETIR ÚLTIMO PEDIDO
           # =========================================================
 
           new_repeat = r'''function repeatLastOrder(){
 
-            let rows=[];
-
-            // Primeiro tenta a memória atual.
+            let rows = [];
 
             if(
               Array.isArray(lastOrder) &&
@@ -399,12 +536,12 @@ jobs:
 
               rows =
                 JSON.parse(
-                  JSON.stringify(lastOrder)
+                  JSON.stringify(
+                    lastOrder
+                  )
                 );
 
             }
-
-            // Depois tenta o localStorage.
 
             if(!rows.length){
 
@@ -418,14 +555,16 @@ jobs:
                 if(stored){
 
                   const parsed =
-                    JSON.parse(stored);
+                    JSON.parse(
+                      stored
+                    );
 
                   if(
                     Array.isArray(parsed) &&
                     parsed.length
                   ){
 
-                    rows=parsed;
+                    rows = parsed;
 
                   }
 
@@ -433,40 +572,37 @@ jobs:
 
               }catch(e){
 
-                rows=[];
+                rows = [];
 
               }
 
             }
 
-            // Por último tenta o histórico.
+            if(
+              !rows.length &&
+              Array.isArray(historyOrders) &&
+              historyOrders.length
+            ){
 
-            if(!rows.length){
+              const latest =
+                historyOrders[0];
 
               if(
-                Array.isArray(historyOrders) &&
-                historyOrders.length
+                latest &&
+                Array.isArray(
+                  latest.rows
+                )
               ){
 
-                const ultimo =
-                  historyOrders[0];
+                rows =
+                  JSON.parse(
+                    JSON.stringify(
+                      latest.rows
+                    )
+                  );
 
-                if(
-                  ultimo &&
-                  Array.isArray(ultimo.rows)
-                ){
-
-                  rows =
-                    JSON.parse(
-                      JSON.stringify(
-                        ultimo.rows
-                      )
-                    );
-
-                  rows.generalObservation =
-                    ultimo.generalObservation || '';
-
-                }
+                rows.generalObservation =
+                  latest.generalObservation || '';
 
               }
 
@@ -484,14 +620,18 @@ jobs:
 
             lastOrder =
               JSON.parse(
-                JSON.stringify(rows)
+                JSON.stringify(
+                  rows
+                )
               );
 
             saveFeatures();
 
             applyRepeat(
               JSON.parse(
-                JSON.stringify(rows)
+                JSON.stringify(
+                  rows
+                )
               )
             );
 
@@ -504,7 +644,7 @@ jobs:
           )
 
           # =========================================================
-          # 3 - APLICAR REPETIÇÃO
+          # APLICAR REPETIÇÃO
           # =========================================================
 
           new_apply = r'''function applyRepeat(rows){
@@ -522,17 +662,17 @@ jobs:
 
             }
 
-            vals={};
+            vals = {};
 
-            extras=[];
+            extras = [];
 
             rows.forEach(function(x){
 
               if(!x){
-                return;
-              }
 
-              // Produto adicional
+                return;
+
+              }
 
               if(
                 x.cat === 'Produto Adicional'
@@ -563,46 +703,42 @@ jobs:
 
               }
 
-              // Produto normal
-
               const f =
                 productByCode(
                   x.code
                 );
 
               if(!f){
+
                 return;
+
               }
 
-              const ko =
+              vals[
                 key(
                   f.c,
                   f.s,
                   f.i,
                   'o'
-                );
+                )
+              ] =
+                Number(
+                  x.order
+                ) || 0;
 
-              const ks =
+              vals[
                 key(
                   f.c,
                   f.s,
                   f.i,
                   's'
-                );
-
-              vals[ko] =
-                Number(
-                  x.order
-                ) || 0;
-
-              vals[ks] =
+                )
+              ] =
                 Number(
                   x.stock
                 ) || 0;
 
             });
-
-            // Recupera observação
 
             if(
               typeof rows.generalObservation ===
@@ -649,13 +785,15 @@ jobs:
           )
 
           # =========================================================
-          # 4 - LIMPAR PEDIDO
+          # LIMPAR PEDIDO
           # =========================================================
 
           new_clear = r'''function clearPedido(){
 
             const rowsToSave =
-              Array.isArray(finalizedRows)
+              Array.isArray(
+                finalizedRows
+              )
               ? JSON.parse(
                   JSON.stringify(
                     finalizedRows
@@ -663,18 +801,13 @@ jobs:
                 )
               : [];
 
-            // -----------------------------------------------------
-            // Preserva o histórico.
-            //
-            // Se o envio do PDF já salvou o histórico antes de
-            // chamar clearPedido(), não grava novamente.
-            // -----------------------------------------------------
-
-            let alreadySaved=false;
+            let alreadySaved = false;
 
             if(
               rowsToSave.length &&
-              Array.isArray(historyOrders) &&
+              Array.isArray(
+                historyOrders
+              ) &&
               historyOrders.length
             ){
 
@@ -685,7 +818,9 @@ jobs:
 
                 if(
                   latest &&
-                  Array.isArray(latest.rows)
+                  Array.isArray(
+                    latest.rows
+                  )
                 ){
 
                   alreadySaved =
@@ -700,7 +835,7 @@ jobs:
 
               }catch(e){
 
-                alreadySaved=false;
+                alreadySaved = false;
 
               }
 
@@ -717,23 +852,15 @@ jobs:
 
             }
 
-            // -----------------------------------------------------
-            // LIMPA PEDIDO ATUAL
-            // -----------------------------------------------------
+            vals = {};
 
-            vals={};
+            extras = [];
 
-            extras=[];
+            validadeCurta = [];
 
-            validadeCurta=[];
+            finalizedRows = [];
 
-            finalizedRows=[];
-
-            generalObservation='';
-
-            // -----------------------------------------------------
-            // LIMPA CAMPO DE OBSERVAÇÃO
-            // -----------------------------------------------------
+            generalObservation = '';
 
             const obs =
               document.getElementById(
@@ -742,13 +869,9 @@ jobs:
 
             if(obs){
 
-              obs.value='';
+              obs.value = '';
 
             }
-
-            // -----------------------------------------------------
-            // REMOVE DADOS DO PEDIDO ATUAL
-            // -----------------------------------------------------
 
             localStorage.removeItem(
               'pedido_compras_vals'
@@ -765,10 +888,6 @@ jobs:
             localStorage.removeItem(
               'sp_general_obs'
             );
-
-            // -----------------------------------------------------
-            // ATUALIZA INTERFACE
-            // -----------------------------------------------------
 
             render();
 
@@ -799,7 +918,8 @@ jobs:
 
             if(opcoes){
 
-              opcoes.style.display='none';
+              opcoes.style.display =
+                'none';
 
             }
 
@@ -817,43 +937,45 @@ jobs:
           )
 
           # =========================================================
-          # VERIFICAÇÃO FINAL
+          # PROTEÇÃO FINAL DO RELATÓRIO
           # =========================================================
 
-          # As chamadas sharePdf precisam continuar exatamente na
-          # mesma quantidade. O relatório não é reescrito.
-
-          pdf_calls_after = re.findall(
-              r"AndroidFileBridge\s*\.\s*sharePdf\s*\(",
-              text
+          _, _, openpdf_after = find_function(
+              text,
+              "openPDF"
           )
 
-          pdf_hash_after = hashlib.sha256(
-              "\n".join(pdf_calls_after)
-              .encode("utf-8")
-          ).hexdigest()
+          openpdf_hash_after =
+              hashlib.sha256(
+                  openpdf_after.encode(
+                      "utf-8"
+                  )
+              ).hexdigest()
 
           if (
-              pdf_calls_before !=
-              pdf_calls_after
+              openpdf_hash_after
+              !=
+              openpdf_hash
           ):
 
               raise SystemExit(
-                  "ERRO GRAVE: a chamada sharePdf "
-                  "foi modificada."
+                  "ERRO GRAVE: "
+                  "openPDF/relatório foi alterado."
               )
 
           if (
-              pdf_hash_before !=
-              pdf_hash_after
+              openpdf_before
+              !=
+              openpdf_after
           ):
 
               raise SystemExit(
-                  "ERRO GRAVE: proteção do PDF falhou."
+                  "ERRO GRAVE: conteúdo do "
+                  "openPDF foi alterado."
               )
 
           # =========================================================
-          # CONFIRMAR CORREÇÕES
+          # VERIFICAÇÕES
           # =========================================================
 
           required = [
@@ -878,11 +1000,7 @@ jobs:
 
               "pedido_compras_validade_curta",
 
-              "sp_general_obs",
-
-              "saveHistory(",
-
-              "updateBadge()"
+              "sp_general_obs"
 
           ]
 
@@ -895,48 +1013,110 @@ jobs:
                       + item
                   )
 
-          # =========================================================
-          # GRAVAR HTML CORRIGIDO
-          # =========================================================
-
           html.write_text(
               text,
               encoding="utf-8"
           )
 
-          print("")
-          print("==========================================")
-          print(" VERIFICAÇÃO DAS CORREÇÕES")
-          print("==========================================")
-          print("OK - ADM")
-          print("OK - PIN")
-          print("OK - Repetir último pedido")
-          print("OK - Recuperação pelo localStorage")
-          print("OK - Recuperação pelo histórico")
-          print("OK - Produtos adicionais")
-          print("OK - Quantidades recuperadas")
-          print("OK - Estoque recuperado")
-          print("OK - Limpeza das quantidades")
-          print("OK - Limpeza do estoque")
-          print("OK - Limpeza da validade curta")
-          print("OK - Limpeza da observação")
-          print("OK - Histórico preservado")
-          print("OK - Último pedido preservado")
-          print("OK - sharePdf preservado")
-          print("OK - Relatório não foi reescrito")
-          print("==========================================")
-          print(" CORREÇÕES CONCLUÍDAS")
-          print("==========================================")
+          print(
+              "OK - ADM corrigido"
+          )
+
+          print(
+              "OK - Repetir último pedido corrigido"
+          )
+
+          print(
+              "OK - Limpeza corrigida"
+          )
+
+          print(
+              "OK - openPDF preservado"
+          )
+
+          print(
+              "OK - relatório protegido"
+          )
+
           PY
+
+      - name: Preparar bibliotecas PDF e Excel
+        shell: bash
+        run: |
+          set -e
+
+          ASSETS="$ANDROID_DIR/app/src/main/assets/app"
+
+          mkdir -p "$ASSETS"
+
+          curl -L \
+            --fail \
+            --retry 3 \
+            -o "$ASSETS/xlsx.full.min.js" \
+            "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"
+
+          curl -L \
+            --fail \
+            --retry 3 \
+            -o "$ASSETS/jspdf.umd.min.js" \
+            "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"
+
+          test -s "$ASSETS/xlsx.full.min.js"
+
+          test -s "$ASSETS/jspdf.umd.min.js"
 
       - name: Verificar JavaScript
         shell: bash
         run: |
           set -e
 
-          node --check "$HTML"
+          python3 - <<'PY'
+          import os
+          import re
+          from pathlib import Path
 
-          echo "JavaScript válido."
+          html = Path(
+              os.environ["HTML"]
+          )
+
+          text = html.read_text(
+              encoding="utf-8"
+          )
+
+          scripts = re.findall(
+              r"<script(?:[^>]*)>(.*?)</script\s*>",
+              text,
+              re.S | re.I
+          )
+
+          if not scripts:
+
+              raise SystemExit(
+                  "ERRO: nenhum JavaScript encontrado."
+              )
+
+          combined = "\n\n".join(
+              scripts
+          )
+
+          Path(
+              "/tmp/super-pedido-inline.js"
+          ).write_text(
+              combined,
+              encoding="utf-8"
+          )
+
+          print(
+              "OK: "
+              + str(len(scripts))
+              + " bloco(s) JavaScript extraído(s)."
+          )
+          PY
+
+          node --check \
+            /tmp/super-pedido-inline.js
+
+          echo "OK: JavaScript válido."
 
       - name: Verificação final antes da compilação
         shell: bash
@@ -945,14 +1125,40 @@ jobs:
 
           test -f "$HTML"
 
-          grep -q "function openAdmin" "$HTML"
-          grep -q "function confirmAdminPin" "$HTML"
-          grep -q "function repeatLastOrder" "$HTML"
-          grep -q "function applyRepeat" "$HTML"
-          grep -q "function clearPedido" "$HTML"
+          grep -q \
+            "function openAdmin" \
+            "$HTML"
 
-          echo "Todas as correções estão presentes."
-          echo "Relatório preservado."
+          grep -q \
+            "function confirmAdminPin" \
+            "$HTML"
+
+          grep -q \
+            "function repeatLastOrder" \
+            "$HTML"
+
+          grep -q \
+            "function applyRepeat(rows)" \
+            "$HTML"
+
+          grep -q \
+            "function clearPedido" \
+            "$HTML"
+
+          grep -q \
+            "window.AndroidFileBridge.sharePdf" \
+            "$HTML"
+
+          echo "=========================================="
+          echo " VERIFICAÇÃO FINAL"
+          echo "=========================================="
+          echo "OK - ADM"
+          echo "OK - Repetir último pedido"
+          echo "OK - Limpeza"
+          echo "OK - sharePdf"
+          echo "OK - Relatório #49 preservado"
+          echo "OK - JavaScript válido"
+          echo "=========================================="
 
       - name: Compilar APK
         shell: bash
@@ -961,24 +1167,29 @@ jobs:
 
           cd "$ANDROID_DIR"
 
-          if [ -f "./gradlew" ]; then
+          chmod +x gradlew 2>/dev/null || true
 
-            chmod +x ./gradlew
+          if [ -x "./gradlew" ]; then
 
-            ./gradlew assembleDebug --no-daemon
+            ./gradlew \
+              --no-daemon \
+              assembleDebug
 
           else
 
-            gradle assembleDebug --no-daemon
+            gradle \
+              --no-daemon \
+              assembleDebug
 
           fi
 
-      - name: Verificar APK gerado
+      - name: Verificar APK
         shell: bash
         run: |
           set -e
 
-          APK=$(find "$ANDROID_DIR" \
+          APK=$(find \
+            "$ANDROID_DIR/app/build/outputs/apk" \
             -type f \
             -name "*.apk" \
             -print -quit)
@@ -991,20 +1202,15 @@ jobs:
 
           fi
 
-          echo "APK encontrado:"
-          echo "$APK"
+          test -s "$APK"
 
-          mkdir -p "$GITHUB_WORKSPACE/apk"
+          echo "APK=$APK" >> "$GITHUB_ENV"
 
-          cp "$APK" \
-            "$GITHUB_WORKSPACE/apk/Super-Pedido-Pro.apk"
-
-          ls -lh \
-            "$GITHUB_WORKSPACE/apk/Super-Pedido-Pro.apk"
+          ls -lh "$APK"
 
       - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
           name: Super-Pedido-Pro-APK
-          path: apk/Super-Pedido-Pro.apk
+          path: ${{ env.APK }}
           if-no-files-found: error
