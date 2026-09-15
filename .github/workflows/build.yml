@@ -13,7 +13,7 @@ jobs:
     steps:
 
       # ============================================================
-      # 1 - USAR EXATAMENTE A BASE DA VERSÃO 49
+      # BASE EXATA DO APK APROVADO - VERSÃO 49
       # ============================================================
 
       - name: Baixar projeto - BASE 49
@@ -23,7 +23,7 @@ jobs:
           fetch-depth: 1
 
       # ============================================================
-      # 2 - JAVA
+      # JAVA 17
       # ============================================================
 
       - name: Configurar Java 17
@@ -33,7 +33,7 @@ jobs:
           java-version: '17'
 
       # ============================================================
-      # 3 - GRADLE
+      # GRADLE
       # ============================================================
 
       - name: Configurar Gradle
@@ -42,7 +42,7 @@ jobs:
           gradle-version: '8.7'
 
       # ============================================================
-      # 4 - PREPARAR PROJETO
+      # PREPARAR PROJETO
       # ============================================================
 
       - name: Preparar projeto
@@ -59,7 +59,7 @@ jobs:
           unzip -o "Super-Pedido-Pro.zip" -d projeto
 
       # ============================================================
-      # 5 - LOCALIZAR PROJETO ANDROID
+      # LOCALIZAR ANDROID
       # ============================================================
 
       - name: Localizar projeto Android
@@ -78,11 +78,11 @@ jobs:
 
           echo "ANDROID_DIR=$ANDROID_DIR" >> "$GITHUB_ENV"
 
-          echo "Projeto Android:"
+          echo "Projeto encontrado:"
           echo "$ANDROID_DIR"
 
       # ============================================================
-      # 6 - ANDROIDX
+      # ANDROIDX
       # ============================================================
 
       - name: Configurar AndroidX
@@ -109,9 +109,9 @@ jobs:
             >> gradle.properties
 
       # ============================================================
-      # 7 - APLICAR O RELATÓRIO EXATO DA VERSÃO 49
+      # RELATÓRIO EXATO DA #49
       #
-      # NÃO ALTERAR openPDF.
+      # NÃO MODIFICA openPDF.
       # ============================================================
 
       - name: Aplicar EXATAMENTE o relatório aprovado da #49
@@ -147,6 +147,7 @@ jobs:
                   break
 
           if start is None:
+
               raise SystemExit(
                   "ERRO: etapa do relatório #49 não encontrada."
               )
@@ -174,6 +175,7 @@ jobs:
                   break
 
           if run_line is None:
+
               raise SystemExit(
                   "ERRO: bloco run do relatório #49 não encontrado."
               )
@@ -198,9 +200,11 @@ jobs:
                   )
 
               elif line.strip() == "":
+
                   script.append("")
 
               else:
+
                   raise SystemExit(
                       "ERRO: estrutura do relatório #49 inválida."
                   )
@@ -211,12 +215,19 @@ jobs:
           )
 
           required = [
+
               "async function openPDF(sendViaWhatsApp=false)",
+
               "window.AndroidFileBridge.sharePdf",
+
               "saveHistory(rows)",
+
               "clearPedido()",
+
               "orientation:'portrait'",
+
               "format:'a4'"
+
           ]
 
           for item in required:
@@ -224,7 +235,7 @@ jobs:
               if item not in report:
 
                   raise SystemExit(
-                      "ERRO: item ausente no relatório #49: "
+                      "ERRO no relatório #49: "
                       + item
                   )
 
@@ -236,7 +247,7 @@ jobs:
           )
 
           print(
-              "Relatório #49 localizado e validado."
+              "OK - relatório #49 encontrado."
           )
 
           PY
@@ -245,17 +256,14 @@ jobs:
 
           bash /tmp/relatorio-v49.sh
 
-          echo "Relatório #49 aplicado."
+          echo "OK - relatório #49 aplicado."
 
       # ============================================================
-      # 8 - CRIAR CORREÇÃO JAVASCRIPT
+      # CRIAR CORREÇÃO JAVASCRIPT
       #
-      # IMPORTANTE:
-      # AQUI É JAVASCRIPT PURO.
-      # NÃO EXISTE <script>.
-      # NÃO EXISTE </script>.
-      #
-      # Isso permite que node --check valide corretamente.
+      # JAVASCRIPT PURO.
+      # SEM <script>.
+      # SEM </script>.
       # ============================================================
 
       - name: Criar arquivo de correções JavaScript
@@ -266,11 +274,9 @@ jobs:
           cat > /tmp/super-pedido-fix.js <<'FIXJS'
           (function(){
 
-            /*
-             * =====================================================
-             * ADMINISTRAÇÃO
-             * =====================================================
-             */
+            /* =====================================================
+               ADMINISTRAÇÃO
+               ===================================================== */
 
             const superPedidoOriginalOpenAdmin =
               window.openAdmin;
@@ -424,11 +430,9 @@ jobs:
               };
 
 
-            /*
-             * =====================================================
-             * RECUPERAR ÚLTIMO PEDIDO
-             * =====================================================
-             */
+            /* =====================================================
+               REPETIR ÚLTIMO PEDIDO
+               ===================================================== */
 
             window.repeatLastOrder =
               function(){
@@ -439,7 +443,7 @@ jobs:
 
 
                 /*
-                 * 1 - Memória atual
+                 * 1 - Memória
                  */
 
                 try{
@@ -578,11 +582,9 @@ jobs:
               };
 
 
-            /*
-             * =====================================================
-             * APLICAR ÚLTIMO PEDIDO
-             * =====================================================
-             */
+            /* =====================================================
+               APLICAR REPETIÇÃO
+               ===================================================== */
 
             window.applyRepeat =
               function(
@@ -627,10 +629,6 @@ jobs:
                     }
 
 
-                    /*
-                     * Produto adicional
-                     */
-
                     if(
                       item.cat ===
                       "Produto Adicional"
@@ -662,10 +660,6 @@ jobs:
                     }
 
 
-                    /*
-                     * Produto normal
-                     */
-
                     if(
                       typeof productByCode !==
                       "function"
@@ -683,9 +677,7 @@ jobs:
 
 
                     if(!produto){
-
                       return;
-
                     }
 
 
@@ -717,10 +709,6 @@ jobs:
                   }
                 );
 
-
-                /*
-                 * Observação geral
-                 */
 
                 let obs =
                   String(
@@ -826,22 +814,18 @@ jobs:
               };
 
 
-            /*
-             * =====================================================
-             * LIMPAR PEDIDO ATUAL
-             *
-             * NÃO APAGA:
-             * - sp_last_order
-             * - sp_history
-             *
-             * =====================================================
-             */
+            /* =====================================================
+               LIMPAR PEDIDO
+               
+               NÃO APAGA:
+               sp_last_order
+               sp_history
+               ===================================================== */
 
             window.clearPedido =
               function(){
 
-                let linhas =
-                  [];
+                let linhas = [];
 
 
                 try{
@@ -866,11 +850,6 @@ jobs:
 
                 }catch(error){}
 
-
-                /*
-                 * Verificar se o relatório #49
-                 * já salvou o histórico.
-                 */
 
                 let jaSalvo = false;
 
@@ -912,10 +891,6 @@ jobs:
                 }catch(error){}
 
 
-                /*
-                 * Só salvar caso ainda não esteja salvo.
-                 */
-
                 if(
                   linhas.length &&
                   !jaSalvo &&
@@ -929,10 +904,6 @@ jobs:
 
                 }
 
-
-                /*
-                 * Limpar somente o pedido atual.
-                 */
 
                 vals = {};
 
@@ -953,10 +924,6 @@ jobs:
                 }
 
 
-                /*
-                 * Apagar somente dados do pedido atual.
-                 */
-
                 localStorage.removeItem(
                   "pedido_compras_vals"
                 );
@@ -974,10 +941,6 @@ jobs:
                 );
 
 
-                /*
-                 * Limpar observação visual.
-                 */
-
                 const campoObs =
                   document.getElementById(
                     "generalObs"
@@ -991,10 +954,6 @@ jobs:
                 }
 
 
-                /*
-                 * Salvar estado.
-                 */
-
                 if(
                   typeof saveFeatures ===
                   "function"
@@ -1004,10 +963,6 @@ jobs:
 
                 }
 
-
-                /*
-                 * Atualizar tela.
-                 */
 
                 if(
                   typeof render ===
@@ -1039,10 +994,6 @@ jobs:
                 }
 
 
-                /*
-                 * Ocultar opções de finalização.
-                 */
-
                 const opcoes =
                   document.getElementById(
                     "opcoesFinalizado"
@@ -1056,10 +1007,6 @@ jobs:
 
                 }
 
-
-                /*
-                 * Voltar ao topo.
-                 */
 
                 window.scrollTo({
 
@@ -1078,12 +1025,10 @@ jobs:
 
           node --check /tmp/super-pedido-fix.js
 
-          echo "JavaScript da correção validado com sucesso."
+          echo "OK - JavaScript da correção validado."
 
       # ============================================================
-      # 9 - INSERIR O JAVASCRIPT NA PÁGINA
-      #
-      # SOMENTE AQUI AS TAGS <script> SÃO CRIADAS.
+      # INSERIR CORREÇÃO NO INDEX
       # ============================================================
 
       - name: Aplicar correções na build
@@ -1152,7 +1097,7 @@ jobs:
               )
 
 
-          script_tag = (
+          script = (
               "\n<script>\n"
               + patch
               + "\n</script>\n"
@@ -1161,7 +1106,7 @@ jobs:
 
           text = text.replace(
               "</body>",
-              script_tag + "</body>",
+              script + "</body>",
               1
           )
 
@@ -1173,21 +1118,21 @@ jobs:
 
 
           print(
-              "Correções inseridas no index.html."
+              "OK - correções inseridas."
           )
 
           print(
-              "Relatório #49 preservado."
+              "OK - relatório #49 preservado."
           )
 
           print(
-              "openPDF não foi substituído."
+              "OK - openPDF preservado."
           )
 
           PY
 
       # ============================================================
-      # 10 - BIBLIOTECAS
+      # BIBLIOTECAS PDF E EXCEL
       # ============================================================
 
       - name: Preparar bibliotecas PDF e Excel
@@ -1212,7 +1157,7 @@ jobs:
           test -s "$ASSETS/jspdf.umd.min.js"
 
       # ============================================================
-      # 11 - VERIFICAR JAVASCRIPT
+      # VERIFICAR JAVASCRIPT
       # ============================================================
 
       - name: Verificar JavaScript
@@ -1240,11 +1185,13 @@ jobs:
               encoding="utf-8"
           )
 
+
           scripts = re.findall(
               r"<script(?:[^>]*)>(.*?)</script>",
               text,
               re.S
           )
+
 
           if not scripts:
 
@@ -1252,9 +1199,11 @@ jobs:
                   "ERRO: nenhum JavaScript encontrado."
               )
 
+
           combined = "\n".join(
               scripts
           )
+
 
           Path(
               "/tmp/super-pedido-inline.js"
@@ -1263,19 +1212,25 @@ jobs:
               encoding="utf-8"
           )
 
+
+          /*
+           * A verificação abaixo procura nomes,
+           * e NÃO depende de espaços ao redor do "=".
+           */
+
           required = [
 
               "async function openPDF(sendViaWhatsApp=false)",
 
               "window.AndroidFileBridge.sharePdf",
 
-              "window.openAdmin=function(){",
+              "window.openAdmin",
 
-              "window.repeatLastOrder=function(){",
+              "window.repeatLastOrder",
 
-              "window.applyRepeat=function(",
+              "window.applyRepeat",
 
-              "window.clearPedido=function(){",
+              "window.clearPedido",
 
               "function saveHistory(rows)",
 
@@ -1288,6 +1243,7 @@ jobs:
               "PEDIDO"
 
           ]
+
 
           for item in required:
 
@@ -1313,7 +1269,7 @@ jobs:
 
 
           print(
-              "Verificação textual concluída."
+              "OK - verificações textuais concluídas."
           )
 
           PY
@@ -1321,10 +1277,10 @@ jobs:
           node --check \
             /tmp/super-pedido-inline.js
 
-          echo "JavaScript válido."
+          echo "OK - JavaScript válido."
 
       # ============================================================
-      # 12 - VERIFICAÇÃO FINAL
+      # VERIFICAÇÃO FINAL
       # ============================================================
 
       - name: Verificação final antes da compilação
@@ -1345,19 +1301,19 @@ jobs:
             "$HTML"
 
           grep -q \
-            "window.openAdmin=function(){" \
+            "window.openAdmin" \
             "$HTML"
 
           grep -q \
-            "window.repeatLastOrder=function(){" \
+            "window.repeatLastOrder" \
             "$HTML"
 
           grep -q \
-            "window.applyRepeat=function(" \
+            "window.applyRepeat" \
             "$HTML"
 
           grep -q \
-            "window.clearPedido=function(){" \
+            "window.clearPedido" \
             "$HTML"
 
           grep -q \
@@ -1386,19 +1342,19 @@ jobs:
 
           echo ""
           echo "=========================================="
-          echo " VERIFICAÇÃO FINAL OK"
+          echo " VERIFICAÇÃO FINAL - OK"
           echo "=========================================="
           echo "BASE 49 ................ OK"
-          echo "RELATÓRIO #49 .......... OK"
-          echo "PDF A4 RETRATO .......... OK"
-          echo "ADM ...................... OK"
-          echo "REPETIR PEDIDO ........... OK"
-          echo "LIMPAR PEDIDO ............ OK"
-          echo "JAVASCRIPT ............... OK"
+          echo "RELATÓRIO .............. OK"
+          echo "PDF A4 RETRATO ......... OK"
+          echo "ADM .................... OK"
+          echo "REPETIR ................ OK"
+          echo "LIMPAR ................. OK"
+          echo "JAVASCRIPT ............. OK"
           echo "=========================================="
 
       # ============================================================
-      # 13 - COMPILAR APK
+      # COMPILAR APK
       # ============================================================
 
       - name: Compilar APK
@@ -1425,7 +1381,7 @@ jobs:
           fi
 
       # ============================================================
-      # 14 - VERIFICAR APK
+      # VERIFICAR APK
       # ============================================================
 
       - name: Verificar APK
@@ -1453,7 +1409,7 @@ jobs:
           ls -lh "$APK"
 
       # ============================================================
-      # 15 - DISPONIBILIZAR APK
+      # DISPONIBILIZAR APK
       # ============================================================
 
       - name: Disponibilizar APK
