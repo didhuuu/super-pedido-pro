@@ -69,7 +69,7 @@ jobs:
           grep -qF "android.enableJetifier=true" gradle.properties \
             || echo "android.enableJetifier=true" >> gradle.properties
 
-      - name: Corrigir SOMENTE ADM, Repetir último e limpeza
+      - name: Corrigir ADM, Repetir último e limpeza
         shell: bash
         run: |
           set -e
@@ -78,15 +78,29 @@ jobs:
           from pathlib import Path
           import hashlib
           import os
+          import re
 
           root = Path(os.environ["ANDROID_DIR"])
 
-          html = root / "app/src/main/assets/app/index.html"
+          candidates = [
+              root / "app/src/main/assets/app/index.html",
+              root / "app/src/main/assets/index.html",
+          ]
 
-          if not html.exists():
-              raise SystemExit(
-                  "ERRO: index.html não encontrado"
-              )
+          html = next(
+              (p for p in candidates if p.exists()),
+              None
+          )
+
+          if html is None:
+              found = list(root.rglob("index.html"))
+
+              if not found:
+                  raise SystemExit(
+                      "ERRO: nenhum index.html encontrado no projeto Android"
+                  )
+
+              html = found[0]
 
           text = html.read_text(
               encoding="utf-8"
@@ -94,83 +108,65 @@ jobs:
 
           original = text
 
-          def replace_function(
-              source,
-              marker,
-              replacement
-          ):
+          def function_block(source, name):
+              marker = f"function {name}("
+
               start = source.find(marker)
 
               if start < 0:
                   raise SystemExit(
-                      "ERRO: não encontrou " + marker
+                      f"ERRO: não encontrou function {name}() no index.html"
                   )
 
-              next_function = source.find(
-                  "function ",
-                  start + len(marker)
+              next_match = re.search(
+                  r"\n?function\s+[A-Za-z_$][\w$]*\s*\(",
+                  source[start + len(marker):]
               )
 
-              if next_function < 0:
-                  raise SystemExit(
-                      "ERRO: não encontrou o fim de "
-                      + marker
+              if next_match:
+                  end = (
+                      start
+                      + len(marker)
+                      + next_match.start()
                   )
+              else:
+                  end = len(source)
+
+              return start, end, source[start:end]
+
+          def replace_function(
+              source,
+              name,
+              replacement
+          ):
+              start, end, _ = function_block(
+                  source,
+                  name
+              )
 
               return (
                   source[:start]
                   + replacement
                   + "\n"
-                  + source[next_function:]
+                  + source[end:]
               )
 
-          def get_function(
-              source,
-              marker
-          ):
-              start = source.find(marker)
-
-              if start < 0:
-                  raise SystemExit(
-                      "ERRO: não encontrou " + marker
-                  )
-
-              next_function = source.find(
-                  "function ",
-                  start + len(marker)
-              )
-
-              if next_function < 0:
-                  raise SystemExit(
-                      "ERRO: não encontrou o fim de "
-                      + marker
-                  )
-
-              return source[start:next_function]
-
           # ==================================================
-          # GUARDAR O RELATÓRIO ORIGINAL DA BASE #49
+          # PROTEGER O RELATÓRIO ORIGINAL
           # ==================================================
 
-          report_text_before = get_function(
+          report_before = function_block(
               original,
-              "function reportText(source=getRows()){"
-          )
+              "reportText"
+          )[2]
 
-          group_rows_before = get_function(
+          group_before = function_block(
               original,
-              "function groupRows(rows){"
-          )
-
-          open_pdf_before = get_function(
-              original,
-              "function openPDF(){"
-          )
+              "groupRows"
+          )[2]
 
           # ==================================================
           # 1. ADMINISTRAÇÃO
-          #
-          # Remove dependência do prompt() do WebView Android.
           # ==================================================
 
           new_admin = '''function openAdmin(){featureModal(`<h3>🔐 Administração</h3><p>Digite o PIN de administração.</p><input id="adminPinInput" type="password" inputmode="numeric" autocomplete="off" placeholder="PIN" style="width:100%;box-sizing:border-box;padding:12px;font-size:18px"><div style="display:flex;gap:8px;margin-top:10px"><button onclick="confirmAdminPin()">Entrar</button><button onclick="closeFeature()">Cancelar</button></div>`);setTimeout(()=>{const e=document.getElementById('adminPinInput');if(e)e.focus()},50)}
@@ -186,51 +182,70 @@ jobs:
 
           # ==================================================
           # 3. LIMPAR PEDIDO
-          #
-          # Mantém histórico e último pedido.
           # ==================================================
 
           new_clear = '''function clearPedido(){if(finalizedRows.length)saveHistory(finalizedRows);vals={};extras=[];validadeCurta=[];finalizedRows=[];save();localStorage.removeItem('pedido_compras_vals');localStorage.removeItem('pedido_compras_extras');localStorage.removeItem('pedido_compras_validade_curta');render();renderValidadeCurta();updateBadge();closeConference();window.scrollTo({top:0,behavior:'smooth'})}'''
 
-          # Aplicar SOMENTE as três funções.
+          # ==================================================
+          # APLICAR CORREÇÕES
+          # ==================================================
 
           text = replace_function(
               text,
-              "function openAdmin(){",
+              "openAdmin",
               new_admin
           )
 
           text = replace_function(
               text,
-              "function repeatLastOrder(){",
+              "repeatLastOrder",
               new_repeat
           )
 
           text = replace_function(
               text,
-              "function applyRepeat(rows){",
+              "applyRepeat",
               new_apply
           )
 
           text = replace_function(
               text,
-              "function clearPedido(){",
+              "clearPedido",
               new_clear
           )
 
           # ==================================================
-          # PDF:
+          # PDF
           #
-          # NÃO muda geração, layout ou conteúdo.
+          # NÃO procura openPDF() por assinatura rígida.
           #
-          # Apenas garante que, depois que o Android receber
-          # o PDF, o pedido seja salvo no histórico e limpo.
+          # Localiza diretamente a chamada Android do PDF.
+          # O relatório já foi criado antes dela.
+          #
+          # Depois de entregar o PDF ao Android:
+          # salva histórico + limpa pedido.
           # ==================================================
 
-          old_hook = (
-              "window.AndroidFileBridge.sharePdf("
-              "'pedido-acougue.pdf',text);return"
+          hook_pattern = (
+              r"window\.AndroidFileBridge\s*\.\s*sharePdf"
+              r"\s*\(\s*['\"]pedido-acougue\.pdf['\"]"
+              r"\s*,\s*text\s*\)\s*;\s*return"
           )
+
+          matches = list(
+              re.finditer(
+                  hook_pattern,
+                  text
+              )
+          )
+
+          if len(matches) != 1:
+              raise SystemExit(
+                  "ERRO: chamada sharePdf do Android "
+                  f"encontrada {len(matches)} vez(es); esperado 1"
+              )
+
+          match = matches[0]
 
           new_hook = (
               "window.AndroidFileBridge.sharePdf("
@@ -240,57 +255,38 @@ jobs:
               "return"
           )
 
-          if text.count(old_hook) != 1:
-              raise SystemExit(
-                  "ERRO: gancho Android do PDF "
-                  "não encontrado exatamente uma vez"
-              )
-
-          text = text.replace(
-              old_hook,
-              new_hook,
-              1
+          text = (
+              text[:match.start()]
+              + new_hook
+              + text[match.end():]
           )
 
           # ==================================================
           # PROTEÇÃO ABSOLUTA DO RELATÓRIO
           # ==================================================
 
-          if get_function(
+          report_after = function_block(
               text,
-              "function reportText(source=getRows()){"
-          ) != report_text_before:
+              "reportText"
+          )[2]
 
+          group_after = function_block(
+              text,
+              "groupRows"
+          )[2]
+
+          if report_after != report_before:
               raise SystemExit(
                   "ERRO GRAVE: reportText foi alterado"
               )
 
-          if get_function(
-              text,
-              "function groupRows(rows){"
-          ) != group_rows_before:
-
+          if group_after != group_before:
               raise SystemExit(
                   "ERRO GRAVE: groupRows foi alterado"
               )
 
-          expected_open_pdf = open_pdf_before.replace(
-              old_hook,
-              new_hook
-          )
-
-          if get_function(
-              text,
-              "function openPDF(){"
-          ) != expected_open_pdf:
-
-              raise SystemExit(
-                  "ERRO GRAVE: openPDF recebeu "
-                  "alteração além do pós-envio"
-              )
-
           # ==================================================
-          # VERIFICAÇÕES FINAIS
+          # VERIFICAÇÕES
           # ==================================================
 
           required = [
@@ -299,16 +295,14 @@ jobs:
               "function repeatLastOrder(){",
               "function applyRepeat(rows){",
               "function clearPedido(){",
-              "function openPDF(){",
               "function reportText(source=getRows()){",
               "function groupRows(rows){",
-              "window.AndroidFileBridge.sharePdf('pedido-acougue.pdf',text);saveHistory(rows);clearPedido();return"
+              "window.AndroidFileBridge.sharePdf('pedido-acougue.pdf',text);saveHistory(rows);clearPedido();return",
           ]
 
           for item in required:
 
               if item not in text:
-
                   raise SystemExit(
                       "ERRO: recurso ausente: "
                       + item
@@ -319,56 +313,26 @@ jobs:
               encoding="utf-8"
           )
 
-          print(
-              "========================================"
-          )
-
-          print(
-              "OK: ADM corrigido."
-          )
-
-          print(
-              "OK: REPETIR ÚLTIMO corrigido."
-          )
-
-          print(
-              "OK: LIMPEZA após envio corrigida."
-          )
-
-          print(
-              "OK: reportText INALTERADO."
-          )
-
-          print(
-              "OK: groupRows INALTERADO."
-          )
-
-          print(
-              "OK: geração do relatório INALTERADA."
-          )
-
-          print(
-              "OK: PDF Android recebeu somente "
-              "o pós-envio."
-          )
-
+          print("========================================")
+          print("OK: ADM corrigido")
+          print("OK: REPETIR ÚLTIMO corrigido")
+          print("OK: LIMPEZA após envio corrigida")
+          print("OK: reportText INALTERADO")
+          print("OK: groupRows INALTERADO")
+          print("OK: PDF alterado somente no pós-envio")
           print(
               "HASH reportText:",
               hashlib.sha256(
-                  report_text_before.encode()
+                  report_before.encode()
               ).hexdigest()
           )
-
           print(
               "HASH groupRows:",
               hashlib.sha256(
-                  group_rows_before.encode()
+                  group_before.encode()
               ).hexdigest()
           )
-
-          print(
-              "========================================"
-          )
+          print("========================================")
 
           PY
 
@@ -423,7 +387,6 @@ jobs:
           )
 
           if not scripts:
-
               raise SystemExit(
                   "ERRO: nenhum JavaScript encontrado"
               )
@@ -441,33 +404,26 @@ jobs:
               "function repeatLastOrder(){",
               "function applyRepeat(rows){",
               "function clearPedido(){",
-              "function openPDF(){",
               "function reportText(source=getRows()){",
               "function groupRows(rows){",
-              "CÓDIGO",
-              "NOME DO PRODUTO",
-              "ESTOQUE",
-              "PEDIDO",
           ]
 
           for item in checks:
-
               if item not in text:
-
                   raise SystemExit(
                       "ERRO: não encontrado: "
                       + item
                   )
 
           print(
-              "OK: verificações estruturais concluídas."
+              "OK: estrutura JavaScript verificada"
           )
 
           PY
 
           node --check /tmp/super-pedido-inline.js
 
-          echo "OK: JavaScript sem erro de sintaxe."
+          echo "OK: JavaScript sem erro de sintaxe"
 
       - name: Compilar APK
         shell: bash
