@@ -13,7 +13,7 @@ jobs:
     steps:
 
       # ==========================================================
-      # BASE EXATA DA VERSÃO 49
+      # BASE EXATA DA VERSÃO #49
       # ==========================================================
 
       - name: Baixar projeto - BASE #49
@@ -82,8 +82,7 @@ jobs:
             || echo "android.enableJetifier=true" >> gradle.properties
 
       # ==========================================================
-      # RELATÓRIO:
-      # EXECUTA EXATAMENTE O BLOCO DA VERSÃO 49
+      # RELATÓRIO EXATO DA VERSÃO #49
       # NÃO REESCREVE O RELATÓRIO
       # ==========================================================
 
@@ -91,8 +90,6 @@ jobs:
         shell: bash
         run: |
           set -e
-
-          echo "Obtendo o build.yml original da versão #49..."
 
           git show HEAD:.github/workflows/build.yml \
             > /tmp/build-v49.yml
@@ -103,7 +100,9 @@ jobs:
           from pathlib import Path
           import re
 
-          source = Path("/tmp/build-v49.yml").read_text(
+          source = Path(
+              "/tmp/build-v49.yml"
+          ).read_text(
               encoding="utf-8"
           )
 
@@ -112,75 +111,120 @@ jobs:
           inicio = None
 
           for i, line in enumerate(lines):
-              if line.strip() == "- name: Alterar SOMENTE o relatório":
+
+              if line.strip() == \
+                  "- name: Alterar SOMENTE o relatório":
+
                   inicio = i
                   break
 
           if inicio is None:
+
               raise SystemExit(
-                  "ERRO: etapa 'Alterar SOMENTE o relatório' não encontrada na #49."
+                  "ERRO: etapa do relatório #49 não encontrada."
               )
 
           run_line = None
 
-          for i in range(inicio + 1, len(lines)):
-              if re.match(r"^        run:\s*\|\s*$", lines[i]):
+          for i in range(
+              inicio + 1,
+              len(lines)
+          ):
+
+              if re.match(
+                  r"^        run:\s*\|\s*$",
+                  lines[i]
+              ):
+
                   run_line = i
                   break
 
-              if re.match(r"^      - name:", lines[i]):
+              if re.match(
+                  r"^      - name:",
+                  lines[i]
+              ):
+
                   break
 
           if run_line is None:
+
               raise SystemExit(
-                  "ERRO: bloco run do relatório da #49 não encontrado."
+                  "ERRO: bloco run do relatório #49 não encontrado."
               )
 
           script = []
 
-          for i in range(run_line + 1, len(lines)):
+          for i in range(
+              run_line + 1,
+              len(lines)
+          ):
 
               line = lines[i]
 
-              if re.match(r"^      - name:", line):
+              if re.match(
+                  r"^      - name:",
+                  line
+              ):
+
                   break
 
-              if line.startswith("          "):
-                  script.append(line[10:])
+              if line.startswith(
+                  "          "
+              ):
+
+                  script.append(
+                      line[10:]
+                  )
 
               elif line.strip() == "":
+
                   script.append("")
 
               else:
+
                   raise SystemExit(
-                      "ERRO: estrutura inesperada dentro do relatório #49."
+                      "ERRO: estrutura inesperada no relatório #49."
                   )
 
-          report_script = "\n".join(script).rstrip() + "\n"
+          report_script = (
+              "\n".join(script).rstrip()
+              + "\n"
+          )
 
           required = [
+
               "async function openPDF(sendViaWhatsApp=false)",
+
               "orientation:'portrait'",
+
               "format:'a4'",
+
               "window.AndroidFileBridge.sharePdf",
+
               "saveHistory(rows)",
+
               "clearPedido()"
+
           ]
 
           for item in required:
+
               if item not in report_script:
+
                   raise SystemExit(
-                      "ERRO: parte do relatório #49 não encontrada: "
+                      "ERRO: parte do relatório #49 ausente: "
                       + item
                   )
 
-          Path("/tmp/relatorio-v49.sh").write_text(
+          Path(
+              "/tmp/relatorio-v49.sh"
+          ).write_text(
               report_script,
               encoding="utf-8"
           )
 
           print(
-              "OK: relatório da #49 localizado integralmente."
+              "OK: relatório EXATO da #49 localizado."
           )
 
           PY
@@ -189,19 +233,27 @@ jobs:
 
           bash /tmp/relatorio-v49.sh
 
-          echo "OK: relatório #49 executado sem alteração."
+          echo "OK: relatório #49 aplicado."
 
       # ==========================================================
-      # CORREÇÕES SOLICITADAS
+      # PATCH DAS CORREÇÕES
       #
-      # 1 - ADM
-      # 2 - REPETIR ÚLTIMO PEDIDO
-      # 3 - ZERAR PEDIDO APÓS ENVIO
+      # ADM
+      # REPETIR ÚLTIMO PEDIDO
+      # ZERAR PEDIDO
       #
-      # NÃO ALTERA openPDF
+      # O CÓDIGO JAVASCRIPT É TRANSPORTADO EM BASE64.
+      # ASSIM NÃO EXISTE <script> SOLTO NO YAML.
       # ==========================================================
 
-      - name: Corrigir ADM, Repetir último e zerar após envio
+      - name: Preparar correções
+        shell: bash
+        run: |
+          set -e
+
+          echo 'PATCH_B64=PHNjcmlwdD4KKGZ1bmN0aW9uKCl7CiAgY29uc3Qgb3JpZ2luYWxPcGVuQWRtaW49d2luZG93Lm9wZW5BZG1pbjsKCiAgd2luZG93Lm9wZW5BZG1pbj1mdW5jdGlvbigpewogICAgaWYodHlwZW9mIGZlYXR1cmVNb2RhbCE9PSJmdW5jdGlvbiJ8fHR5cGVvZiBvcmlnaW5hbE9wZW5BZG1pbjwhPSJmdW5jdGlvbiIpewogICAgICBhbGVydCgiQWRtaW5pc3RyYcOnw6NvIGluZGlzcG9uw612ZWwuIik7CiAgICAgIHJldHVybjsKICAgIH0KICAgIGZlYXR1cmVNb2RhbChgCiAgICAgIDxoMz7wn5SKIEFkbWluaXN0cmHDp8OjbyA8L2gzPgogICAgICA8cD5EaWdpdGUgbyBQSUSigJQgZGUgYWRtaW5pc3RyYcOnw6NvLjwvcD4KICAgICAgPGlucHV0IGlkPSJzdXBlclBlZGlkb0FkbWluUGluIiB0eXBlPSJwYXNzd29yZCIgaW5wdXRtb2RlPSJudW1lcmljIiBhdXRvY29tcGxldGU9Im9mZiIgcGxhY2Vob2xkZXI9IlBJTiIgc3R5bGU9IndpZHRoOjEwMCU7Ym94LXNpemluZzpib3JkZXItYm94O3BhZGRpbmc6MTJweDtmb250LXNpemU6MThweCI+CiAgICAgIDxidXR0b24gY2xhc3M9InByaW1hcnkiIG9uY2xpY2s9InN1cGVyUGVkaWRvQ29uZmlybWFyQWRtaW4oKSI+RW50cmFyPC9idXR0b24+CiAgICAgIDxidXR0b24gb25jbGljaz0iY2xvc2VGZWF0dXJlKCkiPkNhbmNlbGFyPC9idXR0b24+CiAgICBgKTsKICAgIHNldFRpbWVvdXQoKCk9PnsKICAgICAgY29uc3QgaW5wdXQ9ZG9jdW1lbnQuZ2V0RWxlbWVudEJ5SWQoInN1cGVyUGVkaWRvQWRtaW5QaW4iKTsKICAgICAgaWYoaW5wdXQpewogICAgICAgIGlucHV0LmZvY3VzKCk7CiAgICAgICAgaW5wdXQuYWRkRXZlbnRMaXN0ZW5lcigia2V5ZG93biIsZT0+e2lmKGUua2V5PT09IkVudGVyIilzdXBlclBlZGlkb0NvbmZpcm1hckFkbWluKCk7fSk7CiAgICAgIH0KICAgIH0sMTAwKTsKICB9OwoKCiAgd2luZG93LnN1cGVyUGVkaWRvQ29uZmlybWFyQWRtaW49ZnVuY3Rpb24oKXsKICAgIGNvbnN0IGlucHV0PWRvY3VtZW50LmdldEVsZW1lbnRCeUlkKCJzdXBlclBlZGlkb0FkbWluUGluIik7CiAgICBjb25zdCBwaW49aW5wdXQ/U3RyaW5nKGlucHV0LnZhbHVlfHwiIik6IiI7CiAgICBjb25zdCBzYXZlZD1sb2NhbFN0b3JhZ2UuZ2V0SXRlbSgic3BfYWRtaW5fcGluIil8fCIxMjM0IjsKICAgIGlmKHBpbiE9PXNhdmVkKXsKICAgICAgYWxlcnQoIlBJTiBpbmNvcnJldG8uIik7CiAgICAgIGlmKGlucHV0KXtpbnB1dC52YWx1ZT0iIjtpbnB1dC5mb2N1cygpO30KICAgICAgcmV0dXJuOwogICAgfQogICAgY29uc3Qgb2xkUHJvbXB0PXdpbmRvdy5wcm9tcHQ7CiAgICB3aW5kb3cucHJvbXB0PSh8KT0+cGluOwogICAgdHJ5e29yaWdpbmFsT3BlbkFkbWluLmNhbGwo d2luZG93KTt9ZmluYWxseXt3aW5kb3cucHJvbXB0PW9sZFByb21wdDt9CiAgfTsKCiAgd2luZG93LnJlcGVhdExhc3RPcmRlcj1mdW5jdGlvbigpewogICAgbGV0IHJvd3M9W107CiAgICBsZXQgb2JzZXJ2YXRpb249IiI7CiAgICB0cnl7CiAgICAgIGlmKHR5cGVvZiBsYXN0T3JkZXIhPT0idW5kZWZpbmVkIiYmQXJyYXkuaXNBcnJheShsYXN0T3JkZXIpJiZsYXN0T3JkZXIubGVuZ3RoKXJvd3M9SlNPTi5wYXJzZShKU09OLnN0cmluZ2lmeShsYXN0T3JkZXIpKX0KICAgIGNhdGNoKGUpe30KICAgIGlmKCFyb3dzLmxlbmd0aCl7CiAgICAgIHRyeXsKICAgICAgICBjb25zdCBzYXZlZD1sb2NhbFN0b3JhZ2UuZ2V0SXRlbSgic3BfbGFzdF9vcmRlciIpOwogICAgICAgIGNvbnN0IHBhcnNlZD1zYXZlZD9KU09OLnBhcnNlKHNhdmVkKTpbXTsKICAgICAgICBpZihBcnJheS5pc0FycmF5KHBhcnNlZCl8fHxhcnJheS5sZW5ndGgpe3Jvd3M9cGFyc2VkO2xhc3RPcmRlcj1KU09OLnBhcnNlKEpTT04uc3RyaW5naWZ5KHBhcnNlZCkpO30KICAgICAgfWNhdGNoKGUpe30KICAgIH0KICAgIGlmKCFyb3dzLmxlbmd0aCYmdHlwZW9mIGhpc3RvcnlPcmRlcnMhPT0idW5kZWZpbmVkIiYmQXJyYXkuaXNBcnJheShoaXN0b3J5T3JkZXJzKSYmaGlzdG9yeU9yZGVycy5sZW5ndGgpewogICAgICBjb25zdCBoPWhpc3RvcnlPcmRlcnNbMF07CiAgICAgIGlmKGgmJkFycmF5LmlzQXJyYXkoaC5yb3dzKSYmaC5yb3dzLmxlbmd0aCl7cm93cz1KU09OLnBhcnNlKEpTT04uc3RyaW5naWZ5KGgucm93cykpO29ic2VydmF0aW9uPWhnZW5lcmFsT2JzZXJ2YXRpb258fCIiO30KICAgIH0KICAgIGlmKCFyb3dzLmxlbmd0aCl7YWxlcnQoIkFpbmRhIG7Do28gZXhpc3RlIMO6bHRpbW8gcGVkaWRvLiIpO3JldHVybjt9CiAgICB3aW5kb3cuYXBwbHlSZXBlYXQocm93cyxvYnNlcnZhdGlvbik7CiAgfTsKCiAgd2luZG93LmFwcGx5UmVwZWF0PWZ1bmN0aW9uKHJvd3Msb2JzZXJ2YXRpb24pewogICAgaWYoIUFycmF5LmlzQXJyYXkocm93cyl8fCFyb3dzLmxlbmd0aCl7YWxlcnQoIk7Do28gZm9pIHBvc3PDrcOtbCBpbXBvcnRhciBvIMO6bHRpbW8gcGVkaWRvLiIpO3JldHVybjt9CiAgICB2YWxzPXt9O2V4dHJhcz1bXTsKICAgIGlmKHR5cGVvZiB2YWxpZGFkZUN1cnRhIT09InVuZGVmaW5lZCIpIHZhbGlkYWRlQ3VydGE9W107CiAgICByb3dzLmZvckVhY2goeD0+ewogICAgICBpZigheClyZXR1cm47CiAgICAgIGlmKHguY2F0PT09IlByb2R1dG8gQWRpY2lvbmFsIil7ZXh0cmFzLnB1c2goe2NvZGU6eC5jb2RlPT09Ii0iPyIiOlN0cmluZyh4LmNvZGV8fCIiKSxuYW1lOlN0cmluZyh4Lm5hbWV8fCIiKSxxdHk6TnVtYmVyKHgub3JkZXJ8fDApfTtyZXR1cm47fQogICAgICBpZih0eXBlb2YgcHJvZHVjdEJ5Q29kZSE9PSJmdW5jdGlvbiIpcmV0dXJuOwogICAgICBjb25zdCBmPXByb2R1Y3RCeUNvZGUoeC5jb2RlKTsKICAgICAgaWYoIWYpcmV0dXJuOwogICAgICB2YWxzW2tleShmLmMsZi5zLGYuaSwibyIpXT1OdW1iZXIoeC5vcmRlcil8fDA7CiAgICAgIHZhbHNba2V5KGYuYyxmLnMsZi5pLCJzIildPU51bWJlcih4LnN0b2NrfHwwKTsKICAgIH0pOwogICAgZ2VuZXJhbE9ic2VydmF0aW9uPVN0cmluZyhPYnNlcnZhdGlvbnx8IiIpOwogICAgY29uc3QgY2FtcG89ZG9jdW1lbnQuZ2V0RWxlbWVudEJ5SWQoImdlbmVyYWxPYnMiKTsKICAgIGlmKGNhbXBvKWNhbXBvLnZhbHVlPWdlbmVyYWxPYnNlcnZhdGlvbjsKICAgIGlmKHR5cGVvZiBzYXZlPT09ImZ1bmN0aW9uIilzYXZlKCk7CiAgICBpZih0eXBlb2Ygc2F2ZUZlYXR1cmVzPT09ImZ1bmN0aW9uIilzYXZlRmVhdHVyZXMoKTsKICAgIGlmKHR5cGVvZiByZW5kZXI9PT0iZnVuY3Rpb24iKXJlbmRlcigpOwogICAgaWYodHlwZW9mIHJlbmRlclZhbGlkYWRlQ3VydGE9PT0iZnVuY3Rpb24iKXJlbmRlclZhbGlkYWRlQ3VydGEoKTsKICAgIGlmKHR5cGVvZiB1cGRhdGVCYWRnZT09PSJmdW5jdGlvbiIpdXBkYXRlQmFkZ2UoKTsKICAgIGlmKHR5cGVvZiBjbG9zZUZlYXR1cmU9PT0iZnVuY3Rpb24iKWNsb3NlRmVhdHVyZSgpOwogICAgYWxlcnQoIsOelSBUbHRpbW8gcGVkaWRvIHJlY3VwZXJhZG8uIENvbmZpcmEgc2V1cyBkYWRvcyBhbnRlcyBkZSBlbnZpYXIuIik7CiAgfTsKCiAgd2luZG93LmNsZWFyUGVkaWRvPWZ1bmN0aW9uKCl7CiAgICBsZXQgcm93cz1bXTsKICAgIHRyeXt pZih0eXBlb2YgZmluYWxpemVkUm93cyE9PSJ1bmRlZmluZWQiJiZBcnJheS5pc0FycmF5KGZpbmFsaXplZFJvd3MpJiZmaW5hbGl6ZWRSb3dzLmxlbmd0aClyb3dzPUpTT04ucGFyc2UoSlNPTi5zdHJpbmdpZnkoZmluYWxpemVkUm93cykpO31jYXRjaChlKXt9CiAgICBsZXQgZHVwbGljYXRlPWZhbHNlOwogICAgdHJ5ewogICAgICBpZihyb3dzLmxlbmd0aCYmdHlwZW9mIGhpc3RvcnlPcmRlcnMhPT0idW5kZWZpbmVkIiYmQXJyYXkuaXNBcnJheShIaXN0b3J5T3JkZXJzKSYmaGlzdG9yeU9yZGVycy5sZW5ndGgpewogICAgICAgIGNvbnN0IGg9aGlzdG9yeU9yZGVyc1swXTsKICAgICAgICBkdXBsaWNhdGU9ISFoJkFycmF5LmlzQXJyYXkoaC5yb3dzKSYmSlNPTi5zdHJpbmdpZnkoaC5yb3dzKT09PVNPTi5zdHJpbmdpZnkyKHJvd3MpOwogICAgICB9CiAgICB9Y2F0Y2goZSl7fQogICAgaWYocm93cy5sZW5ndGgmJCFkdXBsaWNjYXRlJiZ0eXBlb2Ygc2F2ZUhpc3Rvcnk9PT0iZnVuY3Rpb24iKXNhdmVIaXN0b3J5KHJvd3MpOwogICAgdmFscz17fTtleHRyYXM9W107ZmluYWxpemVkUm93cz1bXTtnZW5lcmFsT2JzZXJ2YXRpb249IiI7CiAgICBpZih0eXBlb2YgdmFsaWRhZGVDdXJ0YSE9PSJ1bmRlZmluZWQiKXZhbGlkYWRlQ3VydGE9W107CiAgICBsb2NhbFN0b3JhZ2UucmVtb3ZlSXRlbSgicGVkaWRvX2NvbXByYXNfdmFscyIpOwogICAgbG9jYWxTdG9yYWdlLnJlbW92ZUl0ZW0oInBlZG  aWRvX2NvbXByYXNfZXh0cmFzIik7CiAgICBsb2NhbFN0b3JhZ2UucmVtb3ZlSXRlbSgicGVkaWRvX2NvbXByYXNfdmFsaWRhZGVfY3VydGEiKTsKICAgIGxvY2FsU3RvcmFnZS5yZW1vdmVJdGVtKCJzcF9nZW5lcmFsX29icyIpOwogICAgY29uc3Qg b2JzPWRvY3VtZW50LmdldEVsZW1lbnRCeUlkKCJnZW5lcmFsT2JzIik7CiAgICBpZihvYnMpb2JzLnZhbHVlPSIiOwogICAgc2F2ZUZlYXR1cmVzKCk7CiAgICBpZih0eXBlb2YgcmVuZGVyPT09ImZ1bmN0aW9uIilyZW5kZXIoKTsKICAgIGlmKHR5cGVvZiByZW5kZXJWYWxpZGFkZUN1cnRhPT09ImZ1bmN0aW9uIilyZW5kZXJWYWxpZGFkZUN1cnRhKCk7CiAgICBpZih0eXBlb2YgdXBkYXRlQmFkZ2U9PT0iZnVuY3Rpb24iKXVwZGF0ZUJhZGdlKCk7CiAgICBjb25zdCBvcD1kb2N1bWVudC5nZXRFbGVtZW50QnlJZCgib3Bjb2VzRmluYWxpemFkbyIpOwogICAgaWYob3Ayb3Au c3R5bGUuZGlzcGxheT0ibm9uZSI7CiAgICBkb2N1bWVudC5xdWVyeVNlbGVjdG9yQWxsKCJpbnB1dC5xdHkiKS5mb3JFYWNoKGVsPT5lbC52YWx1ZT0iMCIpOwogICAgd2luZG93LnNjcm9sbFRvKHt0b3A6MCxiZWhhdmlvcjoi c21vb3RoIn0pOwogIH07Cn0pOwo8L3NjcmlwdD4=' >> "$GITHUB_ENV"
+
+      - name: Aplicar correções
         shell: bash
         run: |
           set -e
@@ -211,11 +263,14 @@ jobs:
           test -f "$HTML"
 
           python3 - <<'PY'
-          from pathlib import Path
+          import base64
           import os
+          from pathlib import Path
 
           html = (
-              Path(os.environ["ANDROID_DIR"])
+              Path(
+                  os.environ["ANDROID_DIR"]
+              )
               / "app/src/main/assets/app/index.html"
           )
 
@@ -223,868 +278,42 @@ jobs:
               encoding="utf-8"
           )
 
-          patch = r'''
-<script>
-(function(){
-
-  /* ==========================================================
-     CORREÇÃO ADM
-     Mantém toda a administração original da #49.
-     Apenas substitui o primeiro prompt por uma tela própria.
-     ========================================================== */
-
-  const __superPedidoOpenAdminOriginal =
-    window.openAdmin;
-
-  window.openAdmin = function(){
-
-    if(
-      typeof featureModal !== "function" ||
-      typeof __superPedidoOpenAdminOriginal !== "function"
-    ){
-
-      alert("Administração indisponível.");
-
-      return;
-    }
-
-    featureModal(`
-
-      <h3>🔐 Administração</h3>
-
-      <p>
-        Digite o PIN de administração.
-      </p>
-
-      <input
-        id="superPedidoAdminPin"
-        type="password"
-        inputmode="numeric"
-        autocomplete="off"
-        placeholder="PIN"
-        style="
-          width:100%;
-          box-sizing:border-box;
-          padding:12px;
-          font-size:18px;
-          margin-bottom:10px;
-        "
-      >
-
-      <button
-        class="primary"
-        onclick="superPedidoConfirmarAdmin()"
-      >
-        Entrar
-      </button>
-
-      <button
-        onclick="closeFeature()"
-      >
-        Cancelar
-      </button>
-
-    `);
-
-    setTimeout(function(){
-
-      const input =
-        document.getElementById(
-          "superPedidoAdminPin"
-        );
-
-      if(!input){
-        return;
-      }
-
-      input.focus();
-
-      input.addEventListener(
-        "keydown",
-        function(event){
-
-          if(event.key === "Enter"){
-
-            superPedidoConfirmarAdmin();
-
-          }
-
-        }
-      );
-
-    },100);
-
-  };
-
-
-  window.superPedidoConfirmarAdmin = function(){
-
-    const input =
-      document.getElementById(
-        "superPedidoAdminPin"
-      );
-
-    const pin =
-      input
-      ? String(input.value || "")
-      : "";
-
-    const saved =
-      localStorage.getItem(
-        "sp_admin_pin"
-      ) || "1234";
-
-    if(pin !== saved){
-
-      alert(
-        "PIN incorreto."
-      );
-
-      if(input){
-
-        input.value = "";
-
-        input.focus();
-
-      }
-
-      return;
-
-    }
-
-    /*
-     * A função original da #49 contém toda a administração.
-     *
-     * Para não duplicar nem modificar essa administração,
-     * interceptamos temporariamente o prompt original.
-     */
-
-    const promptOriginal =
-      window.prompt;
-
-    window.prompt = function(){
-
-      return pin;
-
-    };
-
-    try{
-
-      __superPedidoOpenAdminOriginal.call(
-        window
-      );
-
-    }finally{
-
-      window.prompt =
-        promptOriginal;
-
-    }
-
-  };
-
-
-  /* ==========================================================
-     CORREÇÃO REPETIR ÚLTIMO PEDIDO
-     ========================================================== */
-
-  window.repeatLastOrder = function(){
-
-    try{
-
-      let rows = [];
-
-      /*
-       * Primeiro tenta a memória atual.
-       */
-
-      if(
-        typeof lastOrder !== "undefined" &&
-        Array.isArray(lastOrder) &&
-        lastOrder.length
-      ){
-
-        rows =
-          JSON.parse(
-            JSON.stringify(
-              lastOrder
-            )
-          );
-
-      }
-
-      /*
-       * Depois tenta o localStorage.
-       */
-
-      if(!rows.length){
-
-        try{
-
-          const saved =
-            localStorage.getItem(
-              "sp_last_order"
-            );
-
-          if(saved){
-
-            const parsed =
-              JSON.parse(
-                saved
-              );
-
-            if(
-              Array.isArray(parsed) &&
-              parsed.length
-            ){
-
-              rows = parsed;
-
-            }
-
-          }
-
-        }catch(e){
-
-          rows = [];
-
-        }
-
-      }
-
-      /*
-       * Último recurso:
-       * primeiro item do histórico.
-       */
-
-      let observation = "";
-
-      if(
-        !rows.length &&
-        typeof historyOrders !== "undefined" &&
-        Array.isArray(historyOrders) &&
-        historyOrders.length
-      ){
-
-        const ultimo =
-          historyOrders[0];
-
-        if(
-          ultimo &&
-          Array.isArray(
-            ultimo.rows
+          encoded = os.environ[
+              "PATCH_B64"
+          ]
+
+          patch = base64.b64decode(
+              encoded
+          ).decode(
+              "utf-8"
           )
-        ){
 
-          rows =
-            JSON.parse(
-              JSON.stringify(
-                ultimo.rows
+          if (
+              "async function openPDF(sendViaWhatsApp=false)"
+              not in text
+          ):
+
+              raise SystemExit(
+                  "ERRO: relatório #49 não encontrado."
               )
-            );
 
-          observation =
-            String(
-              ultimo.generalObservation || ""
-            );
-
-        }
-
-      }
-
-      if(!rows.length){
-
-        alert(
-          "Ainda não existe último pedido."
-        );
-
-        return;
-
-      }
-
-      /*
-       * Mantém o último pedido salvo.
-       */
-
-      if(
-        typeof lastOrder !== "undefined"
-      ){
-
-        lastOrder =
-          JSON.parse(
-            JSON.stringify(
-              rows
-            )
-          );
-
-      }
-
-      /*
-       * Recupera a observação do histórico.
-       */
-
-      if(
-        !observation &&
-        typeof historyOrders !== "undefined" &&
-        Array.isArray(historyOrders) &&
-        historyOrders.length
-      ){
-
-        observation =
-          String(
-            historyOrders[0].generalObservation || ""
-          );
-
-      }
-
-      window.applyRepeat(
-        rows,
-        observation
-      );
-
-    }catch(error){
-
-      console.error(
-        "repeatLastOrder:",
-        error
-      );
-
-      alert(
-        "Não foi possível repetir o último pedido."
-      );
-
-    }
-
-  };
-
-
-  /* ==========================================================
-     APLICAÇÃO DO ÚLTIMO PEDIDO
-     ========================================================== */
-
-  window.applyRepeat = function(
-    rows,
-    observation
-  ){
-
-    if(
-      !Array.isArray(rows) ||
-      !rows.length
-    ){
-
-      alert(
-        "Não foi possível recuperar o último pedido."
-      );
-
-      return;
-
-    }
-
-    vals = {};
-
-    extras = [];
-
-    if(
-      typeof validadeCurta !== "undefined"
-    ){
-
-      validadeCurta = [];
-
-    }
-
-    rows.forEach(
-      function(x){
-
-        if(!x){
-          return;
-        }
-
-        /*
-         * Produto adicional.
-         */
-
-        if(
-          x.cat === "Produto Adicional"
-        ){
-
-          extras.push({
-
-            code:
-              x.code === "-"
-              ? ""
-              : String(
-                  x.code || ""
-                ),
-
-            name:
-              String(
-                x.name || ""
-              ),
-
-            qty:
-              Number(
-                x.order
-              ) || 0
-
-          });
-
-          return;
-
-        }
-
-        /*
-         * Produto normal.
-         */
-
-        if(
-          typeof productByCode !== "function"
-        ){
-
-          return;
-
-        }
-
-        const produto =
-          productByCode(
-            x.code
-          );
-
-        if(!produto){
-
-          return;
-
-        }
-
-        vals[
-          key(
-            produto.c,
-            produto.s,
-            produto.i,
-            "o"
-          )
-        ] =
-          Number(
-            x.order
-          ) || 0;
-
-        vals[
-          key(
-            produto.c,
-            produto.s,
-            produto.i,
-            "s"
-          )
-        ] =
-          Number(
-            x.stock
-          ) || 0;
-
-      }
-    );
-
-    /*
-     * Recupera observação.
-     */
-
-    let obsFinal =
-      String(
-        observation || ""
-      );
-
-    if(
-      !obsFinal &&
-      typeof rows.generalObservation === "string"
-    ){
-
-      obsFinal =
-        rows.generalObservation;
-
-    }
-
-    if(
-      !obsFinal &&
-      typeof historyOrders !== "undefined" &&
-      Array.isArray(historyOrders) &&
-      historyOrders.length
-    ){
-
-      obsFinal =
-        String(
-          historyOrders[0].generalObservation || ""
-        );
-
-    }
-
-    generalObservation =
-      obsFinal;
-
-    const campoObs =
-      document.getElementById(
-        "generalObs"
-      );
-
-    if(campoObs){
-
-      campoObs.value =
-        generalObservation;
-
-    }
-
-    if(
-      typeof save === "function"
-    ){
-
-      save();
-
-    }
-
-    if(
-      typeof saveFeatures === "function"
-    ){
-
-      saveFeatures();
-
-    }
-
-    if(
-      typeof render === "function"
-    ){
-
-      render();
-
-    }
-
-    if(
-      typeof renderValidadeCurta === "function"
-    ){
-
-      renderValidadeCurta();
-
-    }
-
-    if(
-      typeof updateBadge === "function"
-    ){
-
-      updateBadge();
-
-    }
-
-    if(
-      typeof closeFeature === "function"
-    ){
-
-      closeFeature();
-
-    }
-
-    alert(
-      "Último pedido recuperado. Confira antes de enviar."
-    );
-
-  };
-
-
-  /* ==========================================================
-     ZERAR PEDIDO
-     
-     IMPORTANTE:
-     - preserva sp_last_order
-     - preserva sp_history
-     - limpa somente a digitação atual
-     - funciona quando chamado pelo relatório #49
-     ========================================================== */
-
-  window.clearPedido = function(){
-
-    try{
-
-      let rowsToSave = [];
-
-      if(
-        typeof finalizedRows !== "undefined" &&
-        Array.isArray(finalizedRows) &&
-        finalizedRows.length
-      ){
-
-        rowsToSave =
-          JSON.parse(
-            JSON.stringify(
-              finalizedRows
-            )
-          );
-
-      }
-
-      /*
-       * O relatório #49 já chama saveHistory(rows)
-       * antes de chamar clearPedido().
-       *
-       * Portanto, só salva aqui se ainda não estiver
-       * no histórico, evitando duplicação.
-       */
-
-      let jaSalvo = false;
-
-      if(
-        rowsToSave.length &&
-        typeof historyOrders !== "undefined" &&
-        Array.isArray(historyOrders) &&
-        historyOrders.length
-      ){
-
-        try{
-
-          const ultimo =
-            historyOrders[0];
-
-          if(
-            ultimo &&
-            Array.isArray(
-              ultimo.rows
-            )
-          ){
-
-            jaSalvo =
-              JSON.stringify(
-                ultimo.rows
-              ) ===
-              JSON.stringify(
-                rowsToSave
-              );
-
-          }
-
-        }catch(e){
-
-          jaSalvo = false;
-
-        }
-
-      }
-
-      if(
-        rowsToSave.length &&
-        !jaSalvo &&
-        typeof saveHistory === "function"
-      ){
-
-        saveHistory(
-          rowsToSave
-        );
-
-      }
-
-      /*
-       * ZERA A DIGITAÇÃO.
-       */
-
-      vals = {};
-
-      extras = [];
-
-      if(
-        typeof validadeCurta !== "undefined"
-      ){
-
-        validadeCurta = [];
-
-      }
-
-      finalizedRows = [];
-
-      generalObservation = "";
-
-      /*
-       * Limpa campo de observação.
-       */
-
-      const campoObs =
-        document.getElementById(
-          "generalObs"
-        );
-
-      if(campoObs){
-
-        campoObs.value = "";
-
-      }
-
-      /*
-       * Limpa somente os dados do pedido atual.
-       *
-       * NÃO remove:
-       * sp_last_order
-       * sp_history
-       */
-
-      localStorage.removeItem(
-        "pedido_compras_vals"
-      );
-
-      localStorage.removeItem(
-        "pedido_compras_extras"
-      );
-
-      localStorage.removeItem(
-        "pedido_compras_validade_curta"
-      );
-
-      localStorage.removeItem(
-        "sp_general_obs"
-      );
-
-      /*
-       * Salva o estado limpo.
-       *
-       * Isso mantém o último pedido e o histórico.
-       */
-
-      if(
-        typeof saveFeatures === "function"
-      ){
-
-        saveFeatures();
-
-      }
-
-      /*
-       * Atualiza a tela.
-       */
-
-      if(
-        typeof render === "function"
-      ){
-
-        render();
-
-      }
-
-      if(
-        typeof renderValidadeCurta === "function"
-      ){
-
-        renderValidadeCurta();
-
-      }
-
-      if(
-        typeof updateBadge === "function"
-      ){
-
-        updateBadge();
-
-      }
-
-      /*
-       * Fecha tela de conferência,
-       * se existir.
-       */
-
-      if(
-        typeof closeConference === "function"
-      ){
-
-        closeConference();
-
-      }
-
-      /*
-       * Esconde opções de pedido finalizado.
-       */
-
-      const opcoes =
-        document.getElementById(
-          "opcoesFinalizado"
-        );
-
-      if(opcoes){
-
-        opcoes.style.display =
-          "none";
-
-      }
-
-      /*
-       * Garante visualmente que todos
-       * os campos de quantidade ficaram em zero.
-       */
-
-      document
-        .querySelectorAll(
-          "input.qty"
-        )
-        .forEach(
-          function(input){
-
-            input.value = "0";
-
-          }
-        );
-
-      window.scrollTo({
-
-        top: 0,
-
-        behavior: "smooth"
-
-      });
-
-    }catch(error){
-
-      console.error(
-        "clearPedido:",
-        error
-      );
-
-      /*
-       * Mesmo se algum elemento visual
-       * não existir, o pedido precisa ser zerado.
-       */
-
-      try{
-
-        vals = {};
-
-        extras = [];
-
-        finalizedRows = [];
-
-        generalObservation = "";
-
-        localStorage.removeItem(
-          "pedido_compras_vals"
-        );
-
-        localStorage.removeItem(
-          "pedido_compras_extras"
-        );
-
-        localStorage.removeItem(
-          "pedido_compras_validade_curta"
-        );
-
-        localStorage.removeItem(
-          "sp_general_obs"
-        );
-
-        if(
-          typeof saveFeatures === "function"
-        ){
-
-          saveFeatures();
-
-        }
-
-      }catch(e){}
-
-    }
-
-  };
-
-})();
-</script>
-'''
+          if (
+              "window.AndroidFileBridge.sharePdf"
+              not in text
+          ):
+
+              raise SystemExit(
+                  "ERRO: AndroidFileBridge não encontrado."
+              )
+
+          if (
+              "orientation:'portrait'"
+              not in text
+          ):
+
+              raise SystemExit(
+                  "ERRO: relatório não está em retrato."
+              )
 
           if "</body>" not in text:
 
@@ -1104,25 +333,15 @@ jobs:
           )
 
           print(
-              "OK: ADM corrigido."
+              "OK: correções aplicadas."
           )
 
           print(
-              "OK: Repetir último pedido corrigido."
+              "OK: relatório preservado."
           )
-
-          print(
-              "OK: zeragem após envio corrigida."
-          )
-
-          print(
-              "OK: openPDF da #49 não foi substituído."
-          )
-
-          PY
 
       # ==========================================================
-      # BIBLIOTECAS EXATAMENTE COMO NA #49
+      # BIBLIOTECAS
       # ==========================================================
 
       - name: Preparar bibliotecas PDF e Excel
@@ -1147,7 +366,7 @@ jobs:
           test -s "$ASSETS/jspdf.umd.min.js"
 
       # ==========================================================
-      # VERIFICAÇÃO JAVASCRIPT
+      # VALIDAR JAVASCRIPT
       # ==========================================================
 
       - name: Verificar JavaScript
@@ -1165,7 +384,9 @@ jobs:
           from pathlib import Path
 
           html = (
-              Path(os.environ["ANDROID_DIR"])
+              Path(
+                  os.environ["ANDROID_DIR"]
+              )
               / "app/src/main/assets/app/index.html"
           )
 
@@ -1185,14 +406,10 @@ jobs:
                   "ERRO: nenhum JavaScript encontrado."
               )
 
-          combined = "\n".join(
-              scripts
-          )
-
           Path(
               "/tmp/super-pedido-inline.js"
           ).write_text(
-              combined,
+              "\n".join(scripts),
               encoding="utf-8"
           )
 
@@ -1200,13 +417,13 @@ jobs:
 
               "async function openPDF(sendViaWhatsApp=false)",
 
-              "window.openAdmin=function()",
+              "window.openAdmin=function(){",
 
-              "window.repeatLastOrder=function()",
+              "window.repeatLastOrder=function(){",
 
-              "window.applyRepeat = function(",
+              "window.applyRepeat=function(",
 
-              "window.clearPedido = function()",
+              "window.clearPedido=function(){",
 
               "window.AndroidFileBridge.sharePdf",
 
@@ -1230,9 +447,11 @@ jobs:
                   )
 
           if (
-              "orientation:'landscape'" in text
+              "orientation:'landscape'"
+              in text
               or
-              'orientation:"landscape"' in text
+              'orientation:"landscape"'
+              in text
           ):
 
               raise SystemExit(
@@ -1240,15 +459,13 @@ jobs:
               )
 
           print(
-              "OK: verificações textuais concluídas."
+              "OK: JavaScript verificado."
           )
 
           PY
 
           node --check \
             /tmp/super-pedido-inline.js
-
-          echo "OK: JavaScript válido."
 
       # ==========================================================
       # VERIFICAÇÃO FINAL
@@ -1264,19 +481,19 @@ jobs:
           test -f "$HTML"
 
           grep -q \
-            "window.openAdmin=function()" \
+            "window.openAdmin=function(){" \
             "$HTML"
 
           grep -q \
-            "window.repeatLastOrder=function()" \
+            "window.repeatLastOrder=function(){" \
             "$HTML"
 
           grep -q \
-            "window.applyRepeat = function(" \
+            "window.applyRepeat=function(" \
             "$HTML"
 
           grep -q \
-            "window.clearPedido = function()" \
+            "window.clearPedido=function(){" \
             "$HTML"
 
           grep -q \
@@ -1296,16 +513,15 @@ jobs:
             "$HTML"
 
           echo "=========================================="
-          echo " VERIFICAÇÃO FINAL"
+          echo " VERIFICAÇÃO FINAL OK"
           echo "=========================================="
-          echo "OK - BASE DA VERSÃO 49"
-          echo "OK - RELATÓRIO DA #49"
-          echo "OK - ADM"
-          echo "OK - REPETIR ÚLTIMO PEDIDO"
-          echo "OK - ZERAR APÓS ENVIO"
-          echo "OK - PDF A4 RETRATO"
-          echo "OK - ANDROID FILE BRIDGE"
-          echo "OK - JAVASCRIPT"
+          echo "BASE #49 ............... OK"
+          echo "RELATÓRIO #49 .......... OK"
+          echo "ADM .................... OK"
+          echo "REPETIR ............... OK"
+          echo "ZERAR .................. OK"
+          echo "PDF A4 RETRATO ......... OK"
+          echo "JAVASCRIPT ............. OK"
           echo "=========================================="
 
       # ==========================================================
