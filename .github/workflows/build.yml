@@ -16,7 +16,7 @@ jobs:
       # BASE EXATA DA VERSÃO #49
       # ==========================================================
 
-      - name: Baixar projeto - BASE #49
+      - name: "Baixar projeto - BASE EXATA #49"
         uses: actions/checkout@v4
         with:
           ref: 4e67e53aa453548944592d7b7f417fb77ca9fe7c
@@ -66,6 +66,10 @@ jobs:
 
           echo "Projeto encontrado em: $ANDROID_DIR"
 
+      # ==========================================================
+      # ANDROIDX
+      # ==========================================================
+
       - name: Configurar AndroidX
         shell: bash
         run: |
@@ -82,11 +86,13 @@ jobs:
             || echo "android.enableJetifier=true" >> gradle.properties
 
       # ==========================================================
-      # RELATÓRIO EXATO DA VERSÃO #49
-      # NÃO REESCREVE O RELATÓRIO
+      # RELATÓRIO EXATO DA #49
+      #
+      # NÃO RECRIA O RELATÓRIO.
+      # EXTRAI E EXECUTA O BLOCO ORIGINAL DA #49.
       # ==========================================================
 
-      - name: Aplicar EXATAMENTE o relatório aprovado da #49
+      - name: "Aplicar EXATAMENTE o relatório aprovado da #49"
         shell: bash
         run: |
           set -e
@@ -154,12 +160,7 @@ jobs:
 
           script = []
 
-          for i in range(
-              run_line + 1,
-              len(lines)
-          ):
-
-              line = lines[i]
+          for line in lines[run_line + 1:]:
 
               if re.match(
                   r"^      - name:",
@@ -212,7 +213,7 @@ jobs:
               if item not in report_script:
 
                   raise SystemExit(
-                      "ERRO: parte do relatório #49 ausente: "
+                      "ERRO: relatório #49 incompleto: "
                       + item
                   )
 
@@ -224,7 +225,7 @@ jobs:
           )
 
           print(
-              "OK: relatório EXATO da #49 localizado."
+              "OK: relatório exato da #49 localizado."
           )
 
           PY
@@ -236,24 +237,884 @@ jobs:
           echo "OK: relatório #49 aplicado."
 
       # ==========================================================
-      # PATCH DAS CORREÇÕES
+      # CRIAR PATCH JAVASCRIPT
       #
-      # ADM
-      # REPETIR ÚLTIMO PEDIDO
-      # ZERAR PEDIDO
-      #
-      # O CÓDIGO JAVASCRIPT É TRANSPORTADO EM BASE64.
-      # ASSIM NÃO EXISTE <script> SOLTO NO YAML.
+      # IMPORTANTE:
+      # NÃO USA BASE64.
+      # NÃO USA VARIÁVEL COM JAVASCRIPT.
+      # O CÓDIGO É GRAVADO DIRETAMENTE EM UM ARQUIVO TEMPORÁRIO.
       # ==========================================================
 
-      - name: Preparar correções
+      - name: Criar arquivo de correções JavaScript
         shell: bash
         run: |
           set -e
 
-          echo 'PATCH_B64=PHNjcmlwdD4KKGZ1bmN0aW9uKCl7CiAgY29uc3Qgb3JpZ2luYWxPcGVuQWRtaW49d2luZG93Lm9wZW5BZG1pbjsKCiAgd2luZG93Lm9wZW5BZG1pbj1mdW5jdGlvbigpewogICAgaWYodHlwZW9mIGZlYXR1cmVNb2RhbCE9PSJmdW5jdGlvbiJ8fHR5cGVvZiBvcmlnaW5hbE9wZW5BZG1pbjwhPSJmdW5jdGlvbiIpewogICAgICBhbGVydCgiQWRtaW5pc3RyYcOnw6NvIGluZGlzcG9uw612ZWwuIik7CiAgICAgIHJldHVybjsKICAgIH0KICAgIGZlYXR1cmVNb2RhbChgCiAgICAgIDxoMz7wn5SKIEFkbWluaXN0cmHDp8OjbyA8L2gzPgogICAgICA8cD5EaWdpdGUgbyBQSUSigJQgZGUgYWRtaW5pc3RyYcOnw6NvLjwvcD4KICAgICAgPGlucHV0IGlkPSJzdXBlclBlZGlkb0FkbWluUGluIiB0eXBlPSJwYXNzd29yZCIgaW5wdXRtb2RlPSJudW1lcmljIiBhdXRvY29tcGxldGU9Im9mZiIgcGxhY2Vob2xkZXI9IlBJTiIgc3R5bGU9IndpZHRoOjEwMCU7Ym94LXNpemluZzpib3JkZXItYm94O3BhZGRpbmc6MTJweDtmb250LXNpemU6MThweCI+CiAgICAgIDxidXR0b24gY2xhc3M9InByaW1hcnkiIG9uY2xpY2s9InN1cGVyUGVkaWRvQ29uZmlybWFyQWRtaW4oKSI+RW50cmFyPC9idXR0b24+CiAgICAgIDxidXR0b24gb25jbGljaz0iY2xvc2VGZWF0dXJlKCkiPkNhbmNlbGFyPC9idXR0b24+CiAgICBgKTsKICAgIHNldFRpbWVvdXQoKCk9PnsKICAgICAgY29uc3QgaW5wdXQ9ZG9jdW1lbnQuZ2V0RWxlbWVudEJ5SWQoInN1cGVyUGVkaWRvQWRtaW5QaW4iKTsKICAgICAgaWYoaW5wdXQpewogICAgICAgIGlucHV0LmZvY3VzKCk7CiAgICAgICAgaW5wdXQuYWRkRXZlbnRMaXN0ZW5lcigia2V5ZG93biIsZT0+e2lmKGUua2V5PT09IkVudGVyIilzdXBlclBlZGlkb0NvbmZpcm1hckFkbWluKCk7fSk7CiAgICAgIH0KICAgIH0sMTAwKTsKICB9OwoKCiAgd2luZG93LnN1cGVyUGVkaWRvQ29uZmlybWFyQWRtaW49ZnVuY3Rpb24oKXsKICAgIGNvbnN0IGlucHV0PWRvY3VtZW50LmdldEVsZW1lbnRCeUlkKCJzdXBlclBlZGlkb0FkbWluUGluIik7CiAgICBjb25zdCBwaW49aW5wdXQ/U3RyaW5nKGlucHV0LnZhbHVlfHwiIik6IiI7CiAgICBjb25zdCBzYXZlZD1sb2NhbFN0b3JhZ2UuZ2V0SXRlbSgic3BfYWRtaW5fcGluIil8fCIxMjM0IjsKICAgIGlmKHBpbiE9PXNhdmVkKXsKICAgICAgYWxlcnQoIlBJTiBpbmNvcnJldG8uIik7CiAgICAgIGlmKGlucHV0KXtpbnB1dC52YWx1ZT0iIjtpbnB1dC5mb2N1cygpO30KICAgICAgcmV0dXJuOwogICAgfQogICAgY29uc3Qgb2xkUHJvbXB0PXdpbmRvdy5wcm9tcHQ7CiAgICB3aW5kb3cucHJvbXB0PSh8KT0+cGluOwogICAgdHJ5e29yaWdpbmFsT3BlbkFkbWluLmNhbGwo d2luZG93KTt9ZmluYWxseXt3aW5kb3cucHJvbXB0PW9sZFByb21wdDt9CiAgfTsKCiAgd2luZG93LnJlcGVhdExhc3RPcmRlcj1mdW5jdGlvbigpewogICAgbGV0IHJvd3M9W107CiAgICBsZXQgb2JzZXJ2YXRpb249IiI7CiAgICB0cnl7CiAgICAgIGlmKHR5cGVvZiBsYXN0T3JkZXIhPT0idW5kZWZpbmVkIiYmQXJyYXkuaXNBcnJheShsYXN0T3JkZXIpJiZsYXN0T3JkZXIubGVuZ3RoKXJvd3M9SlNPTi5wYXJzZShKU09OLnN0cmluZ2lmeShsYXN0T3JkZXIpKX0KICAgIGNhdGNoKGUpe30KICAgIGlmKCFyb3dzLmxlbmd0aCl7CiAgICAgIHRyeXsKICAgICAgICBjb25zdCBzYXZlZD1sb2NhbFN0b3JhZ2UuZ2V0SXRlbSgic3BfbGFzdF9vcmRlciIpOwogICAgICAgIGNvbnN0IHBhcnNlZD1zYXZlZD9KU09OLnBhcnNlKHNhdmVkKTpbXTsKICAgICAgICBpZihBcnJheS5pc0FycmF5KHBhcnNlZCl8fHxhcnJheS5sZW5ndGgpe3Jvd3M9cGFyc2VkO2xhc3RPcmRlcj1KU09OLnBhcnNlKEpTT04uc3RyaW5naWZ5KHBhcnNlZCkpO30KICAgICAgfWNhdGNoKGUpe30KICAgIH0KICAgIGlmKCFyb3dzLmxlbmd0aCYmdHlwZW9mIGhpc3RvcnlPcmRlcnMhPT0idW5kZWZpbmVkIiYmQXJyYXkuaXNBcnJheShoaXN0b3J5T3JkZXJzKSYmaGlzdG9yeU9yZGVycy5sZW5ndGgpewogICAgICBjb25zdCBoPWhpc3RvcnlPcmRlcnNbMF07CiAgICAgIGlmKGgmJkFycmF5LmlzQXJyYXkoaC5yb3dzKSYmaC5yb3dzLmxlbmd0aCl7cm93cz1KU09OLnBhcnNlKEpTT04uc3RyaW5naWZ5KGgucm93cykpO29ic2VydmF0aW9uPWhnZW5lcmFsT2JzZXJ2YXRpb258fCIiO30KICAgIH0KICAgIGlmKCFyb3dzLmxlbmd0aCl7YWxlcnQoIkFpbmRhIG7Do28gZXhpc3RlIMO6bHRpbW8gcGVkaWRvLiIpO3JldHVybjt9CiAgICB3aW5kb3cuYXBwbHlSZXBlYXQocm93cyxvYnNlcnZhdGlvbik7CiAgfTsKCiAgd2luZG93LmFwcGx5UmVwZWF0PWZ1bmN0aW9uKHJvd3Msb2JzZXJ2YXRpb24pewogICAgaWYoIUFycmF5LmlzQXJyYXkocm93cyl8fCFyb3dzLmxlbmd0aCl7YWxlcnQoIk7Do28gZm9pIHBvc3PDrcOtbCBpbXBvcnRhciBvIMO6bHRpbW8gcGVkaWRvLiIpO3JldHVybjt9CiAgICB2YWxzPXt9O2V4dHJhcz1bXTsKICAgIGlmKHR5cGVvZiB2YWxpZGFkZUN1cnRhIT09InVuZGVmaW5lZCIpIHZhbGlkYWRlQ3VydGE9W107CiAgICByb3dzLmZvckVhY2goeD0+ewogICAgICBpZigheClyZXR1cm47CiAgICAgIGlmKHguY2F0PT09IlByb2R1dG8gQWRpY2lvbmFsIil7ZXh0cmFzLnB1c2goe2NvZGU6eC5jb2RlPT09Ii0iPyIiOlN0cmluZyh4LmNvZGV8fCIiKSxuYW1lOlN0cmluZyh4Lm5hbWV8fCIiKSxxdHk6TnVtYmVyKHgub3JkZXJ8fDApfTtyZXR1cm47fQogICAgICBpZih0eXBlb2YgcHJvZHVjdEJ5Q29kZSE9PSJmdW5jdGlvbiIpcmV0dXJuOwogICAgICBjb25zdCBmPXByb2R1Y3RCeUNvZGUoeC5jb2RlKTsKICAgICAgaWYoIWYpcmV0dXJuOwogICAgICB2YWxzW2tleShmLmMsZi5zLGYuaSwibyIpXT1OdW1iZXIoeC5vcmRlcil8fDA7CiAgICAgIHZhbHNba2V5KGYuYyxmLnMsZi5pLCJzIildPU51bWJlcih4LnN0b2NrfHwwKTsKICAgIH0pOwogICAgZ2VuZXJhbE9ic2VydmF0aW9uPVN0cmluZyhPYnNlcnZhdGlvbnx8IiIpOwogICAgY29uc3QgY2FtcG89ZG9jdW1lbnQuZ2V0RWxlbWVudEJ5SWQoImdlbmVyYWxPYnMiKTsKICAgIGlmKGNhbXBvKWNhbXBvLnZhbHVlPWdlbmVyYWxPYnNlcnZhdGlvbjsKICAgIGlmKHR5cGVvZiBzYXZlPT09ImZ1bmN0aW9uIilzYXZlKCk7CiAgICBpZih0eXBlb2Ygc2F2ZUZlYXR1cmVzPT09ImZ1bmN0aW9uIilzYXZlRmVhdHVyZXMoKTsKICAgIGlmKHR5cGVvZiByZW5kZXI9PT0iZnVuY3Rpb24iKXJlbmRlcigpOwogICAgaWYodHlwZW9mIHJlbmRlclZhbGlkYWRlQ3VydGE9PT0iZnVuY3Rpb24iKXJlbmRlclZhbGlkYWRlQ3VydGEoKTsKICAgIGlmKHR5cGVvZiB1cGRhdGVCYWRnZT09PSJmdW5jdGlvbiIpdXBkYXRlQmFkZ2UoKTsKICAgIGlmKHR5cGVvZiBjbG9zZUZlYXR1cmU9PT0iZnVuY3Rpb24iKWNsb3NlRmVhdHVyZSgpOwogICAgYWxlcnQoIsOelSBUbHRpbW8gcGVkaWRvIHJlY3VwZXJhZG8uIENvbmZpcmEgc2V1cyBkYWRvcyBhbnRlcyBkZSBlbnZpYXIuIik7CiAgfTsKCiAgd2luZG93LmNsZWFyUGVkaWRvPWZ1bmN0aW9uKCl7CiAgICBsZXQgcm93cz1bXTsKICAgIHRyeXt pZih0eXBlb2YgZmluYWxpemVkUm93cyE9PSJ1bmRlZmluZWQiJiZBcnJheS5pc0FycmF5KGZpbmFsaXplZFJvd3MpJiZmaW5hbGl6ZWRSb3dzLmxlbmd0aClyb3dzPUpTT04ucGFyc2UoSlNPTi5zdHJpbmdpZnkoZmluYWxpemVkUm93cykpO31jYXRjaChlKXt9CiAgICBsZXQgZHVwbGljYXRlPWZhbHNlOwogICAgdHJ5ewogICAgICBpZihyb3dzLmxlbmd0aCYmdHlwZW9mIGhpc3RvcnlPcmRlcnMhPT0idW5kZWZpbmVkIiYmQXJyYXkuaXNBcnJheShIaXN0b3J5T3JkZXJzKSYmaGlzdG9yeU9yZGVycy5sZW5ndGgpewogICAgICAgIGNvbnN0IGg9aGlzdG9yeU9yZGVyc1swXTsKICAgICAgICBkdXBsaWNhdGU9ISFoJkFycmF5LmlzQXJyYXkoaC5yb3dzKSYmSlNPTi5zdHJpbmdpZnkoaC5yb3dzKT09PVNPTi5zdHJpbmdpZnkyKHJvd3MpOwogICAgICB9CiAgICB9Y2F0Y2goZSl7fQogICAgaWYocm93cy5sZW5ndGgmJCFkdXBsaWNjYXRlJiZ0eXBlb2Ygc2F2ZUhpc3Rvcnk9PT0iZnVuY3Rpb24iKXNhdmVIaXN0b3J5KHJvd3MpOwogICAgdmFscz17fTtleHRyYXM9W107ZmluYWxpemVkUm93cz1bXTtnZW5lcmFsT2JzZXJ2YXRpb249IiI7CiAgICBpZih0eXBlb2YgdmFsaWRhZGVDdXJ0YSE9PSJ1bmRlZmluZWQiKXZhbGlkYWRlQ3VydGE9W107CiAgICBsb2NhbFN0b3JhZ2UucmVtb3ZlSXRlbSgicGVkaWRvX2NvbXByYXNfdmFscyIpOwogICAgbG9jYWxTdG9yYWdlLnJlbW92ZUl0ZW0oInBlZG  aWRvX2NvbXByYXNfZXh0cmFzIik7CiAgICBsb2NhbFN0b3JhZ2UucmVtb3ZlSXRlbSgicGVkaWRvX2NvbXByYXNfdmFsaWRhZGVfY3VydGEiKTsKICAgIGxvY2FsU3RvcmFnZS5yZW1vdmVJdGVtKCJzcF9nZW5lcmFsX29icyIpOwogICAgY29uc3Qg b2JzPWRvY3VtZW50LmdldEVsZW1lbnRCeUlkKCJnZW5lcmFsT2JzIik7CiAgICBpZihvYnMpb2JzLnZhbHVlPSIiOwogICAgc2F2ZUZlYXR1cmVzKCk7CiAgICBpZih0eXBlb2YgcmVuZGVyPT09ImZ1bmN0aW9uIilyZW5kZXIoKTsKICAgIGlmKHR5cGVvZiByZW5kZXJWYWxpZGFkZUN1cnRhPT09ImZ1bmN0aW9uIilyZW5kZXJWYWxpZGFkZUN1cnRhKCk7CiAgICBpZih0eXBlb2YgdXBkYXRlQmFkZ2U9PT0iZnVuY3Rpb24iKXVwZGF0ZUJhZGdlKCk7CiAgICBjb25zdCBvcD1kb2N1bWVudC5nZXRFbGVtZW50QnlJZCgib3Bjb2VzRmluYWxpemFkbyIpOwogICAgaWYob3Ayb3Au c3R5bGUuZGlzcGxheT0ibm9uZSI7CiAgICBkb2N1bWVudC5xdWVyeVNlbGVjdG9yQWxsKCJpbnB1dC5xdHkiKS5mb3JFYWNoKGVsPT5lbC52YWx1ZT0iMCIpOwogICAgd2luZG93LnNjcm9sbFRvKHt0b3A6MCxiZWhhdmlvcjoi c21vb3RoIn0pOwogIH07Cn0pOwo8L3NjcmlwdD4=' >> "$GITHUB_ENV"
+          cat > /tmp/super-pedido-fix.js <<'PATCHJS'
+          <script>
+          (function(){
 
-      - name: Aplicar correções
+            /* ==================================================
+               ADM
+               Mantém a administração original da #49.
+               Substitui somente o prompt inicial.
+               ================================================== */
+
+            const __originalOpenAdmin =
+              window.openAdmin;
+
+            window.openAdmin = function(){
+
+              if(
+                typeof featureModal !== "function" ||
+                typeof __originalOpenAdmin !== "function"
+              ){
+
+                alert(
+                  "Administração indisponível."
+                );
+
+                return;
+              }
+
+              featureModal(`
+
+                <h3>🔐 Administração</h3>
+
+                <p>
+                  Digite o PIN de administração.
+                </p>
+
+                <input
+                  id="superPedidoAdminPin"
+                  type="password"
+                  inputmode="numeric"
+                  autocomplete="off"
+                  placeholder="PIN"
+                  style="
+                    width:100%;
+                    box-sizing:border-box;
+                    padding:12px;
+                    font-size:18px;
+                  "
+                >
+
+                <button
+                  onclick="superPedidoConfirmarAdmin()"
+                >
+                  Entrar
+                </button>
+
+                <button
+                  onclick="closeFeature()"
+                >
+                  Cancelar
+                </button>
+
+              `);
+
+              setTimeout(
+                function(){
+
+                  const input =
+                    document.getElementById(
+                      "superPedidoAdminPin"
+                    );
+
+                  if(!input){
+                    return;
+                  }
+
+                  input.focus();
+
+                  input.addEventListener(
+                    "keydown",
+                    function(event){
+
+                      if(
+                        event.key === "Enter"
+                      ){
+
+                        superPedidoConfirmarAdmin();
+
+                      }
+
+                    }
+                  );
+
+                },
+                100
+              );
+
+            };
+
+
+            window.superPedidoConfirmarAdmin =
+              function(){
+
+                const input =
+                  document.getElementById(
+                    "superPedidoAdminPin"
+                  );
+
+                const pin =
+                  input
+                  ? String(
+                      input.value || ""
+                    )
+                  : "";
+
+                const saved =
+                  localStorage.getItem(
+                    "sp_admin_pin"
+                  ) || "1234";
+
+                if(pin !== saved){
+
+                  alert(
+                    "PIN incorreto."
+                  );
+
+                  if(input){
+
+                    input.value = "";
+
+                    input.focus();
+
+                  }
+
+                  return;
+                }
+
+                const oldPrompt =
+                  window.prompt;
+
+                window.prompt =
+                  function(){
+
+                    return pin;
+
+                  };
+
+                try{
+
+                  __originalOpenAdmin.call(
+                    window
+                  );
+
+                }finally{
+
+                  window.prompt =
+                    oldPrompt;
+
+                }
+
+              };
+
+
+            /* ==================================================
+               REPETIR ÚLTIMO PEDIDO
+               ================================================== */
+
+            window.repeatLastOrder =
+              function(){
+
+                let rows = [];
+
+                let observation = "";
+
+
+                /*
+                 * Primeiro tenta lastOrder em memória.
+                 */
+
+                try{
+
+                  if(
+                    typeof lastOrder !== "undefined" &&
+                    Array.isArray(lastOrder) &&
+                    lastOrder.length
+                  ){
+
+                    rows =
+                      JSON.parse(
+                        JSON.stringify(
+                          lastOrder
+                        )
+                      );
+
+                  }
+
+                }catch(error){}
+
+
+                /*
+                 * Depois tenta localStorage.
+                 */
+
+                if(!rows.length){
+
+                  try{
+
+                    const saved =
+                      localStorage.getItem(
+                        "sp_last_order"
+                      );
+
+                    if(saved){
+
+                      const parsed =
+                        JSON.parse(
+                          saved
+                        );
+
+                      if(
+                        Array.isArray(parsed) &&
+                        parsed.length
+                      ){
+
+                        rows = parsed;
+
+                        if(
+                          typeof lastOrder !==
+                          "undefined"
+                        ){
+
+                          lastOrder =
+                            JSON.parse(
+                              JSON.stringify(
+                                parsed
+                              )
+                            );
+
+                        }
+
+                      }
+
+                    }
+
+                  }catch(error){}
+
+                }
+
+
+                /*
+                 * Último recurso:
+                 * histórico.
+                 */
+
+                if(!rows.length){
+
+                  try{
+
+                    if(
+                      typeof historyOrders !==
+                      "undefined" &&
+                      Array.isArray(
+                        historyOrders
+                      ) &&
+                      historyOrders.length
+                    ){
+
+                      const ultimo =
+                        historyOrders[0];
+
+                      if(
+                        ultimo &&
+                        Array.isArray(
+                          ultimo.rows
+                        )
+                      ){
+
+                        rows =
+                          JSON.parse(
+                            JSON.stringify(
+                              ultimo.rows
+                            )
+                          );
+
+                        observation =
+                          String(
+                            ultimo.generalObservation ||
+                            ""
+                          );
+
+                      }
+
+                    }
+
+                  }catch(error){}
+
+                }
+
+
+                if(!rows.length){
+
+                  alert(
+                    "Ainda não existe último pedido."
+                  );
+
+                  return;
+
+                }
+
+
+                window.applyRepeat(
+                  rows,
+                  observation
+                );
+
+              };
+
+
+            /* ==================================================
+               APLICAR REPETIÇÃO
+               ================================================== */
+
+            window.applyRepeat =
+              function(
+                rows,
+                observation
+              ){
+
+                if(
+                  !Array.isArray(rows) ||
+                  !rows.length
+                ){
+
+                  alert(
+                    "Não foi possível recuperar o último pedido."
+                  );
+
+                  return;
+
+                }
+
+
+                vals = {};
+
+                extras = [];
+
+
+                if(
+                  typeof validadeCurta !==
+                  "undefined"
+                ){
+
+                  validadeCurta = [];
+
+                }
+
+
+                rows.forEach(
+                  function(x){
+
+                    if(!x){
+                      return;
+                    }
+
+
+                    /*
+                     * Produto adicional.
+                     */
+
+                    if(
+                      x.cat ===
+                      "Produto Adicional"
+                    ){
+
+                      extras.push({
+
+                        code:
+                          x.code === "-"
+                          ? ""
+                          : String(
+                              x.code || ""
+                            ),
+
+                        name:
+                          String(
+                            x.name || ""
+                          ),
+
+                        qty:
+                          Number(
+                            x.order
+                          ) || 0
+
+                      });
+
+                      return;
+
+                    }
+
+
+                    /*
+                     * Produto normal.
+                     */
+
+                    if(
+                      typeof productByCode !==
+                      "function"
+                    ){
+
+                      return;
+
+                    }
+
+
+                    const f =
+                      productByCode(
+                        x.code
+                      );
+
+
+                    if(!f){
+
+                      return;
+
+                    }
+
+
+                    vals[
+                      key(
+                        f.c,
+                        f.s,
+                        f.i,
+                        "o"
+                      )
+                    ] =
+                      Number(
+                        x.order
+                      ) || 0;
+
+
+                    vals[
+                      key(
+                        f.c,
+                        f.s,
+                        f.i,
+                        "s"
+                      )
+                    ] =
+                      Number(
+                        x.stock
+                      ) || 0;
+
+                  }
+                );
+
+
+                /*
+                 * Recuperar observação.
+                 */
+
+                let obsFinal =
+                  String(
+                    observation || ""
+                  );
+
+
+                if(
+                  !obsFinal &&
+                  rows.generalObservation
+                ){
+
+                  obsFinal =
+                    String(
+                      rows.generalObservation
+                    );
+
+                }
+
+
+                if(
+                  !obsFinal &&
+                  typeof historyOrders !==
+                  "undefined" &&
+                  Array.isArray(
+                    historyOrders
+                  ) &&
+                  historyOrders.length
+                ){
+
+                  obsFinal =
+                    String(
+                      historyOrders[0]
+                        .generalObservation || ""
+                    );
+
+                }
+
+
+                generalObservation =
+                  obsFinal;
+
+
+                const campoObs =
+                  document.getElementById(
+                    "generalObs"
+                  );
+
+
+                if(campoObs){
+
+                  campoObs.value =
+                    generalObservation;
+
+                }
+
+
+                if(
+                  typeof save ===
+                  "function"
+                ){
+
+                  save();
+
+                }
+
+
+                if(
+                  typeof saveFeatures ===
+                  "function"
+                ){
+
+                  saveFeatures();
+
+                }
+
+
+                if(
+                  typeof render ===
+                  "function"
+                ){
+
+                  render();
+
+                }
+
+
+                if(
+                  typeof renderValidadeCurta ===
+                  "function"
+                ){
+
+                  renderValidadeCurta();
+
+                }
+
+
+                if(
+                  typeof updateBadge ===
+                  "function"
+                ){
+
+                  updateBadge();
+
+                }
+
+
+                if(
+                  typeof closeFeature ===
+                  "function"
+                ){
+
+                  closeFeature();
+
+                }
+
+
+                alert(
+                  "Último pedido recuperado. Confira antes de enviar."
+                );
+
+              };
+
+
+            /* ==================================================
+               ZERAR PEDIDO
+               
+               IMPORTANTE:
+               - NÃO apaga sp_last_order
+               - NÃO apaga sp_history
+               - limpa somente o pedido atual
+               - evita duplicar o histórico
+               ================================================== */
+
+            window.clearPedido =
+              function(){
+
+                let rowsToSave = [];
+
+
+                try{
+
+                  if(
+                    typeof finalizedRows !==
+                    "undefined" &&
+                    Array.isArray(
+                      finalizedRows
+                    ) &&
+                    finalizedRows.length
+                  ){
+
+                    rowsToSave =
+                      JSON.parse(
+                        JSON.stringify(
+                          finalizedRows
+                        )
+                      );
+
+                  }
+
+                }catch(error){}
+
+
+                /*
+                 * A função openPDF da #49 já chama:
+                 *
+                 * saveHistory(rows);
+                 * clearPedido();
+                 *
+                 * Portanto verificamos se o histórico
+                 * já recebeu exatamente essas linhas.
+                 */
+
+                let alreadySaved =
+                  false;
+
+
+                try{
+
+                  if(
+                    rowsToSave.length &&
+                    typeof historyOrders !==
+                    "undefined" &&
+                    Array.isArray(
+                      historyOrders
+                    ) &&
+                    historyOrders.length
+                  ){
+
+                    const ultimo =
+                      historyOrders[0];
+
+
+                    if(
+                      ultimo &&
+                      Array.isArray(
+                        ultimo.rows
+                      )
+                    ){
+
+                      alreadySaved =
+                        JSON.stringify(
+                          ultimo.rows
+                        ) ===
+                        JSON.stringify(
+                          rowsToSave
+                        );
+
+                    }
+
+                  }
+
+                }catch(error){}
+
+
+                /*
+                 * Só salva se ainda não estiver salvo.
+                 */
+
+                if(
+                  rowsToSave.length &&
+                  !alreadySaved &&
+                  typeof saveHistory ===
+                  "function"
+                ){
+
+                  saveHistory(
+                    rowsToSave
+                  );
+
+                }
+
+
+                /*
+                 * Limpa pedido atual.
+                 */
+
+                vals = {};
+
+                extras = [];
+
+                finalizedRows = [];
+
+                generalObservation = "";
+
+
+                if(
+                  typeof validadeCurta !==
+                  "undefined"
+                ){
+
+                  validadeCurta = [];
+
+                }
+
+
+                /*
+                 * Apaga somente dados do pedido atual.
+                 */
+
+                localStorage.removeItem(
+                  "pedido_compras_vals"
+                );
+
+                localStorage.removeItem(
+                  "pedido_compras_extras"
+                );
+
+                localStorage.removeItem(
+                  "pedido_compras_validade_curta"
+                );
+
+                localStorage.removeItem(
+                  "sp_general_obs"
+                );
+
+
+                /*
+                 * Limpa observação visual.
+                 */
+
+                const obs =
+                  document.getElementById(
+                    "generalObs"
+                  );
+
+
+                if(obs){
+
+                  obs.value = "";
+
+                }
+
+
+                /*
+                 * Atualiza armazenamento.
+                 */
+
+                if(
+                  typeof saveFeatures ===
+                  "function"
+                ){
+
+                  saveFeatures();
+
+                }
+
+
+                /*
+                 * Atualiza tela.
+                 */
+
+                if(
+                  typeof render ===
+                  "function"
+                ){
+
+                  render();
+
+                }
+
+
+                if(
+                  typeof renderValidadeCurta ===
+                  "function"
+                ){
+
+                  renderValidadeCurta();
+
+                }
+
+
+                if(
+                  typeof updateBadge ===
+                  "function"
+                ){
+
+                  updateBadge();
+
+                }
+
+
+                /*
+                 * Esconde opções do pedido finalizado.
+                 */
+
+                const op =
+                  document.getElementById(
+                    "opcoesFinalizado"
+                  );
+
+
+                if(op){
+
+                  op.style.display =
+                    "none";
+
+                }
+
+
+                /*
+                 * Zera campos de quantidade.
+                 */
+
+                document
+                  .querySelectorAll(
+                    "input.qty"
+                  )
+                  .forEach(
+                    function(el){
+
+                      el.value = "0";
+
+                    }
+                  );
+
+
+                /*
+                 * Volta para o topo.
+                 */
+
+                window.scrollTo({
+
+                  top: 0,
+
+                  behavior: "smooth"
+
+                });
+
+              };
+
+          })();
+          </script>
+          PATCHJS
+
+          test -s /tmp/super-pedido-fix.js
+
+          node --check /tmp/super-pedido-fix.js
+
+          echo "OK: patch JavaScript criado."
+          echo "OK: patch JavaScript validado."
+
+      # ==========================================================
+      # APLICAR PATCH NA BUILD
+      # ==========================================================
+
+      - name: Aplicar correções na build
         shell: bash
         run: |
           set -e
@@ -262,8 +1123,9 @@ jobs:
 
           test -f "$HTML"
 
+          test -s /tmp/super-pedido-fix.js
+
           python3 - <<'PY'
-          import base64
           import os
           from pathlib import Path
 
@@ -274,18 +1136,14 @@ jobs:
               / "app/src/main/assets/app/index.html"
           )
 
-          text = html.read_text(
+          patch = Path(
+              "/tmp/super-pedido-fix.js"
+          ).read_text(
               encoding="utf-8"
           )
 
-          encoded = os.environ[
-              "PATCH_B64"
-          ]
-
-          patch = base64.b64decode(
-              encoded
-          ).decode(
-              "utf-8"
+          text = html.read_text(
+              encoding="utf-8"
           )
 
           if (
@@ -333,15 +1191,21 @@ jobs:
           )
 
           print(
-              "OK: correções aplicadas."
+              "OK: correções aplicadas na build."
           )
 
           print(
-              "OK: relatório preservado."
+              "OK: relatório #49 preservado."
           )
 
+          print(
+              "OK: openPDF não foi sobrescrito."
+          )
+
+          PY
+
       # ==========================================================
-      # BIBLIOTECAS
+      # BIBLIOTECAS PDF E EXCEL
       # ==========================================================
 
       - name: Preparar bibliotecas PDF e Excel
@@ -366,7 +1230,7 @@ jobs:
           test -s "$ASSETS/jspdf.umd.min.js"
 
       # ==========================================================
-      # VALIDAR JAVASCRIPT
+      # VERIFICAR JAVASCRIPT
       # ==========================================================
 
       - name: Verificar JavaScript
@@ -459,13 +1323,15 @@ jobs:
               )
 
           print(
-              "OK: JavaScript verificado."
+              "OK: verificações textuais concluídas."
           )
 
           PY
 
           node --check \
             /tmp/super-pedido-inline.js
+
+          echo "OK: JavaScript válido."
 
       # ==========================================================
       # VERIFICAÇÃO FINAL
@@ -513,12 +1379,12 @@ jobs:
             "$HTML"
 
           echo "=========================================="
-          echo " VERIFICAÇÃO FINAL OK"
+          echo " VERIFICAÇÃO FINAL: OK"
           echo "=========================================="
           echo "BASE #49 ............... OK"
           echo "RELATÓRIO #49 .......... OK"
           echo "ADM .................... OK"
-          echo "REPETIR ............... OK"
+          echo "REPETIR ................ OK"
           echo "ZERAR .................. OK"
           echo "PDF A4 RETRATO ......... OK"
           echo "JAVASCRIPT ............. OK"
@@ -579,7 +1445,7 @@ jobs:
           ls -lh "$APK"
 
       # ==========================================================
-      # DISPONIBILIZAR APK
+      # PUBLICAR APK
       # ==========================================================
 
       - name: Disponibilizar APK
