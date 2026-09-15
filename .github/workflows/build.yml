@@ -12,15 +12,19 @@ jobs:
 
     steps:
 
-      # ==========================================================
-      # BASE EXATA DA VERSÃO #49
-      # ==========================================================
+      # ============================================================
+      # 1 - USAR EXATAMENTE A BASE DA VERSÃO 49
+      # ============================================================
 
-      - name: "Baixar projeto - BASE EXATA #49"
+      - name: Baixar projeto - BASE 49
         uses: actions/checkout@v4
         with:
           ref: 4e67e53aa453548944592d7b7f417fb77ca9fe7c
           fetch-depth: 1
+
+      # ============================================================
+      # 2 - JAVA
+      # ============================================================
 
       - name: Configurar Java 17
         uses: actions/setup-java@v4
@@ -28,14 +32,18 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      # ============================================================
+      # 3 - GRADLE
+      # ============================================================
+
       - name: Configurar Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
 
-      # ==========================================================
-      # PREPARAR PROJETO
-      # ==========================================================
+      # ============================================================
+      # 4 - PREPARAR PROJETO
+      # ============================================================
 
       - name: Preparar projeto
         shell: bash
@@ -50,25 +58,32 @@ jobs:
 
           unzip -o "Super-Pedido-Pro.zip" -d projeto
 
+      # ============================================================
+      # 5 - LOCALIZAR PROJETO ANDROID
+      # ============================================================
+
       - name: Localizar projeto Android
         shell: bash
         run: |
           set -e
 
-          ANDROID_DIR=$(find "$GITHUB_WORKSPACE/projeto" \
+          ANDROID_DIR=$(find \
+            "$GITHUB_WORKSPACE/projeto" \
             -name settings.gradle \
             -type f \
-            -print -quit | xargs -r dirname)
+            -print -quit \
+            | xargs -r dirname)
 
           test -n "$ANDROID_DIR"
 
           echo "ANDROID_DIR=$ANDROID_DIR" >> "$GITHUB_ENV"
 
-          echo "Projeto encontrado em: $ANDROID_DIR"
+          echo "Projeto Android:"
+          echo "$ANDROID_DIR"
 
-      # ==========================================================
-      # ANDROIDX
-      # ==========================================================
+      # ============================================================
+      # 6 - ANDROIDX
+      # ============================================================
 
       - name: Configurar AndroidX
         shell: bash
@@ -79,53 +94,59 @@ jobs:
 
           touch gradle.properties
 
-          grep -qF "android.useAndroidX=true" gradle.properties \
-            || echo "android.useAndroidX=true" >> gradle.properties
+          grep -qF \
+            "android.useAndroidX=true" \
+            gradle.properties \
+            || echo \
+            "android.useAndroidX=true" \
+            >> gradle.properties
 
-          grep -qF "android.enableJetifier=true" gradle.properties \
-            || echo "android.enableJetifier=true" >> gradle.properties
+          grep -qF \
+            "android.enableJetifier=true" \
+            gradle.properties \
+            || echo \
+            "android.enableJetifier=true" \
+            >> gradle.properties
 
-      # ==========================================================
-      # RELATÓRIO EXATO DA #49
+      # ============================================================
+      # 7 - APLICAR O RELATÓRIO EXATO DA VERSÃO 49
       #
-      # NÃO RECRIA O RELATÓRIO.
-      # EXTRAI E EXECUTA O BLOCO ORIGINAL DA #49.
-      # ==========================================================
+      # NÃO ALTERAR openPDF.
+      # ============================================================
 
-      - name: "Aplicar EXATAMENTE o relatório aprovado da #49"
+      - name: Aplicar EXATAMENTE o relatório aprovado da #49
         shell: bash
         run: |
           set -e
 
           git show HEAD:.github/workflows/build.yml \
-            > /tmp/build-v49.yml
+            > /tmp/build-base49.yml
 
-          test -s /tmp/build-v49.yml
+          test -s /tmp/build-base49.yml
 
           python3 - <<'PY'
           from pathlib import Path
           import re
 
           source = Path(
-              "/tmp/build-v49.yml"
+              "/tmp/build-base49.yml"
           ).read_text(
               encoding="utf-8"
           )
 
           lines = source.splitlines()
 
-          inicio = None
+          start = None
 
           for i, line in enumerate(lines):
 
               if line.strip() == \
                   "- name: Alterar SOMENTE o relatório":
 
-                  inicio = i
+                  start = i
                   break
 
-          if inicio is None:
-
+          if start is None:
               raise SystemExit(
                   "ERRO: etapa do relatório #49 não encontrada."
               )
@@ -133,7 +154,7 @@ jobs:
           run_line = None
 
           for i in range(
-              inicio + 1,
+              start + 1,
               len(lines)
           ):
 
@@ -153,7 +174,6 @@ jobs:
                   break
 
           if run_line is None:
-
               raise SystemExit(
                   "ERRO: bloco run do relatório #49 não encontrado."
               )
@@ -178,54 +198,45 @@ jobs:
                   )
 
               elif line.strip() == "":
-
                   script.append("")
 
               else:
-
                   raise SystemExit(
-                      "ERRO: estrutura inesperada no relatório #49."
+                      "ERRO: estrutura do relatório #49 inválida."
                   )
 
-          report_script = (
+          report = (
               "\n".join(script).rstrip()
               + "\n"
           )
 
           required = [
-
               "async function openPDF(sendViaWhatsApp=false)",
-
-              "orientation:'portrait'",
-
-              "format:'a4'",
-
               "window.AndroidFileBridge.sharePdf",
-
               "saveHistory(rows)",
-
-              "clearPedido()"
-
+              "clearPedido()",
+              "orientation:'portrait'",
+              "format:'a4'"
           ]
 
           for item in required:
 
-              if item not in report_script:
+              if item not in report:
 
                   raise SystemExit(
-                      "ERRO: relatório #49 incompleto: "
+                      "ERRO: item ausente no relatório #49: "
                       + item
                   )
 
           Path(
               "/tmp/relatorio-v49.sh"
           ).write_text(
-              report_script,
+              report,
               encoding="utf-8"
           )
 
           print(
-              "OK: relatório exato da #49 localizado."
+              "Relatório #49 localizado e validado."
           )
 
           PY
@@ -234,40 +245,41 @@ jobs:
 
           bash /tmp/relatorio-v49.sh
 
-          echo "OK: relatório #49 aplicado."
+          echo "Relatório #49 aplicado."
 
-      # ==========================================================
-      # CRIAR PATCH JAVASCRIPT
+      # ============================================================
+      # 8 - CRIAR CORREÇÃO JAVASCRIPT
       #
       # IMPORTANTE:
-      # NÃO USA BASE64.
-      # NÃO USA VARIÁVEL COM JAVASCRIPT.
-      # O CÓDIGO É GRAVADO DIRETAMENTE EM UM ARQUIVO TEMPORÁRIO.
-      # ==========================================================
+      # AQUI É JAVASCRIPT PURO.
+      # NÃO EXISTE <script>.
+      # NÃO EXISTE </script>.
+      #
+      # Isso permite que node --check valide corretamente.
+      # ============================================================
 
       - name: Criar arquivo de correções JavaScript
         shell: bash
         run: |
           set -e
 
-          cat > /tmp/super-pedido-fix.js <<'PATCHJS'
-          <script>
+          cat > /tmp/super-pedido-fix.js <<'FIXJS'
           (function(){
 
-            /* ==================================================
-               ADM
-               Mantém a administração original da #49.
-               Substitui somente o prompt inicial.
-               ================================================== */
+            /*
+             * =====================================================
+             * ADMINISTRAÇÃO
+             * =====================================================
+             */
 
-            const __originalOpenAdmin =
+            const superPedidoOriginalOpenAdmin =
               window.openAdmin;
 
             window.openAdmin = function(){
 
               if(
                 typeof featureModal !== "function" ||
-                typeof __originalOpenAdmin !== "function"
+                typeof superPedidoOriginalOpenAdmin !== "function"
               ){
 
                 alert(
@@ -296,6 +308,7 @@ jobs:
                     box-sizing:border-box;
                     padding:12px;
                     font-size:18px;
+                    margin-bottom:10px;
                   "
                 >
 
@@ -316,18 +329,18 @@ jobs:
               setTimeout(
                 function(){
 
-                  const input =
+                  const campo =
                     document.getElementById(
                       "superPedidoAdminPin"
                     );
 
-                  if(!input){
+                  if(!campo){
                     return;
                   }
 
-                  input.focus();
+                  campo.focus();
 
-                  input.addEventListener(
+                  campo.addEventListener(
                     "keydown",
                     function(event){
 
@@ -345,48 +358,47 @@ jobs:
                 },
                 100
               );
-
             };
 
 
             window.superPedidoConfirmarAdmin =
               function(){
 
-                const input =
+                const campo =
                   document.getElementById(
                     "superPedidoAdminPin"
                   );
 
                 const pin =
-                  input
-                  ? String(
-                      input.value || ""
-                    )
-                  : "";
+                  campo
+                    ? String(
+                        campo.value || ""
+                      )
+                    : "";
 
-                const saved =
+                const salvo =
                   localStorage.getItem(
                     "sp_admin_pin"
                   ) || "1234";
 
-                if(pin !== saved){
+                if(pin !== salvo){
 
                   alert(
                     "PIN incorreto."
                   );
 
-                  if(input){
+                  if(campo){
 
-                    input.value = "";
+                    campo.value = "";
 
-                    input.focus();
+                    campo.focus();
 
                   }
 
                   return;
                 }
 
-                const oldPrompt =
+                const promptOriginal =
                   window.prompt;
 
                 window.prompt =
@@ -398,23 +410,25 @@ jobs:
 
                 try{
 
-                  __originalOpenAdmin.call(
+                  superPedidoOriginalOpenAdmin.call(
                     window
                   );
 
                 }finally{
 
                   window.prompt =
-                    oldPrompt;
+                    promptOriginal;
 
                 }
 
               };
 
 
-            /* ==================================================
-               REPETIR ÚLTIMO PEDIDO
-               ================================================== */
+            /*
+             * =====================================================
+             * RECUPERAR ÚLTIMO PEDIDO
+             * =====================================================
+             */
 
             window.repeatLastOrder =
               function(){
@@ -425,7 +439,7 @@ jobs:
 
 
                 /*
-                 * Primeiro tenta lastOrder em memória.
+                 * 1 - Memória atual
                  */
 
                 try{
@@ -449,7 +463,7 @@ jobs:
 
 
                 /*
-                 * Depois tenta localStorage.
+                 * 2 - LocalStorage
                  */
 
                 if(!rows.length){
@@ -464,9 +478,7 @@ jobs:
                     if(saved){
 
                       const parsed =
-                        JSON.parse(
-                          saved
-                        );
+                        JSON.parse(saved);
 
                       if(
                         Array.isArray(parsed) &&
@@ -499,8 +511,7 @@ jobs:
 
 
                 /*
-                 * Último recurso:
-                 * histórico.
+                 * 3 - Histórico
                  */
 
                 if(!rows.length){
@@ -567,9 +578,11 @@ jobs:
               };
 
 
-            /* ==================================================
-               APLICAR REPETIÇÃO
-               ================================================== */
+            /*
+             * =====================================================
+             * APLICAR ÚLTIMO PEDIDO
+             * =====================================================
+             */
 
             window.applyRepeat =
               function(
@@ -607,39 +620,39 @@ jobs:
 
 
                 rows.forEach(
-                  function(x){
+                  function(item){
 
-                    if(!x){
+                    if(!item){
                       return;
                     }
 
 
                     /*
-                     * Produto adicional.
+                     * Produto adicional
                      */
 
                     if(
-                      x.cat ===
+                      item.cat ===
                       "Produto Adicional"
                     ){
 
                       extras.push({
 
                         code:
-                          x.code === "-"
-                          ? ""
-                          : String(
-                              x.code || ""
-                            ),
+                          item.code === "-"
+                            ? ""
+                            : String(
+                                item.code || ""
+                              ),
 
                         name:
                           String(
-                            x.name || ""
+                            item.name || ""
                           ),
 
                         qty:
                           Number(
-                            x.order
+                            item.order
                           ) || 0
 
                       });
@@ -650,7 +663,7 @@ jobs:
 
 
                     /*
-                     * Produto normal.
+                     * Produto normal
                      */
 
                     if(
@@ -663,13 +676,13 @@ jobs:
                     }
 
 
-                    const f =
+                    const produto =
                       productByCode(
-                        x.code
+                        item.code
                       );
 
 
-                    if(!f){
+                    if(!produto){
 
                       return;
 
@@ -678,27 +691,27 @@ jobs:
 
                     vals[
                       key(
-                        f.c,
-                        f.s,
-                        f.i,
+                        produto.c,
+                        produto.s,
+                        produto.i,
                         "o"
                       )
                     ] =
                       Number(
-                        x.order
+                        item.order
                       ) || 0;
 
 
                     vals[
                       key(
-                        f.c,
-                        f.s,
-                        f.i,
+                        produto.c,
+                        produto.s,
+                        produto.i,
                         "s"
                       )
                     ] =
                       Number(
-                        x.stock
+                        item.stock
                       ) || 0;
 
                   }
@@ -706,21 +719,21 @@ jobs:
 
 
                 /*
-                 * Recuperar observação.
+                 * Observação geral
                  */
 
-                let obsFinal =
+                let obs =
                   String(
                     observation || ""
                   );
 
 
                 if(
-                  !obsFinal &&
+                  !obs &&
                   rows.generalObservation
                 ){
 
-                  obsFinal =
+                  obs =
                     String(
                       rows.generalObservation
                     );
@@ -728,38 +741,19 @@ jobs:
                 }
 
 
-                if(
-                  !obsFinal &&
-                  typeof historyOrders !==
-                  "undefined" &&
-                  Array.isArray(
-                    historyOrders
-                  ) &&
-                  historyOrders.length
-                ){
-
-                  obsFinal =
-                    String(
-                      historyOrders[0]
-                        .generalObservation || ""
-                    );
-
-                }
-
-
                 generalObservation =
-                  obsFinal;
+                  obs;
 
 
-                const campoObs =
+                const campo =
                   document.getElementById(
                     "generalObs"
                   );
 
 
-                if(campoObs){
+                if(campo){
 
-                  campoObs.value =
+                  campo.value =
                     generalObservation;
 
                 }
@@ -832,20 +826,22 @@ jobs:
               };
 
 
-            /* ==================================================
-               ZERAR PEDIDO
-               
-               IMPORTANTE:
-               - NÃO apaga sp_last_order
-               - NÃO apaga sp_history
-               - limpa somente o pedido atual
-               - evita duplicar o histórico
-               ================================================== */
+            /*
+             * =====================================================
+             * LIMPAR PEDIDO ATUAL
+             *
+             * NÃO APAGA:
+             * - sp_last_order
+             * - sp_history
+             *
+             * =====================================================
+             */
 
             window.clearPedido =
               function(){
 
-                let rowsToSave = [];
+                let linhas =
+                  [];
 
 
                 try{
@@ -859,7 +855,7 @@ jobs:
                     finalizedRows.length
                   ){
 
-                    rowsToSave =
+                    linhas =
                       JSON.parse(
                         JSON.stringify(
                           finalizedRows
@@ -872,23 +868,17 @@ jobs:
 
 
                 /*
-                 * A função openPDF da #49 já chama:
-                 *
-                 * saveHistory(rows);
-                 * clearPedido();
-                 *
-                 * Portanto verificamos se o histórico
-                 * já recebeu exatamente essas linhas.
+                 * Verificar se o relatório #49
+                 * já salvou o histórico.
                  */
 
-                let alreadySaved =
-                  false;
+                let jaSalvo = false;
 
 
                 try{
 
                   if(
-                    rowsToSave.length &&
+                    linhas.length &&
                     typeof historyOrders !==
                     "undefined" &&
                     Array.isArray(
@@ -900,7 +890,6 @@ jobs:
                     const ultimo =
                       historyOrders[0];
 
-
                     if(
                       ultimo &&
                       Array.isArray(
@@ -908,12 +897,12 @@ jobs:
                       )
                     ){
 
-                      alreadySaved =
+                      jaSalvo =
                         JSON.stringify(
                           ultimo.rows
                         ) ===
                         JSON.stringify(
-                          rowsToSave
+                          linhas
                         );
 
                     }
@@ -924,25 +913,25 @@ jobs:
 
 
                 /*
-                 * Só salva se ainda não estiver salvo.
+                 * Só salvar caso ainda não esteja salvo.
                  */
 
                 if(
-                  rowsToSave.length &&
-                  !alreadySaved &&
+                  linhas.length &&
+                  !jaSalvo &&
                   typeof saveHistory ===
                   "function"
                 ){
 
                   saveHistory(
-                    rowsToSave
+                    linhas
                   );
 
                 }
 
 
                 /*
-                 * Limpa pedido atual.
+                 * Limpar somente o pedido atual.
                  */
 
                 vals = {};
@@ -965,7 +954,7 @@ jobs:
 
 
                 /*
-                 * Apaga somente dados do pedido atual.
+                 * Apagar somente dados do pedido atual.
                  */
 
                 localStorage.removeItem(
@@ -986,24 +975,24 @@ jobs:
 
 
                 /*
-                 * Limpa observação visual.
+                 * Limpar observação visual.
                  */
 
-                const obs =
+                const campoObs =
                   document.getElementById(
                     "generalObs"
                   );
 
 
-                if(obs){
+                if(campoObs){
 
-                  obs.value = "";
+                  campoObs.value = "";
 
                 }
 
 
                 /*
-                 * Atualiza armazenamento.
+                 * Salvar estado.
                  */
 
                 if(
@@ -1017,7 +1006,7 @@ jobs:
 
 
                 /*
-                 * Atualiza tela.
+                 * Atualizar tela.
                  */
 
                 if(
@@ -1051,42 +1040,25 @@ jobs:
 
 
                 /*
-                 * Esconde opções do pedido finalizado.
+                 * Ocultar opções de finalização.
                  */
 
-                const op =
+                const opcoes =
                   document.getElementById(
                     "opcoesFinalizado"
                   );
 
 
-                if(op){
+                if(opcoes){
 
-                  op.style.display =
+                  opcoes.style.display =
                     "none";
 
                 }
 
 
                 /*
-                 * Zera campos de quantidade.
-                 */
-
-                document
-                  .querySelectorAll(
-                    "input.qty"
-                  )
-                  .forEach(
-                    function(el){
-
-                      el.value = "0";
-
-                    }
-                  );
-
-
-                /*
-                 * Volta para o topo.
+                 * Voltar ao topo.
                  */
 
                 window.scrollTo({
@@ -1100,19 +1072,19 @@ jobs:
               };
 
           })();
-          </script>
-          PATCHJS
+          FIXJS
 
           test -s /tmp/super-pedido-fix.js
 
           node --check /tmp/super-pedido-fix.js
 
-          echo "OK: patch JavaScript criado."
-          echo "OK: patch JavaScript validado."
+          echo "JavaScript da correção validado com sucesso."
 
-      # ==========================================================
-      # APLICAR PATCH NA BUILD
-      # ==========================================================
+      # ============================================================
+      # 9 - INSERIR O JAVASCRIPT NA PÁGINA
+      #
+      # SOMENTE AQUI AS TAGS <script> SÃO CRIADAS.
+      # ============================================================
 
       - name: Aplicar correções na build
         shell: bash
@@ -1136,15 +1108,21 @@ jobs:
               / "app/src/main/assets/app/index.html"
           )
 
+          text = html.read_text(
+              encoding="utf-8"
+          )
+
           patch = Path(
               "/tmp/super-pedido-fix.js"
           ).read_text(
               encoding="utf-8"
           )
 
-          text = html.read_text(
-              encoding="utf-8"
-          )
+          if "</body>" not in text:
+
+              raise SystemExit(
+                  "ERRO: </body> não encontrado."
+              )
 
           if (
               "async function openPDF(sendViaWhatsApp=false)"
@@ -1173,40 +1151,44 @@ jobs:
                   "ERRO: relatório não está em retrato."
               )
 
-          if "</body>" not in text:
 
-              raise SystemExit(
-                  "ERRO: </body> não encontrado."
-              )
+          script_tag = (
+              "\n<script>\n"
+              + patch
+              + "\n</script>\n"
+          )
+
 
           text = text.replace(
               "</body>",
-              patch + "\n</body>",
+              script_tag + "</body>",
               1
           )
+
 
           html.write_text(
               text,
               encoding="utf-8"
           )
 
+
           print(
-              "OK: correções aplicadas na build."
+              "Correções inseridas no index.html."
           )
 
           print(
-              "OK: relatório #49 preservado."
+              "Relatório #49 preservado."
           )
 
           print(
-              "OK: openPDF não foi sobrescrito."
+              "openPDF não foi substituído."
           )
 
           PY
 
-      # ==========================================================
-      # BIBLIOTECAS PDF E EXCEL
-      # ==========================================================
+      # ============================================================
+      # 10 - BIBLIOTECAS
+      # ============================================================
 
       - name: Preparar bibliotecas PDF e Excel
         shell: bash
@@ -1229,9 +1211,9 @@ jobs:
 
           test -s "$ASSETS/jspdf.umd.min.js"
 
-      # ==========================================================
-      # VERIFICAR JAVASCRIPT
-      # ==========================================================
+      # ============================================================
+      # 11 - VERIFICAR JAVASCRIPT
+      # ============================================================
 
       - name: Verificar JavaScript
         shell: bash
@@ -1270,16 +1252,22 @@ jobs:
                   "ERRO: nenhum JavaScript encontrado."
               )
 
+          combined = "\n".join(
+              scripts
+          )
+
           Path(
               "/tmp/super-pedido-inline.js"
           ).write_text(
-              "\n".join(scripts),
+              combined,
               encoding="utf-8"
           )
 
           required = [
 
               "async function openPDF(sendViaWhatsApp=false)",
+
+              "window.AndroidFileBridge.sharePdf",
 
               "window.openAdmin=function(){",
 
@@ -1289,7 +1277,7 @@ jobs:
 
               "window.clearPedido=function(){",
 
-              "window.AndroidFileBridge.sharePdf",
+              "function saveHistory(rows)",
 
               "CÓDIGO",
 
@@ -1310,6 +1298,7 @@ jobs:
                       + item
                   )
 
+
           if (
               "orientation:'landscape'"
               in text
@@ -1322,8 +1311,9 @@ jobs:
                   "ERRO: relatório em paisagem."
               )
 
+
           print(
-              "OK: verificações textuais concluídas."
+              "Verificação textual concluída."
           )
 
           PY
@@ -1331,11 +1321,11 @@ jobs:
           node --check \
             /tmp/super-pedido-inline.js
 
-          echo "OK: JavaScript válido."
+          echo "JavaScript válido."
 
-      # ==========================================================
-      # VERIFICAÇÃO FINAL
-      # ==========================================================
+      # ============================================================
+      # 12 - VERIFICAÇÃO FINAL
+      # ============================================================
 
       - name: Verificação final antes da compilação
         shell: bash
@@ -1345,6 +1335,14 @@ jobs:
           HTML="$ANDROID_DIR/app/src/main/assets/app/index.html"
 
           test -f "$HTML"
+
+          grep -q \
+            "async function openPDF(sendViaWhatsApp=false)" \
+            "$HTML"
+
+          grep -q \
+            "window.AndroidFileBridge.sharePdf" \
+            "$HTML"
 
           grep -q \
             "window.openAdmin=function(){" \
@@ -1363,10 +1361,6 @@ jobs:
             "$HTML"
 
           grep -q \
-            "window.AndroidFileBridge.sharePdf" \
-            "$HTML"
-
-          grep -q \
             "orientation:'portrait'" \
             "$HTML"
 
@@ -1375,24 +1369,37 @@ jobs:
             "$HTML"
 
           grep -q \
-            "RELATÓRIO DE PEDIDO" \
+            "CÓDIGO" \
             "$HTML"
 
+          grep -q \
+            "NOME DO PRODUTO" \
+            "$HTML"
+
+          grep -q \
+            "ESTOQUE" \
+            "$HTML"
+
+          grep -q \
+            "PEDIDO" \
+            "$HTML"
+
+          echo ""
           echo "=========================================="
-          echo " VERIFICAÇÃO FINAL: OK"
+          echo " VERIFICAÇÃO FINAL OK"
           echo "=========================================="
-          echo "BASE #49 ............... OK"
+          echo "BASE 49 ................ OK"
           echo "RELATÓRIO #49 .......... OK"
-          echo "ADM .................... OK"
-          echo "REPETIR ................ OK"
-          echo "ZERAR .................. OK"
-          echo "PDF A4 RETRATO ......... OK"
-          echo "JAVASCRIPT ............. OK"
+          echo "PDF A4 RETRATO .......... OK"
+          echo "ADM ...................... OK"
+          echo "REPETIR PEDIDO ........... OK"
+          echo "LIMPAR PEDIDO ............ OK"
+          echo "JAVASCRIPT ............... OK"
           echo "=========================================="
 
-      # ==========================================================
-      # COMPILAR APK
-      # ==========================================================
+      # ============================================================
+      # 13 - COMPILAR APK
+      # ============================================================
 
       - name: Compilar APK
         shell: bash
@@ -1417,9 +1424,9 @@ jobs:
 
           fi
 
-      # ==========================================================
-      # VERIFICAR APK
-      # ==========================================================
+      # ============================================================
+      # 14 - VERIFICAR APK
+      # ============================================================
 
       - name: Verificar APK
         shell: bash
@@ -1438,15 +1445,16 @@ jobs:
 
           echo "APK=$APK" >> "$GITHUB_ENV"
 
+          echo ""
           echo "=========================================="
           echo " APK GERADO COM SUCESSO"
           echo "=========================================="
 
           ls -lh "$APK"
 
-      # ==========================================================
-      # PUBLICAR APK
-      # ==========================================================
+      # ============================================================
+      # 15 - DISPONIBILIZAR APK
+      # ============================================================
 
       - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
