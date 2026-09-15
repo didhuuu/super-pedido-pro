@@ -67,11 +67,6 @@ jobs:
             gradle.properties \
             || echo 'android.enableJetifier=true' >> gradle.properties
 
-      # ============================================================
-      # RELATÓRIO DA #49
-      # NÃO ALTERAR
-      # ============================================================
-
       - name: Aplicar EXATAMENTE o relatório aprovado da #49
         shell: bash
         run: |
@@ -197,10 +192,6 @@ jobs:
 
           bash /tmp/relatorio-v49.sh
 
-      # ============================================================
-      # CORRIGIR REPETIR ÚLTIMO
-      # ============================================================
-
       - name: Corrigir Repetir Último
         shell: bash
         run: |
@@ -211,86 +202,56 @@ jobs:
           test -f "$HTML"
 
           cat > /tmp/repetir-ultimo.js <<'JS'
-
           (function(){
 
             function clone(v){
-
               try{
-
-                return JSON.parse(
-                  JSON.stringify(v)
-                );
-
+                return JSON.parse(JSON.stringify(v));
               }catch(e){
-
                 return v;
-
               }
-
             }
-
 
             function findProduct(item){
 
               const code =
-                String(
-                  item.code || ""
-                ).trim();
+                String(item.code || '').trim();
 
               const name =
-                String(
-                  item.name || ""
-                ).trim()
+                String(item.name || '')
+                .trim()
                 .toLowerCase();
-
 
               if(
                 code &&
-                typeof productByCode ===
-                "function"
+                typeof productByCode === 'function'
               ){
 
                 const p =
                   productByCode(code);
 
-                if(p){
-
-                  return p;
-
-                }
-
+                if(p) return p;
               }
 
-
               if(
-                typeof APP_DATA !==
-                "undefined"
+                typeof APP_DATA !== 'undefined'
               ){
 
                 for(
-                  const c of
-                  Object.keys(
-                    APP_DATA || {}
-                  )
+                  const c of Object.keys(APP_DATA || {})
                 ){
 
                   const sups =
                     APP_DATA[c] || {};
 
-
                   for(
-                    const s of
-                    Object.keys(sups)
+                    const s of Object.keys(sups)
                   ){
 
                     const items =
-                      Array.isArray(
-                        sups[s]
-                      )
-                      ? sups[s]
-                      : [];
-
+                      Array.isArray(sups[s])
+                        ? sups[s]
+                        : [];
 
                     for(
                       let i = 0;
@@ -298,15 +259,11 @@ jobs:
                       i++
                     ){
 
-                      const p =
-                        items[i];
-
+                      const p = items[i];
 
                       if(
                         code &&
-                        String(
-                          p[0] || ""
-                        ).trim() === code
+                        String(p[0] || '').trim() === code
                       ){
 
                         return {
@@ -315,17 +272,13 @@ jobs:
                           i:i,
                           p:p
                         };
-
                       }
-
 
                       if(
                         name &&
-                        String(
-                          p[1] || ""
-                        ).trim()
-                        .toLowerCase()
-                        === name
+                        String(p[1] || '')
+                          .trim()
+                          .toLowerCase() === name
                       ){
 
                         return {
@@ -334,50 +287,36 @@ jobs:
                           i:i,
                           p:p
                         };
-
                       }
-
                     }
-
                   }
-
                 }
-
               }
 
-
               return null;
-
             }
-
 
             function loadLast(){
 
               try{
 
                 if(
-                  Array.isArray(
-                    lastOrder
-                  ) &&
+                  Array.isArray(lastOrder) &&
                   lastOrder.length
                 ){
 
-                  return clone(
-                    lastOrder
-                  );
-
+                  return clone(lastOrder);
                 }
 
               }catch(e){}
-
 
               try{
 
                 const v =
                   JSON.parse(
                     localStorage.getItem(
-                      "sp_last_order"
-                    ) || "null"
+                      'sp_last_order'
+                    ) || 'null'
                   );
 
                 if(
@@ -386,44 +325,34 @@ jobs:
                 ){
 
                   return v;
-
                 }
 
               }catch(e){}
-
 
               try{
 
                 const h =
                   JSON.parse(
                     localStorage.getItem(
-                      "sp_history"
-                    ) || "[]"
+                      'sp_history'
+                    ) || '[]'
                   );
 
                 if(
                   Array.isArray(h) &&
                   h[0] &&
-                  Array.isArray(
-                    h[0].rows
-                  )
+                  Array.isArray(h[0].rows)
                 ){
 
-                  return clone(
-                    h[0].rows
-                  );
-
+                  return clone(h[0].rows);
                 }
 
               }catch(e){}
 
-
               try{
 
                 if(
-                  Array.isArray(
-                    historyOrders
-                  ) &&
+                  Array.isArray(historyOrders) &&
                   historyOrders[0] &&
                   Array.isArray(
                     historyOrders[0].rows
@@ -433,16 +362,12 @@ jobs:
                   return clone(
                     historyOrders[0].rows
                   );
-
                 }
 
               }catch(e){}
 
-
               return [];
-
             }
-
 
             window.repeatLastOrder =
               function(){
@@ -450,24 +375,17 @@ jobs:
                 const rows =
                   loadLast();
 
-
                 if(!rows.length){
 
                   alert(
-                    "Ainda não existe último pedido."
+                    'Ainda não existe último pedido.'
                   );
 
                   return;
-
                 }
 
-
-                window.applyRepeat(
-                  rows
-                );
-
+                window.applyRepeat(rows);
               };
-
 
             window.applyRepeat =
               function(rows){
@@ -478,222 +396,159 @@ jobs:
                 ){
 
                   alert(
-                    "Não foi possível recuperar o último pedido."
+                    'Não foi possível recuperar o último pedido.'
                   );
 
                   return;
-
                 }
 
-
                 vals = {};
-
                 extras = [];
 
-
-                let first = "";
-
+                let first = '';
                 let count = 0;
-
 
                 rows.forEach(
                   function(item){
 
-                    if(!item){
-
-                      return;
-
-                    }
-
+                    if(!item) return;
 
                     if(
                       item.cat ===
-                      "Produto Adicional"
+                      'Produto Adicional'
                     ){
 
                       extras.push({
-
                         code:
-                          item.code === "-"
-                            ? ""
+                          item.code === '-'
+                            ? ''
                             : String(
-                                item.code || ""
+                                item.code || ''
                               ),
-
                         name:
                           String(
-                            item.name || ""
+                            item.name || ''
                           ),
-
                         qty:
                           Number(
                             item.order
                           ) || 0
-
                       });
-
 
                       count++;
 
                       return;
-
                     }
-
 
                     const p =
-                      findProduct(
-                        item
-                      );
+                      findProduct(item);
 
-
-                    if(!p){
-
-                      return;
-
-                    }
-
+                    if(!p) return;
 
                     if(!first){
-
-                      first =
-                        p.c;
-
+                      first = p.c;
                     }
 
+                    vals[
+                      key(
+                        p.c,
+                        p.s,
+                        p.i,
+                        'o'
+                      )
+                    ] =
+                      Number(item.order) || 0;
 
                     vals[
                       key(
                         p.c,
                         p.s,
                         p.i,
-                        "o"
+                        's'
                       )
                     ] =
-                      Number(
-                        item.order
-                      ) || 0;
-
-
-                    vals[
-                      key(
-                        p.c,
-                        p.s,
-                        p.i,
-                        "s"
-                      )
-                    ] =
-                      Number(
-                        item.stock
-                      ) || 0;
-
+                      Number(item.stock) || 0;
 
                     count++;
-
                   }
                 );
 
-
                 if(
-                  rows.generalObservation
-                  !== undefined
+                  rows.generalObservation !==
+                  undefined
                 ){
 
                   generalObservation =
                     String(
-                      rows.generalObservation
-                      || ""
+                      rows.generalObservation || ''
                     );
-
                 }
-
 
                 const obs =
                   document.getElementById(
-                    "generalObs"
+                    'generalObs'
                   );
-
 
                 if(obs){
 
                   obs.value =
-                    generalObservation
-                    || "";
-
+                    generalObservation || '';
                 }
-
 
                 if(
                   first &&
                   typeof APP_DATA !==
-                  "undefined" &&
+                    'undefined' &&
                   APP_DATA[first]
                 ){
 
-                  current =
-                    first;
-
+                  current = first;
                 }
 
-
                 if(
-                  typeof save ===
-                  "function"
+                  typeof save === 'function'
                 ){
 
                   save();
-
                 }
-
 
                 if(
                   typeof saveFeatures ===
-                  "function"
+                  'function'
                 ){
 
                   saveFeatures();
-
                 }
 
-
                 if(
-                  typeof tabs ===
-                  "function"
+                  typeof tabs === 'function'
                 ){
 
                   tabs();
-
                 }
 
-
                 if(
-                  typeof render ===
-                  "function"
+                  typeof render === 'function'
                 ){
 
                   render();
-
                 }
-
 
                 if(
                   typeof renderValidadeCurta ===
-                  "function"
+                  'function'
                 ){
 
                   renderValidadeCurta();
-
                 }
-
 
                 if(
                   typeof updateBadge ===
-                  "function"
+                  'function'
                 ){
 
                   updateBadge();
-
                 }
-
 
                 try{
 
@@ -701,7 +556,7 @@ jobs:
                     clone(rows);
 
                   localStorage.setItem(
-                    "sp_last_order",
+                    'sp_last_order',
                     JSON.stringify(
                       lastOrder
                     )
@@ -709,47 +564,35 @@ jobs:
 
                 }catch(e){}
 
-
                 if(
                   typeof closeFeature ===
-                  "function"
+                  'function'
                 ){
 
                   closeFeature();
-
                 }
-
 
                 if(count){
 
                   alert(
-                    "Último pedido recuperado. Confira antes de enviar."
+                    'Último pedido recuperado. Confira antes de enviar.'
                   );
 
                 }else{
 
                   alert(
-                    "O último pedido foi encontrado, mas nenhum item pôde ser localizado."
+                    'O último pedido foi encontrado, mas nenhum item pôde ser localizado.'
                   );
-
                 }
-
               };
 
           })();
-
           JS
 
-          cat \
-            /tmp/repetir-ultimo.js \
-            >> "$HTML"
+          cat /tmp/repetir-ultimo.js >> "$HTML"
 
           node --check \
             /tmp/repetir-ultimo.js
-
-      # ============================================================
-      # CORRIGIR IMPORTAR LISTA DO ADM
-      # ============================================================
 
       - name: Corrigir Importar Lista dentro do ADM
         shell: bash
@@ -775,193 +618,184 @@ jobs:
               encoding="utf-8"
           )
 
+          # ============================================================
+          # IMPORTS NECESSÁRIOS
+          # ============================================================
 
-          imports = [
-
+          required_imports = [
               "import android.content.ClipData;",
-
               "import android.net.Uri;",
-
               "import android.webkit.ValueCallback;",
-
               "import android.webkit.WebChromeClient;"
-
           ]
 
+          package_pos = java.find("package ")
 
-          for imp in imports:
+          if package_pos < 0:
+              raise SystemExit(
+                  "ERRO: package da MainActivity não encontrado."
+              )
+
+          package_end = java.find(
+              chr(10),
+              package_pos
+          )
+
+          if package_end < 0:
+              raise SystemExit(
+                  "ERRO: fim do package não encontrado."
+              )
+
+          missing_imports = []
+
+          for imp in required_imports:
 
               if imp not in java:
+                  missing_imports.append(imp)
 
-                  marker = "import android."
+          if missing_imports:
 
-                  pos = java.find(
-                      marker
-                  )
+              block = (
+                  chr(10) +
+                  chr(10).join(missing_imports) +
+                  chr(10)
+              )
 
-                  if pos >= 0:
+              java = (
+                  java[:package_end + 1] +
+                  block +
+                  java[package_end + 1:]
+              )
 
-                      line_end =
-                          java.find(
-                              "\n",
-                              pos
-                          )
-
-                      java =
-                          java[:line_end + 1] \
-                          + imp \
-                          + "\n" \
-                          + java[line_end + 1:]
-
-                  else:
-
-                      pkg_end =
-                          java.find(
-                              "\n",
-                              java.find(
-                                  "package "
-                              )
-                          )
-
-                      java =
-                          java[:pkg_end + 1] \
-                          + imp \
-                          + "\n" \
-                          + java[pkg_end + 1:]
-
+          # ============================================================
+          # CAMPOS DO SELETOR DE ARQUIVOS
+          # ============================================================
 
           if (
               "private ValueCallback<Uri[]> filePathCallback;"
               not in java
           ):
 
-              m = re.search(
-                  r"(public\s+class\s+MainActivity[^\{]*\{)",
+              class_match = re.search(
+                  r"public\s+class\s+MainActivity[^{]*\{",
                   java
               )
 
-              if not m:
+              if not class_match:
 
                   raise SystemExit(
-                      "MainActivity class not found"
+                      "ERRO: classe MainActivity não encontrada."
                   )
 
               fields = (
-                  "\n"
-                  "    private ValueCallback<Uri[]> filePathCallback;\n"
-                  "    private static final int FILE_CHOOSER_REQUEST = 1001;\n"
+                  chr(10) +
+                  "    private ValueCallback<Uri[]> filePathCallback;" +
+                  chr(10) +
+                  "    private static final int FILE_CHOOSER_REQUEST = 1001;" +
+                  chr(10)
               )
 
-              java =
-                  java[:m.end()] \
-                  + fields \
-                  + java[m.end():]
+              java = (
+                  java[:class_match.end()] +
+                  fields +
+                  java[class_match.end():]
+              )
 
+          # ============================================================
+          # WEBCHROMECLIENT
+          # ============================================================
 
-          chrome = '''
-              webView.setWebChromeClient(new WebChromeClient() {
-                  @Override
-                  public boolean onShowFileChooser(
-                          WebView view,
-                          ValueCallback<Uri[]> callback,
-                          FileChooserParams params) {
+          chrome_lines = [
+              "",
+              "    webView.setWebChromeClient(new WebChromeClient() {",
+              "        @Override",
+              "        public boolean onShowFileChooser(",
+              "                WebView view,",
+              "                ValueCallback<Uri[]> callback,",
+              "                FileChooserParams params) {",
+              "",
+              "            if (MainActivity.this.filePathCallback != null) {",
+              "                MainActivity.this.filePathCallback.onReceiveValue(null);",
+              "            }",
+              "",
+              "            MainActivity.this.filePathCallback = callback;",
+              "",
+              "            try {",
+              "                Intent intent = params.createIntent();",
+              "                startActivityForResult(intent, FILE_CHOOSER_REQUEST);",
+              "                return true;",
+              "",
+              "            } catch (Exception e) {",
+              "",
+              "                MainActivity.this.filePathCallback = null;",
+              "",
+              "                Toast.makeText(",
+              "                        MainActivity.this,",
+              "                        \"Não foi possível abrir o seletor de arquivos.\",",
+              "                        Toast.LENGTH_LONG",
+              "                ).show();",
+              "",
+              "                return false;",
+              "            }",
+              "        }",
+              "    });",
+              ""
+          ]
 
-                      if (MainActivity.this.filePathCallback != null) {
-                          MainActivity.this.filePathCallback.onReceiveValue(null);
-                      }
-
-                      MainActivity.this.filePathCallback = callback;
-
-                      try {
-
-                          Intent intent =
-                                  params.createIntent();
-
-                          startActivityForResult(
-                                  intent,
-                                  FILE_CHOOSER_REQUEST
-                          );
-
-                          return true;
-
-                      } catch (Exception e) {
-
-                          MainActivity.this.filePathCallback = null;
-
-                          Toast.makeText(
-                                  MainActivity.this,
-                                  "Não foi possível abrir o seletor de arquivos.",
-                                  Toast.LENGTH_LONG
-                          ).show();
-
-                          return false;
-                      }
-                  }
-              });
-          '''
-
+          chrome = chr(10).join(
+              chrome_lines
+          )
 
           if "onShowFileChooser" not in java:
 
-              needle =
-                  "webView.setWebViewClient("
+              needle = "webView.setWebViewClient("
 
-              start =
-                  java.find(
-                      needle
-                  )
+              start = java.find(needle)
 
               if start < 0:
 
                   raise SystemExit(
-                      "setWebViewClient não encontrado"
+                      "ERRO: setWebViewClient não encontrado."
                   )
 
-
               depth = 0
-
               quote = None
-
               escape = False
+              seen_open = False
+              found = False
 
               i = start
-
-              seen_open = False
-
 
               while i < len(java):
 
                   ch = java[i]
 
-
-                  if quote:
+                  if quote is not None:
 
                       if escape:
 
                           escape = False
 
-                      elif ch == "\\":
-                          
+                      elif ch == chr(92):
+
                           escape = True
 
                       elif ch == quote:
 
                           quote = None
 
-
                   else:
 
-                      if ch in "'\"":
+                      if ch == "'" or ch == '"':
 
                           quote = ch
 
-                      elif ch == "(":
+                      elif ch == '(':
 
                           depth += 1
-
                           seen_open = True
 
-                      elif ch == ")":
+                      elif ch == ')':
 
                           depth -= 1
 
@@ -973,161 +807,141 @@ jobs:
                               j = i + 1
 
                               while (
-                                  j < len(java)
-                                  and java[j].isspace()
+                                  j < len(java) and
+                                  java[j].isspace()
                               ):
 
                                   j += 1
 
-
                               if (
-                                  j < len(java)
-                                  and java[j] == ";"
+                                  j < len(java) and
+                                  java[j] == ';'
                               ):
 
-                                  java =
-                                      java[:j + 1] \
-                                      + chrome \
-                                      + java[j + 1:]
+                                  java = (
+                                      java[:j + 1] +
+                                      chrome +
+                                      java[j + 1:]
+                                  )
 
+                                  found = True
                                   break
 
                   i += 1
 
-              else:
+              if not found:
 
                   raise SystemExit(
-                      "fim de setWebViewClient não encontrado"
+                      "ERRO: final de setWebViewClient não encontrado."
                   )
 
+          # ============================================================
+          # RESULTADO DO SELETOR DE ARQUIVOS
+          # ============================================================
 
-          if (
-              "protected void onActivityResult"
-              not in java
-          ):
+          if "protected void onActivityResult" not in java:
 
-              result = '''
-              @Override
-              protected void onActivityResult(
-                      int requestCode,
-                      int resultCode,
-                      Intent data) {
+              result_lines = [
+                  "",
+                  "    @Override",
+                  "    protected void onActivityResult(",
+                  "            int requestCode,",
+                  "            int resultCode,",
+                  "            Intent data) {",
+                  "",
+                  "        super.onActivityResult(",
+                  "                requestCode,",
+                  "                resultCode,",
+                  "                data",
+                  "        );",
+                  "",
+                  "        if (",
+                  "                requestCode != FILE_CHOOSER_REQUEST",
+                  "                || filePathCallback == null",
+                  "        ) {",
+                  "            return;",
+                  "        }",
+                  "",
+                  "        Uri[] results = null;",
+                  "",
+                  "        if (",
+                  "                resultCode == RESULT_OK",
+                  "                && data != null",
+                  "        ) {",
+                  "",
+                  "            if (data.getClipData() != null) {",
+                  "",
+                  "                int count =",
+                  "                        data.getClipData().getItemCount();",
+                  "",
+                  "                results = new Uri[count];",
+                  "",
+                  "                for (",
+                  "                        int i = 0;",
+                  "                        i < count;",
+                  "                        i++",
+                  "                ) {",
+                  "",
+                  "                    results[i] =",
+                  "                            data.getClipData()",
+                  "                                    .getItemAt(i)",
+                  "                                    .getUri();",
+                  "                }",
+                  "",
+                  "            } else if (data.getData() != null) {",
+                  "",
+                  "                results = new Uri[]{",
+                  "                        data.getData()",
+                  "                };",
+                  "            }",
+                  "        }",
+                  "",
+                  "        filePathCallback.onReceiveValue(results);",
+                  "",
+                  "        filePathCallback = null;",
+                  "    }",
+                  ""
+              ]
 
-                  super.onActivityResult(
-                          requestCode,
-                          resultCode,
-                          data
-                  );
+              result = chr(10).join(
+                  result_lines
+              )
 
-                  if (
-                      requestCode != FILE_CHOOSER_REQUEST
-                      || filePathCallback == null
-                  ) {
-
-                      return;
-
-                  }
-
-
-                  Uri[] results = null;
-
-
-                  if (
-                      resultCode == RESULT_OK
-                      && data != null
-                  ) {
-
-                      if (
-                          data.getClipData() != null
-                      ) {
-
-                          int count =
-                              data.getClipData()
-                                  .getItemCount();
-
-                          results =
-                              new Uri[count];
-
-
-                          for (
-                              int i = 0;
-                              i < count;
-                              i++
-                          ) {
-
-                              results[i] =
-                                  data.getClipData()
-                                      .getItemAt(i)
-                                      .getUri();
-
-                          }
-
-                      } else if (
-                          data.getData() != null
-                      ) {
-
-                          results =
-                              new Uri[]{
-                                  data.getData()
-                              };
-
-                      }
-
-                  }
-
-
-                  filePathCallback.onReceiveValue(
-                      results
-                  );
-
-
-                  filePathCallback = null;
-
-              }
-
-              '''
-
-
-              marker =
-                  "    public class AndroidFileBridge {"
-
+              marker = "    public class AndroidFileBridge {"
 
               if marker in java:
 
-                  java =
-                      java.replace(
-                          marker,
-                          result + marker,
-                          1
-                      )
+                  java = java.replace(
+                      marker,
+                      result + marker,
+                      1
+                  )
 
               else:
 
-                  idx =
-                      java.rfind(
-                          "\n}"
-                      )
+                  idx = java.rfind(
+                      chr(10) + "}"
+                  )
 
                   if idx < 0:
 
                       raise SystemExit(
-                          "fim da MainActivity não encontrado"
+                          "ERRO: final da MainActivity não encontrado."
                       )
 
-                  java =
-                      java[:idx] \
-                      + result \
-                      + java[idx:]
-
+                  java = (
+                      java[:idx] +
+                      result +
+                      java[idx:]
+                  )
 
           main.write_text(
               java,
               encoding="utf-8"
           )
 
-
           print(
-              "OK - MainActivity corrigida."
+              "OK - MainActivity corrigida para importar arquivos."
           )
 
           PY
@@ -1152,9 +966,7 @@ jobs:
             "WebChromeClient" \
             "$MAIN"
 
-      # ============================================================
-      # BIBLIOTECAS
-      # ============================================================
+          echo "OK - Importador do ADM corrigido."
 
       - name: Preparar bibliotecas Excel e PDF
         shell: bash
@@ -1183,10 +995,6 @@ jobs:
           test -s \
             "$ASSETS/jspdf.umd.min.js"
 
-      # ============================================================
-      # VERIFICAÇÃO
-      # ============================================================
-
       - name: Verificar projeto
         shell: bash
         run: |
@@ -1201,7 +1009,6 @@ jobs:
             -print -quit)
 
           test -f "$HTML"
-
           test -n "$MAIN"
 
           grep -q \
@@ -1255,7 +1062,6 @@ jobs:
             echo "ERRO: relatório em paisagem."
 
             exit 1
-
           fi
 
           python3 - "$HTML" <<'PY'
@@ -1281,17 +1087,12 @@ jobs:
               "\n".join(scripts),
               encoding="utf-8"
           )
-
           PY
 
           node --check \
             /tmp/super-pedido-inline.js
 
           echo "OK - validações concluídas."
-
-      # ============================================================
-      # COMPILAR
-      # ============================================================
 
       - name: Compilar APK
         shell: bash
@@ -1316,10 +1117,6 @@ jobs:
 
           fi
 
-      # ============================================================
-      # VERIFICAR APK
-      # ============================================================
-
       - name: Verificar APK
         shell: bash
         run: |
@@ -1338,10 +1135,6 @@ jobs:
           echo "APK=$APK" >> "$GITHUB_ENV"
 
           ls -lh "$APK"
-
-      # ============================================================
-      # DISPONIBILIZAR APK
-      # ============================================================
 
       - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
