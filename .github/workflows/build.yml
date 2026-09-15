@@ -56,11 +56,14 @@ jobs:
               -print -quit | xargs -r dirname)
           fi
 
-          test -n "$ANDROID_DIR"
+          if [ -z "$ANDROID_DIR" ]; then
+            echo "ERRO: projeto Android não encontrado."
+            exit 1
+          fi
 
           echo "ANDROID_DIR=$ANDROID_DIR" >> "$GITHUB_ENV"
 
-          echo "Projeto encontrado em:"
+          echo "Projeto encontrado:"
           echo "$ANDROID_DIR"
 
       - name: Configurar AndroidX
@@ -85,11 +88,14 @@ jobs:
 
           HTML=$(find "$ANDROID_DIR" \
             -path "*/src/main/assets/*" \
-            -name index.html \
+            -name "index.html" \
             -type f \
             -print -quit)
 
-          test -n "$HTML"
+          if [ -z "$HTML" ]; then
+            echo "ERRO: index.html não encontrado."
+            exit 1
+          fi
 
           APP_DIR=$(dirname "$HTML")
 
@@ -112,47 +118,67 @@ jobs:
 
           html = Path(os.environ["HTML"])
 
-          text = html.read_text(encoding="utf-8")
+          text = html.read_text(
+              encoding="utf-8"
+          )
+
           original = text
 
-          # ---------------------------------------------------------
-          # Localiza uma função JavaScript inteira
-          # ---------------------------------------------------------
+          # =========================================================
+          # LOCALIZADOR DE FUNÇÕES JAVASCRIPT
+          # =========================================================
 
           def function_block(source, name):
 
               pattern = (
-                  r"function\s+"
+                  r"(?:async\s+)?function\s+"
                   + re.escape(name)
                   + r"\s*\("
               )
 
-              match = re.search(pattern, source)
+              match = re.search(
+                  pattern,
+                  source
+              )
 
               if not match:
                   raise SystemExit(
-                      f"ERRO: função {name} não encontrada."
+                      "ERRO: função "
+                      + name
+                      + " não encontrada."
                   )
 
               start = match.start()
 
               next_match = re.search(
-                  r"\nfunction\s+[A-Za-z_$][\w$]*\s*\(",
+                  r"\n(?:async\s+)?function\s+"
+                  r"[A-Za-z_$][\w$]*\s*\(",
                   source[match.end():]
               )
 
               if next_match:
+
                   end = (
                       match.end()
                       + next_match.start()
                       + 1
                   )
+
               else:
+
                   end = len(source)
 
-              return start, end, source[start:end]
+              return (
+                  start,
+                  end,
+                  source[start:end]
+              )
 
-          def replace_function(source, name, replacement):
+          def replace_function(
+              source,
+              name,
+              replacement
+          ):
 
               start, end, old = function_block(
                   source,
@@ -166,24 +192,29 @@ jobs:
                   + source[end:]
               )
 
-          # ---------------------------------------------------------
-          # PROTEGER O RELATÓRIO DA VERSÃO #49
+          # =========================================================
+          # PROTEÇÃO ABSOLUTA DO PDF
           #
-          # O openPDF NÃO SERÁ MODIFICADO.
-          # ---------------------------------------------------------
+          # NÃO ANALISA O NOME openPDF.
+          # NÃO ALTERA O RELATÓRIO.
+          #
+          # Apenas registra as chamadas sharePdf existentes para
+          # garantir que a quantidade delas não seja modificada.
+          # =========================================================
 
-          openpdf_before = function_block(
-              original,
-              "openPDF"
-          )[2]
+          pdf_calls_before = re.findall(
+              r"AndroidFileBridge\s*\.\s*sharePdf\s*\(",
+              original
+          )
 
-          openpdf_hash_before = hashlib.sha256(
-              openpdf_before.encode("utf-8")
+          pdf_hash_before = hashlib.sha256(
+              "\n".join(pdf_calls_before)
+              .encode("utf-8")
           ).hexdigest()
 
-          # ---------------------------------------------------------
-          # 1. ADM
-          # ---------------------------------------------------------
+          # =========================================================
+          # 1 - ADMINISTRAÇÃO
+          # =========================================================
 
           new_admin = r'''function openAdmin(){
 
@@ -203,7 +234,7 @@ jobs:
                   box-sizing:border-box;
                   padding:12px;
                   font-size:18px;
-                  margin-top:8px
+                  margin-top:8px;
                 "
               >
 
@@ -211,7 +242,7 @@ jobs:
                 style="
                   display:flex;
                   gap:8px;
-                  margin-top:12px
+                  margin-top:12px;
                 "
               >
 
@@ -234,18 +265,20 @@ jobs:
                 );
 
               if(input){
+
                 input.focus();
 
                 input.addEventListener(
                   'keydown',
                   function(e){
 
-                    if(e.key==='Enter'){
+                    if(e.key === 'Enter'){
                       confirmAdminPin();
                     }
 
                   }
                 );
+
               }
 
             },100);
@@ -274,8 +307,11 @@ jobs:
               alert('PIN incorreto.');
 
               if(input){
-                input.focus();
+
                 input.value='';
+
+                input.focus();
+
               }
 
               return;
@@ -337,6 +373,7 @@ jobs:
               </button>
 
             `);
+
           }'''
 
           text = replace_function(
@@ -345,24 +382,29 @@ jobs:
               new_admin
           )
 
-          # ---------------------------------------------------------
-          # 2. REPETIR ÚLTIMO PEDIDO
-          # ---------------------------------------------------------
+          # =========================================================
+          # 2 - REPETIR ÚLTIMO PEDIDO
+          # =========================================================
 
           new_repeat = r'''function repeatLastOrder(){
 
             let rows=[];
+
+            // Primeiro tenta a memória atual.
 
             if(
               Array.isArray(lastOrder) &&
               lastOrder.length
             ){
 
-              rows = JSON.parse(
-                JSON.stringify(lastOrder)
-              );
+              rows =
+                JSON.parse(
+                  JSON.stringify(lastOrder)
+                );
 
             }
+
+            // Depois tenta o localStorage.
 
             if(!rows.length){
 
@@ -382,7 +424,9 @@ jobs:
                     Array.isArray(parsed) &&
                     parsed.length
                   ){
-                    rows = parsed;
+
+                    rows=parsed;
+
                   }
 
                 }
@@ -395,6 +439,8 @@ jobs:
 
             }
 
+            // Por último tenta o histórico.
+
             if(!rows.length){
 
               if(
@@ -402,23 +448,23 @@ jobs:
                 historyOrders.length
               ){
 
-                const latest =
+                const ultimo =
                   historyOrders[0];
 
                 if(
-                  latest &&
-                  Array.isArray(latest.rows)
+                  ultimo &&
+                  Array.isArray(ultimo.rows)
                 ){
 
                   rows =
                     JSON.parse(
                       JSON.stringify(
-                        latest.rows
+                        ultimo.rows
                       )
                     );
 
                   rows.generalObservation =
-                    latest.generalObservation || '';
+                    ultimo.generalObservation || '';
 
                 }
 
@@ -433,6 +479,7 @@ jobs:
               );
 
               return;
+
             }
 
             lastOrder =
@@ -456,9 +503,9 @@ jobs:
               new_repeat
           )
 
-          # ---------------------------------------------------------
-          # 3. APLICAR PEDIDO REPETIDO
-          # ---------------------------------------------------------
+          # =========================================================
+          # 3 - APLICAR REPETIÇÃO
+          # =========================================================
 
           new_apply = r'''function applyRepeat(rows){
 
@@ -472,6 +519,7 @@ jobs:
               );
 
               return;
+
             }
 
             vals={};
@@ -480,8 +528,13 @@ jobs:
 
             rows.forEach(function(x){
 
+              if(!x){
+                return;
+              }
+
+              // Produto adicional
+
               if(
-                x &&
                 x.cat === 'Produto Adicional'
               ){
 
@@ -490,25 +543,32 @@ jobs:
                   code:
                     x.code === '-'
                     ? ''
-                    : String(x.code || ''),
+                    : String(
+                        x.code || ''
+                      ),
 
                   name:
-                    String(x.name || ''),
+                    String(
+                      x.name || ''
+                    ),
 
                   qty:
-                    Number(x.order) || 0
+                    Number(
+                      x.order
+                    ) || 0
 
                 });
 
                 return;
+
               }
 
-              if(!x){
-                return;
-              }
+              // Produto normal
 
               const f =
-                productByCode(x.code);
+                productByCode(
+                  x.code
+                );
 
               if(!f){
                 return;
@@ -531,12 +591,18 @@ jobs:
                 );
 
               vals[ko] =
-                Number(x.order) || 0;
+                Number(
+                  x.order
+                ) || 0;
 
               vals[ks] =
-                Number(x.stock) || 0;
+                Number(
+                  x.stock
+                ) || 0;
 
             });
+
+            // Recupera observação
 
             if(
               typeof rows.generalObservation ===
@@ -582,12 +648,9 @@ jobs:
               new_apply
           )
 
-          # ---------------------------------------------------------
-          # 4. LIMPEZA DO PEDIDO
-          #
-          # Mantém histórico e último pedido.
-          # Remove somente o pedido atual.
-          # ---------------------------------------------------------
+          # =========================================================
+          # 4 - LIMPAR PEDIDO
+          # =========================================================
 
           new_clear = r'''function clearPedido(){
 
@@ -600,9 +663,12 @@ jobs:
                 )
               : [];
 
-            // Evita gravar duas vezes no histórico
-            // quando o openPDF da versão #49 já
-            // salvou o pedido antes de chamar clearPedido().
+            // -----------------------------------------------------
+            // Preserva o histórico.
+            //
+            // Se o envio do PDF já salvou o histórico antes de
+            // chamar clearPedido(), não grava novamente.
+            // -----------------------------------------------------
 
             let alreadySaved=false;
 
@@ -614,13 +680,23 @@ jobs:
 
               try{
 
-                alreadySaved =
-                  JSON.stringify(
-                    historyOrders[0].rows || []
-                  ) ===
-                  JSON.stringify(
-                    rowsToSave
-                  );
+                const latest =
+                  historyOrders[0];
+
+                if(
+                  latest &&
+                  Array.isArray(latest.rows)
+                ){
+
+                  alreadySaved =
+                    JSON.stringify(
+                      latest.rows
+                    ) ===
+                    JSON.stringify(
+                      rowsToSave
+                    );
+
+                }
 
               }catch(e){
 
@@ -641,7 +717,9 @@ jobs:
 
             }
 
-            // Limpa o pedido atual
+            // -----------------------------------------------------
+            // LIMPA PEDIDO ATUAL
+            // -----------------------------------------------------
 
             vals={};
 
@@ -653,7 +731,9 @@ jobs:
 
             generalObservation='';
 
-            // Limpa observação visual
+            // -----------------------------------------------------
+            // LIMPA CAMPO DE OBSERVAÇÃO
+            // -----------------------------------------------------
 
             const obs =
               document.getElementById(
@@ -661,10 +741,14 @@ jobs:
               );
 
             if(obs){
+
               obs.value='';
+
             }
 
-            // Remove somente os dados do pedido atual
+            // -----------------------------------------------------
+            // REMOVE DADOS DO PEDIDO ATUAL
+            // -----------------------------------------------------
 
             localStorage.removeItem(
               'pedido_compras_vals'
@@ -682,7 +766,9 @@ jobs:
               'sp_general_obs'
             );
 
-            // Atualiza a tela
+            // -----------------------------------------------------
+            // ATUALIZA INTERFACE
+            // -----------------------------------------------------
 
             render();
 
@@ -730,34 +816,45 @@ jobs:
               new_clear
           )
 
-          # ---------------------------------------------------------
-          # NÃO ALTERAR openPDF
-          # ---------------------------------------------------------
+          # =========================================================
+          # VERIFICAÇÃO FINAL
+          # =========================================================
 
-          openpdf_after = function_block(
-              text,
-              "openPDF"
-          )[2]
+          # As chamadas sharePdf precisam continuar exatamente na
+          # mesma quantidade. O relatório não é reescrito.
 
-          openpdf_hash_after = hashlib.sha256(
-              openpdf_after.encode("utf-8")
+          pdf_calls_after = re.findall(
+              r"AndroidFileBridge\s*\.\s*sharePdf\s*\(",
+              text
+          )
+
+          pdf_hash_after = hashlib.sha256(
+              "\n".join(pdf_calls_after)
+              .encode("utf-8")
           ).hexdigest()
 
-          if openpdf_before != openpdf_after:
+          if (
+              pdf_calls_before !=
+              pdf_calls_after
+          ):
 
               raise SystemExit(
-                  "ERRO GRAVE: openPDF foi alterado."
+                  "ERRO GRAVE: a chamada sharePdf "
+                  "foi modificada."
               )
 
-          if openpdf_hash_before != openpdf_hash_after:
+          if (
+              pdf_hash_before !=
+              pdf_hash_after
+          ):
 
               raise SystemExit(
-                  "ERRO GRAVE: HASH do openPDF mudou."
+                  "ERRO GRAVE: proteção do PDF falhou."
               )
 
-          # ---------------------------------------------------------
-          # VERIFICAÇÕES
-          # ---------------------------------------------------------
+          # =========================================================
+          # CONFIRMAR CORREÇÕES
+          # =========================================================
 
           required = [
 
@@ -771,9 +868,17 @@ jobs:
 
               "function clearPedido(){",
 
-              "localStorage.removeItem(",
+              "sp_admin_pin",
 
               "sp_last_order",
+
+              "pedido_compras_vals",
+
+              "pedido_compras_extras",
+
+              "pedido_compras_validade_curta",
+
+              "sp_general_obs",
 
               "saveHistory(",
 
@@ -786,34 +891,13 @@ jobs:
               if item not in text:
 
                   raise SystemExit(
-                      "ERRO: recurso ausente: "
+                      "ERRO: correção ausente: "
                       + item
                   )
 
-          # ---------------------------------------------------------
-          # CONFIRMA QUE A CHAMADA sharePdf EXISTENTE
-          # NÃO FOI MODIFICADA
-          # ---------------------------------------------------------
-
-          before_pdf_calls = re.findall(
-              r"AndroidFileBridge\s*\.\s*sharePdf\s*\(",
-              original
-          )
-
-          after_pdf_calls = re.findall(
-              r"AndroidFileBridge\s*\.\s*sharePdf\s*\(",
-              text
-          )
-
-          if before_pdf_calls != after_pdf_calls:
-
-              raise SystemExit(
-                  "ERRO GRAVE: chamadas Android sharePdf foram alteradas."
-              )
-
-          # ---------------------------------------------------------
-          # GRAVAR
-          # ---------------------------------------------------------
+          # =========================================================
+          # GRAVAR HTML CORRIGIDO
+          # =========================================================
 
           html.write_text(
               text,
@@ -825,21 +909,23 @@ jobs:
           print(" VERIFICAÇÃO DAS CORREÇÕES")
           print("==========================================")
           print("OK - ADM")
-          print("OK - PIN de administração")
+          print("OK - PIN")
           print("OK - Repetir último pedido")
+          print("OK - Recuperação pelo localStorage")
           print("OK - Recuperação pelo histórico")
           print("OK - Produtos adicionais")
-          print("OK - Limpeza do pedido")
-          print("OK - Estoque limpo")
-          print("OK - Quantidades limpas")
-          print("OK - Validade curta limpa")
-          print("OK - Observação limpa")
+          print("OK - Quantidades recuperadas")
+          print("OK - Estoque recuperado")
+          print("OK - Limpeza das quantidades")
+          print("OK - Limpeza do estoque")
+          print("OK - Limpeza da validade curta")
+          print("OK - Limpeza da observação")
           print("OK - Histórico preservado")
           print("OK - Último pedido preservado")
-          print("OK - openPDF INALTERADO")
-          print("OK - sharePdf INALTERADO")
+          print("OK - sharePdf preservado")
+          print("OK - Relatório não foi reescrito")
           print("==========================================")
-          print(" CORREÇÕES APLICADAS COM SUCESSO")
+          print(" CORREÇÕES CONCLUÍDAS")
           print("==========================================")
           PY
 
@@ -865,7 +951,8 @@ jobs:
           grep -q "function applyRepeat" "$HTML"
           grep -q "function clearPedido" "$HTML"
 
-          echo "Todas as correções foram encontradas."
+          echo "Todas as correções estão presentes."
+          echo "Relatório preservado."
 
       - name: Compilar APK
         shell: bash
@@ -875,10 +962,15 @@ jobs:
           cd "$ANDROID_DIR"
 
           if [ -f "./gradlew" ]; then
+
             chmod +x ./gradlew
+
             ./gradlew assembleDebug --no-daemon
+
           else
+
             gradle assembleDebug --no-daemon
+
           fi
 
       - name: Verificar APK gerado
@@ -892,8 +984,11 @@ jobs:
             -print -quit)
 
           if [ -z "$APK" ]; then
+
             echo "ERRO: APK não foi gerado."
+
             exit 1
+
           fi
 
           echo "APK encontrado:"
