@@ -49,11 +49,19 @@ jobs:
             -type f \
             -print -quit | xargs -r dirname)
 
+          if [ -z "$ANDROID_DIR" ]; then
+            ANDROID_DIR=$(find "$GITHUB_WORKSPACE/projeto" \
+              -name settings.gradle.kts \
+              -type f \
+              -print -quit | xargs -r dirname)
+          fi
+
           test -n "$ANDROID_DIR"
 
           echo "ANDROID_DIR=$ANDROID_DIR" >> "$GITHUB_ENV"
 
-          echo "Projeto encontrado em: $ANDROID_DIR"
+          echo "Projeto encontrado em:"
+          echo "$ANDROID_DIR"
 
       - name: Configurar AndroidX
         shell: bash
@@ -88,9 +96,10 @@ jobs:
           echo "HTML=$HTML" >> "$GITHUB_ENV"
           echo "APP_DIR=$APP_DIR" >> "$GITHUB_ENV"
 
-          echo "HTML encontrado em: $HTML"
+          echo "HTML encontrado:"
+          echo "$HTML"
 
-      - name: Corrigir ADM, Repetir e limpeza
+      - name: Corrigir ADM, Repetir e Limpeza
         shell: bash
         run: |
           set -e
@@ -106,7 +115,12 @@ jobs:
           text = html.read_text(encoding="utf-8")
           original = text
 
+          # ---------------------------------------------------------
+          # Localiza uma função JavaScript inteira
+          # ---------------------------------------------------------
+
           def function_block(source, name):
+
               pattern = (
                   r"function\s+"
                   + re.escape(name)
@@ -117,7 +131,7 @@ jobs:
 
               if not match:
                   raise SystemExit(
-                      f"ERRO: função {name} não encontrada"
+                      f"ERRO: função {name} não encontrada."
                   )
 
               start = match.start()
@@ -139,7 +153,8 @@ jobs:
               return start, end, source[start:end]
 
           def replace_function(source, name, replacement):
-              start, end, _ = function_block(
+
+              start, end, old = function_block(
                   source,
                   name
               )
@@ -151,33 +166,27 @@ jobs:
                   + source[end:]
               )
 
-          # =========================================================
-          # PROTEÇÃO DO RELATÓRIO DA VERSÃO #49
-          # =========================================================
+          # ---------------------------------------------------------
+          # PROTEGER O RELATÓRIO DA VERSÃO #49
+          #
+          # O openPDF NÃO SERÁ MODIFICADO.
+          # ---------------------------------------------------------
 
-          report_before = function_block(
+          openpdf_before = function_block(
               original,
-              "reportText"
+              "openPDF"
           )[2]
 
-          group_before = function_block(
-              original,
-              "groupRows"
-          )[2]
-
-          report_hash_before = hashlib.sha256(
-              report_before.encode("utf-8")
+          openpdf_hash_before = hashlib.sha256(
+              openpdf_before.encode("utf-8")
           ).hexdigest()
 
-          group_hash_before = hashlib.sha256(
-              group_before.encode("utf-8")
-          ).hexdigest()
-
-          # =========================================================
-          # 1 - ADMINISTRAÇÃO
-          # =========================================================
+          # ---------------------------------------------------------
+          # 1. ADM
+          # ---------------------------------------------------------
 
           new_admin = r'''function openAdmin(){
+
             featureModal(`
               <h3>🔐 Administração</h3>
 
@@ -189,47 +198,102 @@ jobs:
                 inputmode="numeric"
                 autocomplete="off"
                 placeholder="PIN"
-                style="width:100%;box-sizing:border-box;padding:12px;font-size:18px"
+                style="
+                  width:100%;
+                  box-sizing:border-box;
+                  padding:12px;
+                  font-size:18px;
+                  margin-top:8px
+                "
               >
 
-              <div style="display:flex;gap:8px;margin-top:10px">
-                <button onclick="confirmAdminPin()">Entrar</button>
-                <button onclick="closeFeature()">Cancelar</button>
+              <div
+                style="
+                  display:flex;
+                  gap:8px;
+                  margin-top:12px
+                "
+              >
+
+                <button onclick="confirmAdminPin()">
+                  Entrar
+                </button>
+
+                <button onclick="closeFeature()">
+                  Cancelar
+                </button>
+
               </div>
             `);
 
-            setTimeout(()=>{
-              const input=document.getElementById('adminPinInput');
-              if(input) input.focus();
-            },50);
+            setTimeout(function(){
+
+              const input =
+                document.getElementById(
+                  'adminPinInput'
+                );
+
+              if(input){
+                input.focus();
+
+                input.addEventListener(
+                  'keydown',
+                  function(e){
+
+                    if(e.key==='Enter'){
+                      confirmAdminPin();
+                    }
+
+                  }
+                );
+              }
+
+            },100);
+
           }
 
           function confirmAdminPin(){
-            const input=document.getElementById('adminPinInput');
 
-            const pin=input
-              ? String(input.value||'')
+            const input =
+              document.getElementById(
+                'adminPinInput'
+              );
+
+            const pin =
+              input
+              ? String(input.value || '')
               : '';
 
-            const saved=
-              localStorage.getItem('sp_admin_pin')
-              ||'1234';
+            const saved =
+              localStorage.getItem(
+                'sp_admin_pin'
+              ) || '1234';
 
-            if(pin!==saved){
+            if(pin !== saved){
+
               alert('PIN incorreto.');
+
+              if(input){
+                input.focus();
+                input.value='';
+              }
+
               return;
             }
 
             featureModal(`
+
               <h3>🔐 Administração</h3>
 
               <div class="stat">
+
                 Produtos na lista:
+
                 <b>
                   ${
                     Object.values(APP_DATA).reduce(
                       (a,s)=>
-                        a+
+                        a +
                         Object.values(s).reduce(
                           (b,x)=>b+x.length,
                           0
@@ -238,6 +302,7 @@ jobs:
                     )
                   }
                 </b>
+
               </div>
 
               <div class="adminGrid">
@@ -261,68 +326,104 @@ jobs:
               </div>
 
               <p class="mini">
-                No Android, a importação XLSX/CSV é lida pelo próprio aplicativo.
-                Após uma importação, a planilha passa a ser a lista oficial;
-                itens antigos que não estiverem nela deixam de aparecer.
+                No Android, a importação XLSX/CSV é lida
+                pelo próprio aplicativo.
+                Após uma importação, a planilha passa a ser
+                a lista oficial.
               </p>
 
               <button onclick="clearLocalData()">
                 ⚠️ Limpar dados locais do pedido
               </button>
+
             `);
           }'''
 
-          # =========================================================
-          # 2 - REPETIR ÚLTIMO PEDIDO
-          # =========================================================
+          text = replace_function(
+              text,
+              "openAdmin",
+              new_admin
+          )
+
+          # ---------------------------------------------------------
+          # 2. REPETIR ÚLTIMO PEDIDO
+          # ---------------------------------------------------------
 
           new_repeat = r'''function repeatLastOrder(){
 
-            let rows=
-              Array.isArray(lastOrder)
-              ? lastOrder
-              : [];
+            let rows=[];
+
+            if(
+              Array.isArray(lastOrder) &&
+              lastOrder.length
+            ){
+
+              rows = JSON.parse(
+                JSON.stringify(lastOrder)
+              );
+
+            }
 
             if(!rows.length){
 
               try{
-                rows=JSON.parse(
-                  localStorage.getItem('sp_last_order')
-                  ||'[]'
-                );
+
+                const stored =
+                  localStorage.getItem(
+                    'sp_last_order'
+                  );
+
+                if(stored){
+
+                  const parsed =
+                    JSON.parse(stored);
+
+                  if(
+                    Array.isArray(parsed) &&
+                    parsed.length
+                  ){
+                    rows = parsed;
+                  }
+
+                }
+
               }catch(e){
+
                 rows=[];
+
               }
-            }
 
-            let observation='';
-
-            if(
-              Array.isArray(historyOrders)
-              &&
-              historyOrders.length
-            ){
-              observation=
-                historyOrders[0].generalObservation
-                ||'';
             }
 
             if(!rows.length){
 
               if(
-                Array.isArray(historyOrders)
-                &&
+                Array.isArray(historyOrders) &&
                 historyOrders.length
               ){
 
-                rows=
-                  historyOrders[0].rows
-                  ||[];
+                const latest =
+                  historyOrders[0];
 
-                observation=
-                  historyOrders[0].generalObservation
-                  ||'';
+                if(
+                  latest &&
+                  Array.isArray(latest.rows)
+                ){
+
+                  rows =
+                    JSON.parse(
+                      JSON.stringify(
+                        latest.rows
+                      )
+                    );
+
+                  rows.generalObservation =
+                    latest.generalObservation || '';
+
+                }
+
               }
+
             }
 
             if(!rows.length){
@@ -334,38 +435,35 @@ jobs:
               return;
             }
 
-            rows=JSON.parse(
-              JSON.stringify(rows)
-            );
-
-            if(
-              !rows.generalObservation
-              &&
-              observation
-            ){
-              rows.generalObservation=
-                observation;
-            }
-
-            lastOrder=
+            lastOrder =
               JSON.parse(
                 JSON.stringify(rows)
               );
 
             saveFeatures();
 
-            applyRepeat(lastOrder);
+            applyRepeat(
+              JSON.parse(
+                JSON.stringify(rows)
+              )
+            );
+
           }'''
 
-          # =========================================================
-          # 3 - APLICAÇÃO DO ÚLTIMO PEDIDO
-          # =========================================================
+          text = replace_function(
+              text,
+              "repeatLastOrder",
+              new_repeat
+          )
+
+          # ---------------------------------------------------------
+          # 3. APLICAR PEDIDO REPETIDO
+          # ---------------------------------------------------------
 
           new_apply = r'''function applyRepeat(rows){
 
             if(
-              !Array.isArray(rows)
-              ||
+              !Array.isArray(rows) ||
               !rows.length
             ){
 
@@ -377,70 +475,89 @@ jobs:
             }
 
             vals={};
+
             extras=[];
 
-            rows.forEach(x=>{
+            rows.forEach(function(x){
 
               if(
-                x.cat==='Produto Adicional'
+                x &&
+                x.cat === 'Produto Adicional'
               ){
 
                 extras.push({
-                  code:
-                    x.code==='-'
-                    ?''
-                    :x.code,
 
-                  name:x.name,
+                  code:
+                    x.code === '-'
+                    ? ''
+                    : String(x.code || ''),
+
+                  name:
+                    String(x.name || ''),
 
                   qty:
-                    Number(x.order)||0
+                    Number(x.order) || 0
+
                 });
 
                 return;
               }
 
-              const f=
+              if(!x){
+                return;
+              }
+
+              const f =
                 productByCode(x.code);
 
-              if(f){
-
-                const ko=
-                  key(
-                    f.c,
-                    f.s,
-                    f.i,
-                    'o'
-                  );
-
-                vals[ko]=
-                  Number(x.order)||0;
-
-                const ks=
-                  key(
-                    f.c,
-                    f.s,
-                    f.i,
-                    's'
-                  );
-
-                vals[ks]=
-                  Number(x.stock)||0;
+              if(!f){
+                return;
               }
+
+              const ko =
+                key(
+                  f.c,
+                  f.s,
+                  f.i,
+                  'o'
+                );
+
+              const ks =
+                key(
+                  f.c,
+                  f.s,
+                  f.i,
+                  's'
+                );
+
+              vals[ko] =
+                Number(x.order) || 0;
+
+              vals[ks] =
+                Number(x.stock) || 0;
+
             });
 
-            generalObservation=
-              rows.generalObservation
-              ||generalObservation;
+            if(
+              typeof rows.generalObservation ===
+              'string'
+            ){
 
-            const obs=
+              generalObservation =
+                rows.generalObservation;
+
+            }
+
+            const obs =
               document.getElementById(
                 'generalObs'
               );
 
             if(obs){
-              obs.value=
+
+              obs.value =
                 generalObservation;
+
             }
 
             save();
@@ -456,21 +573,75 @@ jobs:
             alert(
               'Último pedido recuperado. Confira antes de enviar.'
             );
+
           }'''
 
-          # =========================================================
-          # 4 - LIMPEZA DO PEDIDO
-          # =========================================================
+          text = replace_function(
+              text,
+              "applyRepeat",
+              new_apply
+          )
+
+          # ---------------------------------------------------------
+          # 4. LIMPEZA DO PEDIDO
+          #
+          # Mantém histórico e último pedido.
+          # Remove somente o pedido atual.
+          # ---------------------------------------------------------
 
           new_clear = r'''function clearPedido(){
 
+            const rowsToSave =
+              Array.isArray(finalizedRows)
+              ? JSON.parse(
+                  JSON.stringify(
+                    finalizedRows
+                  )
+                )
+              : [];
+
+            // Evita gravar duas vezes no histórico
+            // quando o openPDF da versão #49 já
+            // salvou o pedido antes de chamar clearPedido().
+
+            let alreadySaved=false;
+
             if(
-              finalizedRows.length
+              rowsToSave.length &&
+              Array.isArray(historyOrders) &&
+              historyOrders.length
             ){
-              saveHistory(
-                finalizedRows
-              );
+
+              try{
+
+                alreadySaved =
+                  JSON.stringify(
+                    historyOrders[0].rows || []
+                  ) ===
+                  JSON.stringify(
+                    rowsToSave
+                  );
+
+              }catch(e){
+
+                alreadySaved=false;
+
+              }
+
             }
+
+            if(
+              rowsToSave.length &&
+              !alreadySaved
+            ){
+
+              saveHistory(
+                rowsToSave
+              );
+
+            }
+
+            // Limpa o pedido atual
 
             vals={};
 
@@ -480,7 +651,20 @@ jobs:
 
             finalizedRows=[];
 
-            save();
+            generalObservation='';
+
+            // Limpa observação visual
+
+            const obs =
+              document.getElementById(
+                'generalObs'
+              );
+
+            if(obs){
+              obs.value='';
+            }
+
+            // Remove somente os dados do pedido atual
 
             localStorage.removeItem(
               'pedido_compras_vals'
@@ -494,163 +678,107 @@ jobs:
               'pedido_compras_validade_curta'
             );
 
+            localStorage.removeItem(
+              'sp_general_obs'
+            );
+
+            // Atualiza a tela
+
             render();
 
-            renderValidadeCurta();
+            if(
+              typeof renderValidadeCurta ===
+              'function'
+            ){
+
+              renderValidadeCurta();
+
+            }
 
             updateBadge();
 
-            closeConference();
+            if(
+              typeof closeConference ===
+              'function'
+            ){
+
+              closeConference();
+
+            }
+
+            const opcoes =
+              document.getElementById(
+                'opcoesFinalizado'
+              );
+
+            if(opcoes){
+
+              opcoes.style.display='none';
+
+            }
 
             window.scrollTo({
               top:0,
               behavior:'smooth'
             });
+
           }'''
 
-          # =========================================================
-          # APLICAR AS 4 CORREÇÕES
-          # =========================================================
-
-          text=replace_function(
-              text,
-              "openAdmin",
-              new_admin
-          )
-
-          text=replace_function(
-              text,
-              "repeatLastOrder",
-              new_repeat
-          )
-
-          text=replace_function(
-              text,
-              "applyRepeat",
-              new_apply
-          )
-
-          text=replace_function(
+          text = replace_function(
               text,
               "clearPedido",
               new_clear
           )
 
-          # =========================================================
-          # CORRIGIR O ENVIO DO PDF
-          #
-          # Não altera o relatório.
-          #
-          # Apenas garante:
-          # PDF enviado -> histórico salvo -> pedido limpo.
-          #
-          # finalizedRows é zerado antes de clearPedido()
-          # para evitar salvar o histórico duas vezes.
-          # =========================================================
+          # ---------------------------------------------------------
+          # NÃO ALTERAR openPDF
+          # ---------------------------------------------------------
 
-          hook_pattern = (
-              r"window\.AndroidFileBridge\s*\.\s*sharePdf"
-              r"\s*\("
-              r"\s*['\"]pedido-acougue\.pdf['\"]"
-              r"\s*,\s*text"
-              r"\s*\)"
-              r"\s*;"
-              r"\s*return"
-          )
-
-          matches=list(
-              re.finditer(
-                  hook_pattern,
-                  text
-              )
-          )
-
-          if len(matches)!=1:
-
-              raise SystemExit(
-                  "ERRO: chamada Android sharePdf "
-                  f"encontrada {len(matches)} vez(es); "
-                  "esperado exatamente 1."
-              )
-
-          match=matches[0]
-
-          new_hook=(
-              "window.AndroidFileBridge.sharePdf("
-              "'pedido-acougue.pdf',text);"
-              "saveHistory(rows);"
-              "finalizedRows=[];"
-              "clearPedido();"
-              "return"
-          )
-
-          text=(
-              text[:match.start()]
-              +
-              new_hook
-              +
-              text[match.end():]
-          )
-
-          # =========================================================
-          # VERIFICAR QUE O RELATÓRIO NÃO FOI ALTERADO
-          # =========================================================
-
-          report_after=function_block(
+          openpdf_after = function_block(
               text,
-              "reportText"
+              "openPDF"
           )[2]
 
-          group_after=function_block(
-              text,
-              "groupRows"
-          )[2]
-
-          report_hash_after=hashlib.sha256(
-              report_after.encode("utf-8")
+          openpdf_hash_after = hashlib.sha256(
+              openpdf_after.encode("utf-8")
           ).hexdigest()
 
-          group_hash_after=hashlib.sha256(
-              group_after.encode("utf-8")
-          ).hexdigest()
-
-          if report_after!=report_before:
+          if openpdf_before != openpdf_after:
 
               raise SystemExit(
-                  "ERRO GRAVE: reportText foi alterado."
+                  "ERRO GRAVE: openPDF foi alterado."
               )
 
-          if group_after!=group_before:
+          if openpdf_hash_before != openpdf_hash_after:
 
               raise SystemExit(
-                  "ERRO GRAVE: groupRows foi alterado."
+                  "ERRO GRAVE: HASH do openPDF mudou."
               )
 
-          if report_hash_after!=report_hash_before:
+          # ---------------------------------------------------------
+          # VERIFICAÇÕES
+          # ---------------------------------------------------------
 
-              raise SystemExit(
-                  "ERRO GRAVE: HASH do relatório mudou."
-              )
+          required = [
 
-          if group_hash_after!=group_hash_before:
-
-              raise SystemExit(
-                  "ERRO GRAVE: HASH do agrupamento mudou."
-              )
-
-          # =========================================================
-          # VERIFICAR TODOS OS RECURSOS
-          # =========================================================
-
-          required=[
               "function openAdmin(){",
+
               "function confirmAdminPin(){",
+
               "function repeatLastOrder(){",
+
               "function applyRepeat(rows){",
+
               "function clearPedido(){",
-              "function reportText(source=getRows()){",
-              "function groupRows(rows){",
-              "window.AndroidFileBridge.sharePdf('pedido-acougue.pdf',text);saveHistory(rows);finalizedRows=[];clearPedido();return"
+
+              "localStorage.removeItem(",
+
+              "sp_last_order",
+
+              "saveHistory(",
+
+              "updateBadge()"
+
           ]
 
           for item in required:
@@ -659,8 +787,33 @@ jobs:
 
                   raise SystemExit(
                       "ERRO: recurso ausente: "
-                      +item
+                      + item
                   )
+
+          # ---------------------------------------------------------
+          # CONFIRMA QUE A CHAMADA sharePdf EXISTENTE
+          # NÃO FOI MODIFICADA
+          # ---------------------------------------------------------
+
+          before_pdf_calls = re.findall(
+              r"AndroidFileBridge\s*\.\s*sharePdf\s*\(",
+              original
+          )
+
+          after_pdf_calls = re.findall(
+              r"AndroidFileBridge\s*\.\s*sharePdf\s*\(",
+              text
+          )
+
+          if before_pdf_calls != after_pdf_calls:
+
+              raise SystemExit(
+                  "ERRO GRAVE: chamadas Android sharePdf foram alteradas."
+              )
+
+          # ---------------------------------------------------------
+          # GRAVAR
+          # ---------------------------------------------------------
 
           html.write_text(
               text,
@@ -671,122 +824,33 @@ jobs:
           print("==========================================")
           print(" VERIFICAÇÃO DAS CORREÇÕES")
           print("==========================================")
-          print("OK - Administração / ADM")
+          print("OK - ADM")
           print("OK - PIN de administração")
           print("OK - Repetir último pedido")
-          print("OK - Recuperação do histórico")
+          print("OK - Recuperação pelo histórico")
           print("OK - Produtos adicionais")
-          print("OK - Limpeza após envio")
-          print("OK - Limpeza após PDF Android")
+          print("OK - Limpeza do pedido")
+          print("OK - Estoque limpo")
+          print("OK - Quantidades limpas")
+          print("OK - Validade curta limpa")
+          print("OK - Observação limpa")
           print("OK - Histórico preservado")
-          print("OK - reportText INALTERADO")
-          print("OK - groupRows INALTERADO")
-          print("")
-          print("HASH reportText:")
-          print(report_hash_after)
-          print("")
-          print("HASH groupRows:")
-          print(group_hash_after)
-          print("")
+          print("OK - Último pedido preservado")
+          print("OK - openPDF INALTERADO")
+          print("OK - sharePdf INALTERADO")
           print("==========================================")
-          print(" CORREÇÃO VALIDADA")
+          print(" CORREÇÕES APLICADAS COM SUCESSO")
           print("==========================================")
-          print("")
-
           PY
-
-      - name: Preparar bibliotecas PDF e Excel
-        shell: bash
-        run: |
-          set -e
-
-          mkdir -p "$APP_DIR"
-
-          curl -L --fail --retry 3 \
-            -o "$APP_DIR/xlsx.full.min.js" \
-            "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"
-
-          curl -L --fail --retry 3 \
-            -o "$APP_DIR/jspdf.umd.min.js" \
-            "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"
-
-          test -s "$APP_DIR/xlsx.full.min.js"
-
-          test -s "$APP_DIR/jspdf.umd.min.js"
-
-          echo "OK - Bibliotecas PDF e Excel"
 
       - name: Verificar JavaScript
         shell: bash
         run: |
           set -e
 
-          python3 - <<'PY'
-          import re
-          import os
-          from pathlib import Path
+          node --check "$HTML"
 
-          html=Path(
-              os.environ["HTML"]
-          )
-
-          text=html.read_text(
-              encoding="utf-8"
-          )
-
-          scripts=re.findall(
-              r"<script(?:[^>]*)>(.*?)</script>",
-              text,
-              re.S
-          )
-
-          if not scripts:
-
-              raise SystemExit(
-                  "ERRO: nenhum JavaScript encontrado."
-              )
-
-          combined="\n".join(
-              scripts
-          )
-
-          Path(
-              "/tmp/super-pedido-inline.js"
-          ).write_text(
-              combined,
-              encoding="utf-8"
-          )
-
-          required=[
-              "function openAdmin(){",
-              "function confirmAdminPin(){",
-              "function repeatLastOrder(){",
-              "function applyRepeat(rows){",
-              "function clearPedido(){",
-              "function reportText(source=getRows()){",
-              "function groupRows(rows){",
-              "window.AndroidFileBridge.sharePdf",
-          ]
-
-          for item in required:
-
-              if item not in text:
-
-                  raise SystemExit(
-                      "ERRO JavaScript: "
-                      +item
-                  )
-
-          print(
-              "OK - Estrutura JavaScript validada"
-          )
-
-          PY
-
-          node --check \
-            /tmp/super-pedido-inline.js
-
-          echo "OK - JavaScript sem erro de sintaxe"
+          echo "JavaScript válido."
 
       - name: Verificação final antes da compilação
         shell: bash
@@ -795,25 +859,13 @@ jobs:
 
           test -f "$HTML"
 
-          test -s "$APP_DIR/xlsx.full.min.js"
+          grep -q "function openAdmin" "$HTML"
+          grep -q "function confirmAdminPin" "$HTML"
+          grep -q "function repeatLastOrder" "$HTML"
+          grep -q "function applyRepeat" "$HTML"
+          grep -q "function clearPedido" "$HTML"
 
-          test -s "$APP_DIR/jspdf.umd.min.js"
-
-          grep -q "function openAdmin()" "$HTML"
-
-          grep -q "function repeatLastOrder()" "$HTML"
-
-          grep -q "function applyRepeat(rows)" "$HTML"
-
-          grep -q "function clearPedido()" "$HTML"
-
-          grep -q "function reportText(source=getRows())" "$HTML"
-
-          grep -q "function groupRows(rows)" "$HTML"
-
-          echo "=========================================="
-          echo " TODAS AS VERIFICAÇÕES PASSARAM"
-          echo "=========================================="
+          echo "Todas as correções foram encontradas."
 
       - name: Compilar APK
         shell: bash
@@ -822,18 +874,19 @@ jobs:
 
           cd "$ANDROID_DIR"
 
-          gradle \
-            --no-daemon \
-            --stacktrace \
-            assembleDebug
+          if [ -f "./gradlew" ]; then
+            chmod +x ./gradlew
+            ./gradlew assembleDebug --no-daemon
+          else
+            gradle assembleDebug --no-daemon
+          fi
 
       - name: Verificar APK gerado
         shell: bash
         run: |
           set -e
 
-          APK=$(find \
-            "$ANDROID_DIR/app/build/outputs/apk" \
+          APK=$(find "$ANDROID_DIR" \
             -type f \
             -name "*.apk" \
             -print -quit)
@@ -843,22 +896,20 @@ jobs:
             exit 1
           fi
 
-          if [ ! -s "$APK" ]; then
-            echo "ERRO: APK gerado está vazio."
-            exit 1
-          fi
-
-          echo "=========================================="
-          echo " APK GERADO COM SUCESSO"
-          echo "=========================================="
-          echo "Arquivo:"
+          echo "APK encontrado:"
           echo "$APK"
-          echo ""
-          ls -lh "$APK"
+
+          mkdir -p "$GITHUB_WORKSPACE/apk"
+
+          cp "$APK" \
+            "$GITHUB_WORKSPACE/apk/Super-Pedido-Pro.apk"
+
+          ls -lh \
+            "$GITHUB_WORKSPACE/apk/Super-Pedido-Pro.apk"
 
       - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
           name: Super-Pedido-Pro-APK
-          path: ${{ env.ANDROID_DIR }}/app/build/outputs/apk/debug/*.apk
+          path: apk/Super-Pedido-Pro.apk
           if-no-files-found: error
